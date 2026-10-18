@@ -42,5 +42,10 @@
 			"quoteStyle": "double"
 		}
 	},
-	"root": false
+	"root": false,
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	}
 }

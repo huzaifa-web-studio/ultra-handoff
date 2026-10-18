@@ -1,8 +1,7 @@
+import appCss from "@org/ui/styles/global.css?url";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-
-import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
 	head: () => ({
