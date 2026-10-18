@@ -19,7 +19,8 @@
     "tslib": "^2.3.0",
     "typescript": "~6.0.3",
     "@biomejs/biome": "2.4.5",
-    "@org/biome-config": "workspace:*"
+    "@org/biome-config": "workspace:*",
+    "@org/tsconfig": "workspace:*"
   },
   "workspaces": [
     "packages/*",

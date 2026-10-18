@@ -8,6 +8,7 @@
         "@biomejs/biome": "2.4.5",
         "@nx/js": "23.2.0",
         "@org/biome-config": "workspace:*",
+        "@org/tsconfig": "workspace:*",
         "@swc-node/register": "1.11.1",
         "@swc/core": "1.15.8",
         "@swc/helpers": "0.5.18",
@@ -26,6 +27,7 @@
       "devDependencies": {
         "@biomejs/biome": "2.4.5",
         "@org/biome-config": "workspace:*",
+        "@org/tsconfig": "workspace:*",
         "bun-types": "latest",
       },
     },
@@ -44,6 +46,7 @@
       "devDependencies": {
         "@biomejs/biome": "2.4.5",
         "@org/biome-config": "workspace:*",
+        "@org/tsconfig": "workspace:*",
         "@tanstack/devtools-vite": "0.8.5",
         "@tanstack/router-cli": "^1.132.0",
         "@types/node": "^22.10.2",
@@ -56,6 +59,10 @@
     },
     "packages/biome-config": {
       "name": "@org/biome-config",
+      "version": "0.0.0",
+    },
+    "packages/tsconfig": {
+      "name": "@org/tsconfig",
       "version": "0.0.0",
     },
   },
@@ -339,6 +346,8 @@
     "@oozcitak/util": ["@oozcitak/util@10.0.0", "", {}, "sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA=="],
 
     "@org/biome-config": ["@org/biome-config@workspace:packages/biome-config"],
+
+    "@org/tsconfig": ["@org/tsconfig@workspace:packages/tsconfig"],
 
     "@oxc-parser/binding-android-arm-eabi": ["@oxc-parser/binding-android-arm-eabi@0.120.0", "", { "os": "android", "cpu": "arm" }, "sha512-WU3qtINx802wOl8RxAF1v0VvmC2O4D9M8Sv486nLeQ7iPHVmncYZrtBhB4SYyX+XZxj2PNnCcN+PW21jHgiOxg=="],
 
