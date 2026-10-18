@@ -2,7 +2,11 @@
   "name": "@org/source",
   "version": "0.0.0",
   "license": "MIT",
-  "scripts": {},
+  "scripts": {
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check ."
+  },
   "private": true,
   "dependencies": {},
   "devDependencies": {
@@ -13,7 +17,9 @@
     "@types/node": "^24.0.0",
     "nx": "23.2.0",
     "tslib": "^2.3.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "@biomejs/biome": "2.4.5",
+    "@org/biome-config": "workspace:*"
   },
   "workspaces": [
     "packages/*",
