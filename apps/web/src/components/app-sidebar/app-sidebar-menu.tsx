@@ -17,7 +17,6 @@ export function AppSidebarMenu() {
 					<SidebarMenuButton
 						isActive
 						tooltip="Dashboard"
-						className="cursor-pointer group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>span:last-child]:hidden"
 						onPress={() => navigate({ to: "/app" })}
 					>
 						<LayoutDashboard className="h-4 w-4 " />

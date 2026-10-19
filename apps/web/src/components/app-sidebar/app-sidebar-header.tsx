@@ -4,8 +4,8 @@ export function AppSidebarHeader() {
 	const { state } = useSidebar();
 
 	return (
-		<SidebarHeader>
-			<span className="px-2 py-1 font-display text-lg font-bold">
+		<SidebarHeader className={"overflow-hidden"}>
+			<span className="px-2 py-1 font-display text-lg font-bold whitespace-nowrap">
 				{state === "collapsed" ? "UH" : "Ultra Handoff"}
 			</span>
 		</SidebarHeader>
