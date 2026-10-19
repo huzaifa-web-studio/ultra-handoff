@@ -217,6 +217,17 @@ Do not write, edit, or delete any files until the user confirms they are on a no
 
 ---
 
+## 22. shadcn Components Live in `packages/ui`
+
+**Always add shadcn/ui components in the `packages/ui` package**, never in `apps/web` or `apps/api`. If you need to run any shadcn command (install, add, update, etc.), run it inside `packages/ui`.
+
+- ✅ `cd packages/ui && bunx shadcn add button`
+- ❌ `cd apps/web && bunx shadcn add button`
+
+Components installed in `packages/ui/src/components/ui/` are shared across all apps. Installing them anywhere else breaks reuse and creates duplicates.
+
+---
+
 ## Enforcement
 
 These rules are enforced by:

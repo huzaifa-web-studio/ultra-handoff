@@ -7,8 +7,11 @@
     },
     "drizzle": {
       "type": "local",
-      "command": ["bunx", "--bun", "drizzle-kit", "mcp"],
-      "enabled": true
+      "command": ["/home/huzaifa/.local/share/drizzle-mcp/node_modules/.bin/drizzle-mcp", "-d", "/home/huzaifa/Work/My Work/ultra handoff/ultra-handoff/apps/api"],
+      "enabled": true,
+      "environment": {
+        "DATABASE_URL": "postgres://app:app@localhost:5432/app"
+      }
     },
     "better-auth": {
       "type": "remote",
