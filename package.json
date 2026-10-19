@@ -5,7 +5,16 @@
   "scripts": {
     "format": "biome format --write .",
     "lint": "biome lint .",
-    "check": "biome check ."
+    "check": "biome check .",
+    "docker:prod": "docker compose up -d --build",
+    "docker:prod:down": "docker compose down",
+    "docker:prod:logs": "docker compose logs -f",
+    "docker:dev": "docker compose -f compose.dev.yaml up --build",
+    "docker:dev:down": "docker compose -f compose.dev.yaml down",
+    "docker:dev:logs": "docker compose -f compose.dev.yaml logs -f",
+    "db:generate": "cd apps/api && bun run db:generate",
+    "db:migrate": "cd apps/api && bun run db:migrate",
+    "db:studio": "docker compose -f compose.dev.yaml exec api bun run db:studio"
   },
   "private": true,
   "dependencies": {},

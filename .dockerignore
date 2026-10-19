@@ -1,6 +1,42 @@
+# Dependencies are installed inside the image from bun.lock. Copying the
+# host's node_modules would also import host-platform binaries.
 node_modules
-.nx
+**/node_modules
+
+# Build output is rebuilt inside the image.
 dist
+**/dist
+**/.output
+**/.nitro
+**/.tanstack
+**/out-tsc
+**/*.tsbuildinfo
+
+# Nx cache and workspace metadata.
+.nx
+
+# VCS, editor and agent metadata.
 .git
+.gitignore
+.github
+.idea
+.vscode
+.opencode
+.agents
+.dockerignore
+
+# Compose files are not needed to build either image.
+compose.yaml
+compose.dev.yaml
+
+# Secrets are injected as environment variables, never baked in.
 .env
-*.log
+**/.env
+**/.env.*
+!**/.env.example
+
+# Docs, scaffolding metadata and logs.
+**/*.md
+**/.cta.json
+**/*.log
+**/coverage

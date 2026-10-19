@@ -1,0 +1,93 @@
+# Production stack.
+#
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose down
+#
+# Every service is self-contained here — this file does not depend on
+# compose.dev.yaml. Development lives in compose.dev.yaml under its own
+# project name (ultra-dev) with its own database volume, so the two stacks
+# can never share state.
+
+name: ultra
+
+services:
+  postgres:
+    # PostgreSQL 18 is the current stable major (19 is still a release
+    # candidate). Patch and Alpine minor are pinned deliberately — bump them
+    # deliberately too, so image rebuilds stay reproducible.
+    image: postgres:18.6-alpine3.24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      # PostgreSQL 18 moved PGDATA under a version directory, and the image's
+      # VOLUME moved with it — hence the /var/lib/postgresql mount below.
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Schema migrations as a one-shot release step, not something every replica
+  # races to run at boot. Built from the `dev` target because drizzle-kit is a
+  # devDependency and is intentionally absent from the runtime image.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    command: ["bun", "run", "db:migrate"]
+    working_dir: /workspace/apps/api
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${API_PORT:-3001}:3001"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOST: 0.0.0.0
+      # Baked into the client bundle at build time. Anything the browser needs
+      # must be passed as a build arg in apps/web/Dockerfile, not just here.
+      VITE_API_URL: ${VITE_API_URL:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  pgdata:
+    name: ultra-pgdata
