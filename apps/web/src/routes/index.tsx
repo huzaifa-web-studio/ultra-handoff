@@ -1,13 +1,22 @@
 import { Button } from "@org/ui/components/button";
+import { Dialog, DialogHeader, DialogTitle } from "@org/ui/components/dialog";
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { AuthDialog } from "#/features/auth/auth-dialog";
 import { authClient } from "#/features/auth/client";
 import { openSignIn, openSignUp } from "#/features/auth/store";
+import { CreateOrganizationForm } from "#/features/organization/create-form";
 
 export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
 	const { data: session } = authClient.useSession();
+	const needsOrg = !!session?.user && !session.session?.activeOrganizationId;
+	const [orgOpen, setOrgOpen] = useState(needsOrg);
+
+	useEffect(() => {
+		setOrgOpen(needsOrg);
+	}, [needsOrg]);
 
 	return (
 		<div className="flex min-h-screen flex-col">
@@ -40,6 +49,13 @@ function Home() {
 			</main>
 
 			<AuthDialog />
+
+			<Dialog isOpen={orgOpen} onOpenChange={setOrgOpen} isDismissable={false} showCloseButton={false}>
+				<DialogHeader>
+					<DialogTitle>Create your organization</DialogTitle>
+				</DialogHeader>
+				<CreateOrganizationForm />
+			</Dialog>
 		</div>
 	);
 }
