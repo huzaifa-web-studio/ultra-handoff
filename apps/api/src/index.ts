@@ -28,7 +28,7 @@ const betterAuth = new Elysia({ name: "better-auth" })
 const app = new Elysia()
 	.use(
 		cors({
-			origin: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+			origin: process.env.WEB_URL ?? "http://localhost:3000",
 			methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 			credentials: true,
 			allowedHeaders: ["Content-Type", "Authorization"],

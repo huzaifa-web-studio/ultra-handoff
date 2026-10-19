@@ -28,12 +28,22 @@ export async function sendVerificationEmail(
 	url: string,
 ): Promise<void> {
 	const html = renderToStaticMarkup(<VerificationEmail url={url} />);
-	await transporter.sendMail({
-		from: FROM,
-		to,
-		subject: "Verify your email address",
-		html,
-	});
+	try {
+		const info = await transporter.sendMail({
+			from: FROM,
+			to,
+			subject: "Verify your email address",
+			html,
+		});
+		if (process.env.NODE_ENV !== "production") {
+			console.log("[mailer] verification sent:", info.messageId, "to", to);
+		}
+	} catch (err) {
+		if (process.env.NODE_ENV !== "production") {
+			console.error("[mailer] verification failed:", err);
+		}
+		throw err;
+	}
 }
 
 /**

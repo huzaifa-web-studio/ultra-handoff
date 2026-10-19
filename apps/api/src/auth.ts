@@ -1,9 +1,12 @@
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
 
 import { db } from "./db";
 import { sendResetPasswordEmail, sendVerificationEmail } from "./lib/mailer";
+
+const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
 /**
  * Better Auth instance for the Handoff API.
@@ -19,15 +22,39 @@ export const auth = betterAuth({
 	database: drizzleAdapter(db, { provider: "pg" }),
 	emailAndPassword: {
 		enabled: true,
+		minPasswordLength: 8,
+		requireEmailVerification: true,
+		autoSignIn: true,
 		sendResetPassword: async ({ user, url }) => {
 			await sendResetPasswordEmail(user.email, url);
 		},
 	},
 	emailVerification: {
 		sendVerificationEmail: async ({ user, url }) => {
-			await sendVerificationEmail(user.email, url);
+			if (process.env.NODE_ENV !== "production") {
+				console.log("[auth] sending verification email to", user.email, url);
+			}
+			const webUrl = process.env.WEB_URL ?? "http://localhost:3000";
+			const verifyUrl = new URL(url);
+			verifyUrl.searchParams.set("callbackURL", webUrl);
+			await sendVerificationEmail(user.email, verifyUrl.toString());
 		},
-		sendOnSignUp: false,
+		sendOnSignUp: true,
+		sendOnSignIn: true,
+		autoSignInAfterVerification: true,
+	},
+	hooks: {
+		before: createAuthMiddleware(async (ctx) => {
+			if (ctx.path === "/sign-up/email" || ctx.path === "/reset-password") {
+				const password = ctx.body?.password ?? ctx.body?.newPassword;
+				if (password && !passwordRegex.test(password)) {
+					throw new APIError("BAD_REQUEST", {
+						message:
+							"Password must be at least 8 characters with uppercase, lowercase, number, and special character",
+					});
+				}
+			}
+		}),
 	},
 	socialProviders: {
 		github: {
@@ -41,7 +68,7 @@ export const auth = betterAuth({
 	},
 	plugins: [organization()],
 	trustedOrigins: [
-		process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+		process.env.BETTER_AUTH_URL ?? "http://localhost:3001",
 		"http://localhost:3000",
 		"http://localhost:3001",
 	],

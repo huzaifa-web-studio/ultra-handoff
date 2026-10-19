@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
+import { Loader2 } from "lucide-react";
 import type * as React from "react";
 import {
 	Button as ButtonPrimitive,
@@ -9,7 +10,7 @@ import {
 } from "react-aria-components";
 
 const buttonVariants = cva(
-	"group/button inline-flex shrink-0 items-center justify-center rounded-none border border-transparent bg-clip-padding text-xs font-semibold tracking-widest whitespace-nowrap uppercase transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+	"group/button inline-flex shrink-0 items-center justify-center rounded-none border border-transparent bg-clip-padding text-xs font-semibold tracking-widest whitespace-nowrap uppercase transition-all outline-none select-none cursor-pointer focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
 	{
 		variants: {
 			variant: {
@@ -47,11 +48,15 @@ function Button({
 	className,
 	variant = "default",
 	size = "default",
+	loading = false,
+	children,
 	...props
 }: Omit<ButtonPrimitiveProps, "className"> &
 	React.RefAttributes<HTMLButtonElement> &
 	VariantProps<typeof buttonVariants> & {
 		className?: string;
+		loading?: boolean;
+		children?: any;
 	}) {
 	return (
 		<ButtonPrimitive
@@ -59,8 +64,12 @@ function Button({
 			data-variant={variant}
 			data-size={size}
 			className={cn(buttonVariants({ variant, size, className }))}
+			isDisabled={loading || props.isDisabled}
 			{...props}
-		/>
+		>
+			{loading ? <Loader2 className="animate-spin" /> : null}
+			{children}
+		</ButtonPrimitive>
 	);
 }
 
@@ -68,10 +77,14 @@ function LinkButton({
 	className,
 	variant = "default",
 	size = "default",
+	loading = false,
+	children,
 	...props
 }: Omit<LinkPrimitiveProps, "className"> &
 	VariantProps<typeof buttonVariants> & {
 		className?: string;
+		loading?: boolean;
+		children?: any;
 	}) {
 	return (
 		<LinkPrimitive
@@ -79,8 +92,12 @@ function LinkButton({
 			data-variant={variant}
 			data-size={size}
 			className={cn(buttonVariants({ variant, size, className }))}
+			isDisabled={loading || props.isDisabled}
 			{...props}
-		/>
+		>
+			{loading ? <Loader2 className="animate-spin" /> : null}
+			{children}
+		</LinkPrimitive>
 	);
 }
 

@@ -30,8 +30,14 @@ ultra-handoff/
 │   └── web/                    # Frontend (TanStack Start, React 19)
 │       └── src/
 │           ├── routes/         # File-based routes (TanStack Router)
-│           ├── components/     # App-specific components
-│           ├── hooks/          # Custom React hooks
+│           ├── components/     # Shared app-specific components (used by 2+ features)
+│           ├── features/       # Feature modules: each owns its components, hooks, store, api calls
+│           │   └── <feature>/
+│           │       ├── api.ts       # Feature API calls (endpoints, fetch wrappers)
+│           │       ├── store.ts     # Feature state (TanStack Store)
+│           │       ├── hooks.ts     # Feature hooks
+│           │       └── *.tsx        # Feature components
+│           ├── hooks/          # Shared custom React hooks
 │           ├── lib/
 │           │   ├── api.ts      # Eden Treaty client (all API calls go here)
 │           │   └── utils.ts    # Helpers
@@ -156,8 +162,9 @@ PostgreSQL 18
 | HTTP routes | `apps/api/src/routes/` | Thin handlers, delegate to services |
 | Validation | `apps/api/src/lib/validation.ts` | Zod schemas for request validation |
 | Shared UI components | `packages/ui/src/components/ui/` | Reusable across apps |
-| App-specific components | `apps/web/src/components/` | Only used in web |
-| Custom hooks | `apps/web/src/hooks/` | React hooks for web |
+| Shared app-specific components | `apps/web/src/components/` | Used by 2+ features, web only |
+| Feature modules | `apps/web/src/features/<feature>/` | Each feature owns its components, hooks, store, and API calls |
+| Custom hooks (shared) | `apps/web/src/hooks/` | React hooks shared across features |
 | API client | `apps/web/src/lib/api.ts` | All API calls go through here |
 | Web-specific types | `apps/web/src/types/` | Extends API types if needed |
 
