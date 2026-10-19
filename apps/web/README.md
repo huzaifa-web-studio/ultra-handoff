@@ -1,194 +1,78 @@
-Welcome to your new TanStack Start app!
+# Web (TanStack Start)
 
-# Getting Started
+TanStack Start SPA frontend. Client-side rendered (SPA mode), React 19, Tailwind CSS 4, shadcn/ui components, Nitro production server.
 
-To run this application:
+## Tech Stack
 
-```bash
-bun install
-bun --bun run dev
+- **Framework:** TanStack Start 1.169.3 (SPA mode, no SSR)
+- **React:** 19.3.1
+- **Build tool:** Vite 8.3.4
+- **Production server:** Nitro 3.0.260903-beta
+- **Styling:** Tailwind CSS 4.3.3
+- **UI:** shadcn/ui (aria-sera style, lucide icons)
+- **Fonts:** Oxanium (display), Outfit (sans)
+
+## Project Structure
+
+```
+apps/web/
+├── src/
+│   ├── routes/       — file-based routes (TanStack Router)
+│   ├── router.tsx    — router configuration
+│   └── routeTree.gen.ts — auto-generated route tree
+├── public/           — static assets
+├── vite.config.ts    — Vite + TanStack Start + Nitro config
+├── Dockerfile        — multi-stage build (Nitro bundle)
+└── package.json
 ```
 
-# Building For Production
-
-To build this application for production:
+## Running
 
 ```bash
-bun --bun run build
+# Development (Vite dev server with HMR)
+bun run dev
+
+# Production (Nitro server)
+bun run start
+
+# Build (generates routes + Vite build + Nitro bundle)
+bun run build
 ```
 
-## Styling
-
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
+The web app runs on port 3000 by default. Override with `PORT` env var.
 
 ## Linting & Formatting
 
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
-
-
 ```bash
-bun --bun run lint
-bun --bun run format
-bun --bun run check
+bun run lint     # Biome lint
+bun run format   # Biome format --write
+bun run check    # Biome check (lint + format)
 ```
-
-
 
 ## Routing
 
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
+File-based routing via TanStack Router. Add new routes as files in `src/routes/`. The route tree is auto-generated.
 
-### Adding A Route
+## Styling
 
-To add a new route to your application just add a new file in the `./src/routes` directory.
+- Tailwind CSS 4 with design tokens from `packages/ui/src/styles/global.css`
+- shadcn/ui components from `packages/ui/src/components/ui/`
+- Zero radius design (all `--radius-*` set to `0px`)
+- Dark mode via `.dark` class
 
-TanStack will automatically generate the content of the route file for you.
+## Docker
 
-Now that you have two routes you can use a `Link` component to navigate between them.
+The web app is containerized via `apps/web/Dockerfile`. It builds a Nitro bundle (`.output/`) with no `node_modules` at runtime.
 
-### Adding Links
+See the root `README.md` for Docker commands.
 
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
+## Rules
 
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+See `RULES.md` at the project root. Key rules for this app:
+- SPA mode only — no SSR logic
+- No backend logic — frontend only
+- No standalone CSS files — Tailwind only
+- Design tokens only (no direct colors/values)
+- Comment every file and logic block
+- No em dashes in text
+- Component reuse from `packages/ui` first
