@@ -1,0 +1,6 @@
+{
+  "extends": "@org/tsconfig/node.json",
+  "compilerOptions": {
+    "types": ["bun-types"]
+  }
+}
