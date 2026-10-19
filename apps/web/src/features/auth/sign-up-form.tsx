@@ -2,35 +2,36 @@ import { Button } from "@org/ui/components/button";
 import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { PasswordInput } from "@org/ui/components/password-input";
-import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
-import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { authClient } from "./client";
+import { closeAuthDialog } from "./store";
+import { ArrowLeft } from "lucide-react";
+import { Google } from "@org/ui/components/ui/svgs/google";
+import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
 
 export function AuthSignUpForm() {
-	const queryClient = useQueryClient();
 	const [sentEmail, setSentEmail] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "" },
 		onSubmit: async ({ value }) => {
+			setError(null);
+			try {
 				const { error } = await authClient.signUp.email({
 					name: value.name,
 					email: value.email,
 					password: value.password,
 				});
 				if (error) {
-					form.setFieldMeta("email", (m) => ({
-						...m,
-						errors: [error.message ?? "Sign up failed"],
-					}));
+					setError(error.message ?? "Sign up failed");
 					return;
 				}
 				setSentEmail(value.email);
-				queryClient.invalidateQueries({ queryKey: ["session"] });
-
+				} catch (err) {
+				setError(err instanceof Error ? err.message : "Sign up failed");
+			}
 		},
 	});
 
@@ -51,7 +52,7 @@ export function AuthSignUpForm() {
 						form.setFieldValue("password", "");
 					}}
 				>
-					Back
+					<ArrowLeft className="h-4 w-4" /> Back
 				</Button>
 			</div>
 		);
@@ -141,6 +142,7 @@ export function AuthSignUpForm() {
 					</Field>
 				)}
 			</form.Field>
+			{error && <p className="text-sm text-danger">{error}</p>}
 			<form.Subscribe selector={(s) => s.isSubmitting}>
 				{(isSubmitting) => (
 					<Button type="submit" loading={isSubmitting}>
@@ -152,24 +154,26 @@ export function AuthSignUpForm() {
 				<Button
 					type="button"
 					variant="outline"
-					onPress={() =>
+					onPress={() => {
+						closeAuthDialog();
 						authClient.signIn.social({
 							provider: "github",
 							callbackURL: window.location.origin,
-						})
-					}
+						});
+					}}
 				>
 					<GithubIcon className="h-4 w-4" /> Continue with GitHub
 				</Button>
 				<Button
 					type="button"
 					variant="outline"
-					onPress={() =>
+					onPress={() => {
+						closeAuthDialog();
 						authClient.signIn.social({
 							provider: "google",
 							callbackURL: window.location.origin,
-						})
-					}
+						});
+					}}
 				>
 					<Google className="h-4 w-4" /> Continue with Google
 				</Button>

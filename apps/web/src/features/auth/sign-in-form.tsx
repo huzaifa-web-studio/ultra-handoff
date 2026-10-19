@@ -5,29 +5,30 @@ import { PasswordInput } from "@org/ui/components/password-input";
 import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
 import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { authClient } from "./client";
 import { closeAuthDialog } from "./store";
 
 export function AuthSignInForm() {
-	const queryClient = useQueryClient();
+	const [error, setError] = useState<string | null>(null);
 
 	const form = useForm({
 		defaultValues: { email: "", password: "" },
 		onSubmit: async ({ value }) => {
+			setError(null);
+			try {
 				const { error } = await authClient.signIn.email({
 					email: value.email,
 					password: value.password,
 				});
 				if (error) {
-					form.setFieldMeta("email", (m) => ({
-						...m,
-						errors: [error.message ?? "Sign in failed"],
-					}));
+					setError(error.message ?? "Sign in failed");
 					return;
 				}
 				closeAuthDialog();
-				queryClient.invalidateQueries({ queryKey: ["session"] });
+				} catch (err) {
+				setError(err instanceof Error ? err.message : "Sign in failed");
+			}
 
 		},
 	});
@@ -92,6 +93,7 @@ export function AuthSignInForm() {
 					</Field>
 				)}
 			</form.Field>
+			{error && <p className="text-sm text-danger">{error}</p>}
 			<form.Subscribe selector={(s) => s.isSubmitting}>
 				{(isSubmitting) => (
 					<Button type="submit" loading={isSubmitting}>

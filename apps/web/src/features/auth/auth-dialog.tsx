@@ -1,6 +1,8 @@
 import { Button } from "@org/ui/components/button";
 import { Dialog, DialogHeader, DialogTitle } from "@org/ui/components/dialog";
 import { useSelector } from "@tanstack/react-store";
+import { useEffect } from "react";
+import { authClient } from "./client";
 import { AuthSignInForm } from "./sign-in-form";
 import { AuthSignUpForm } from "./sign-up-form";
 import {
@@ -13,6 +15,13 @@ import {
 export function AuthDialog() {
 	const { isOpen, mode } = useSelector(authDialogStore);
 	const isSignIn = mode === "signin";
+	const { data: session } = authClient.useSession();
+
+	useEffect(() => {
+		if (session?.user && isOpen) {
+			closeAuthDialog();
+		}
+	}, [session, isOpen]);
 
 	return (
 		<Dialog
