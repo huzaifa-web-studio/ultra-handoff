@@ -7,6 +7,7 @@ import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
 import { authClient } from "./client";
+import { signInSchema } from "./schema";
 import { closeAuthDialog } from "./store";
 
 export function AuthSignInForm() {
@@ -14,6 +15,7 @@ export function AuthSignInForm() {
 
 	const form = useForm({
 		defaultValues: { email: "", password: "" },
+		validators: { onChange: signInSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			try {
@@ -26,10 +28,9 @@ export function AuthSignInForm() {
 					return;
 				}
 				closeAuthDialog();
-				} catch (err) {
+			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign in failed");
 			}
-
 		},
 	});
 
@@ -42,15 +43,7 @@ export function AuthSignInForm() {
 			}}
 			className="flex flex-col gap-4"
 		>
-			<form.Field
-				name="email"
-				validators={{
-					onChange: ({ value }) =>
-						!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-							? "Invalid email"
-							: undefined,
-				}}
-			>
+			<form.Field name="email">
 				{(field) => (
 					<Field>
 						<FieldLabel>Email</FieldLabel>
@@ -68,15 +61,7 @@ export function AuthSignInForm() {
 					</Field>
 				)}
 			</form.Field>
-			<form.Field
-				name="password"
-				validators={{
-					onChange: ({ value }) =>
-						/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/.test(value)
-							? undefined
-							: "Password must be 8+ chars with upper, lower, number, and special char",
-				}}
-			>
+			<form.Field name="password">
 				{(field) => (
 					<Field>
 						<FieldLabel>Password</FieldLabel>

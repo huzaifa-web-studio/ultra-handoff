@@ -2,13 +2,14 @@ import { Button } from "@org/ui/components/button";
 import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { PasswordInput } from "@org/ui/components/password-input";
+import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
+import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
+import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { authClient } from "./client";
+import { signUpSchema } from "./schema";
 import { closeAuthDialog } from "./store";
-import { ArrowLeft } from "lucide-react";
-import { Google } from "@org/ui/components/ui/svgs/google";
-import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
 
 export function AuthSignUpForm() {
 	const [sentEmail, setSentEmail] = useState<string | null>(null);
@@ -16,6 +17,7 @@ export function AuthSignUpForm() {
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "" },
+		validators: { onChange: signUpSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			try {
@@ -29,7 +31,7 @@ export function AuthSignUpForm() {
 					return;
 				}
 				setSentEmail(value.email);
-				} catch (err) {
+			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign up failed");
 			}
 		},
@@ -91,15 +93,7 @@ export function AuthSignUpForm() {
 					</Field>
 				)}
 			</form.Field>
-			<form.Field
-				name="email"
-				validators={{
-					onChange: ({ value }) =>
-						!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-							? "Invalid email"
-							: undefined,
-				}}
-			>
+			<form.Field name="email">
 				{(field) => (
 					<Field>
 						<FieldLabel>Email</FieldLabel>
@@ -117,15 +111,7 @@ export function AuthSignUpForm() {
 					</Field>
 				)}
 			</form.Field>
-			<form.Field
-				name="password"
-				validators={{
-					onChange: ({ value }) =>
-						/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/.test(value)
-							? undefined
-							: "Password must be 8+ chars with upper, lower, number, and special char",
-				}}
-			>
+			<form.Field name="password">
 				{(field) => (
 					<Field>
 						<FieldLabel>Password</FieldLabel>
