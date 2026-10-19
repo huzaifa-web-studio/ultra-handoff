@@ -1,6 +1,7 @@
 {
   "extends": "@org/tsconfig/node.json",
   "compilerOptions": {
-    "types": ["bun-types"]
+    "types": ["bun-types"],
+    "jsx": "react-jsx"
   }
 }
