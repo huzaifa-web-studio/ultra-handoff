@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "skills": {
+    "ai-interface-reviewer": {
+      "source": "uxuiprinciples/agent-skills",
+      "sourceType": "github",
+      "skillPath": "ai-interface-reviewer/SKILL.md",
+      "computedHash": "cdae3ad3dbb710653f7cff7efcceb1ef5d6fdb951f55fa48967d1390809ebe5c"
+    },
+    "better-auth-best-practices": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "better-auth/best-practices/SKILL.md",
+      "computedHash": "0c30be0e118c2b7a0c4c57bd9e63bf110c7e420a79ec6ce7997153f3b1e066ee"
+    },
+    "better-auth-security-best-practices": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "security/SKILL.md",
+      "computedHash": "7a230edf3a24ce18162cb4379f59b6a19b8d24ca04db530609d0f15cede556dc"
+    },
+    "create-auth": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "better-auth/create-auth/SKILL.md",
+      "computedHash": "9a9b498bc144367b8e237233f89def63fb2bd69e8cafe173eaa58fe3a863cdc4"
+    },
+    "drizzle-orm": {
+      "source": "oakoss/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/drizzle-orm/SKILL.md",
+      "computedHash": "e2cc18721f3a4eb57f5b948d9cf3e33e3f8d5a954687efc5c1dcae297b9e6913"
+    },
+    "email-and-password-best-practices": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "better-auth/emailAndPassword/SKILL.md",
+      "computedHash": "863886759f729081e265941f4f72c503835d55a1f34f6d63cebe6571159fff4a"
+    },
+    "flow-checker": {
+      "source": "uxuiprinciples/agent-skills",
+      "sourceType": "github",
+      "skillPath": "flow-checker/SKILL.md",
+      "computedHash": "c2cb44aeb559e7cb2fc95c58218c46eeae2136cfc6a6391bd0cc581d55c60fd7"
+    },
+    "interface-auditor": {
+      "source": "uxuiprinciples/agent-skills",
+      "sourceType": "github",
+      "skillPath": "interface-auditor/SKILL.md",
+      "computedHash": "64e2b6212cfb4ba9f6d5b5186f52a2b73ced34a3e4b28f9bf4f1ef14a7256422"
+    },
+    "organization-best-practices": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "better-auth/organization/SKILL.md",
+      "computedHash": "8c85e683dabef4532f1e8b67bbed5c453d39e0e3d5aeedd69d16b568f6e6d44f"
+    },
+    "shadcn-ui": {
+      "source": "jezweb/claude-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/frontend/skills/shadcn-ui/SKILL.md",
+      "computedHash": "3c80c7348aaab81e251ae73df8413d41348c3f5fbd0fc1cb398dd423ea7df020"
+    },
+    "two-factor-authentication-best-practices": {
+      "source": "better-auth/skills",
+      "sourceType": "github",
+      "skillPath": "better-auth/twoFactor/SKILL.md",
+      "computedHash": "5bc3051aef5060db013f0b3cbe812c40dbae5c22d6ba3ddde4b941158362a197"
+    },
+    "ux-writing": {
+      "source": "content-designer/ux-writing-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "7a9be24c109c69070451aaa30f75417825cb6b85435c775ad58185c52449cbfc"
+    },
+    "uxui-evaluator": {
+      "source": "uxuiprinciples/agent-skills",
+      "sourceType": "github",
+      "skillPath": "uxui-evaluator/SKILL.md",
+      "computedHash": "2c37ce994562aef389ec90aaf44dc760066b7bb180b0d31e283b6b255caa55a0"
+    },
+    "vibe-coding-advisor": {
+      "source": "uxuiprinciples/agent-skills",
+      "sourceType": "github",
+      "skillPath": "vibe-coding-advisor/SKILL.md",
+      "computedHash": "4cc9b1adadae0bfda33e86e317c991ed6ba664aefbf430d52a7481a9d7fec299"
+    }
+  }
+}

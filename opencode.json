@@ -4,6 +4,40 @@
       "type": "local",
       "command": ["bunx", "nx", "mcp"],
       "enabled": true
+    },
+    "drizzle": {
+      "type": "local",
+      "command": ["bunx", "--bun", "drizzle-kit", "mcp"],
+      "enabled": true
+    },
+    "better-auth": {
+      "type": "remote",
+      "url": "https://mcp.better-auth.com/mcp",
+      "enabled": true
+    },
+    "chrome-devtools": {
+      "type": "local",
+      "command": ["bunx", "--bun", "chrome-devtools-mcp@latest"],
+      "enabled": true
+    },
+    "shadcn": {
+      "type": "local",
+      "command": ["bunx", "--bun", "shadcn@latest", "mcp"],
+      "enabled": true
+    },
+    "postgres": {
+      "type": "local",
+      "command": ["bunx", "--bun", "@modelcontextprotocol/server-postgres", "postgresql://app:app@localhost:5432/app"],
+      "enabled": true
+    }
+  },
+  "permission": {
+    "bash": {
+      "docker *": "ask",
+      "docker compose *": "ask"
+    },
+    "mcp": {
+      "chrome-devtools": "ask"
     }
   }
 }
