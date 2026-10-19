@@ -20,7 +20,7 @@ export function AppSidebarMenu() {
 						className="cursor-pointer group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&>span:last-child]:hidden"
 						onPress={() => navigate({ to: "/app" })}
 					>
-						<LayoutDashboard className="h-4 w-4" />
+						<LayoutDashboard className="h-4 w-4 " />
 						<span>Dashboard</span>
 					</SidebarMenuButton>
 				</SidebarMenuItem>
