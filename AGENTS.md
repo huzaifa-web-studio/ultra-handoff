@@ -40,7 +40,7 @@ Handoff is not a project management tool. It focuses on the relationship between
 
 **Vision:** Make every client engagement clear, accountable, and confidently delivered.
 
-See `PRODUCT.md` for the full product document.
+See `PRODUCT.md` for the full product document. See `ARCHITECTURE.md` for the full architecture document.
 
 ---
 
