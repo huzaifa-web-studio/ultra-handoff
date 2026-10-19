@@ -21,3 +21,164 @@
 - The `nx-generate` skill handles generator discovery internally - don't call nx_docs just to look up generator syntax
 
 <!-- nx configuration end-->
+
+---
+
+# Project: Handoff
+
+## Product Overview
+
+Handoff is a client-facing project delivery and approval platform for agencies, freelancers, and service-based teams. It provides a shared workspace where service providers and clients can agree on project scope, communicate expectations, review completed work, and formally approve deliveries.
+
+Handoff is not a project management tool. It focuses on the relationship between the team delivering the work and the client receiving it.
+
+**Core flow:** Scope Approval (define what will be delivered → client reviews and approves) → Delivery Approval (submit deliverables → client reviews and accepts or requests corrections).
+
+**Who it's for:** Web dev agencies, design studios, freelancers, digital service providers, small teams managing multiple client engagements.
+
+**Product principles:** Clarity, Accountability, Transparency, Simplicity, Trust.
+
+**Vision:** Make every client engagement clear, accountable, and confidently delivered.
+
+See `PRODUCT.md` for the full product document.
+
+---
+
+## Architecture
+
+```
+ultra-handoff/
+├── apps/
+│   ├── api/          — Elysia (Bun) backend: REST API, Drizzle ORM, Postgres
+│   └── web/          — TanStack Start (React 19, Vite 8, Nitro 3) SPA frontend
+├── packages/
+│   ├── ui/           — shadcn/ui component library (Tailwind v4, aria-sera style)
+│   ├── biome-config/ — shared Biome config
+│   └── tsconfig/     — shared TypeScript configs
+├── compose.yaml      — production Docker stack (project: ultra)
+├── compose.dev.yaml  — development Docker stack with watch (project: ultra-dev)
+├── opencode.json     — MCP server config + permissions
+├── RULES.md          — all coding rules (21 rules)
+└── PRODUCT.md        — product overview and vision
+```
+
+### Apps
+
+- **`apps/api`** — Elysia REST API on Bun. Routes, Drizzle ORM schema, migrations. Compiles to a standalone binary for production. Runs on port 3001.
+- **`apps/web`** — TanStack Start SPA (React 19, Vite 8, Nitro 3 beta). Client-side rendered. Runs on port 3000.
+
+### Packages
+
+- **`packages/ui`** — shadcn/ui component library. Tailwind v4, `aria-sera` style, lucide icons. Oxanium (display) + Outfit (sans) fonts. All design tokens live in `packages/ui/src/styles/global.css`.
+- **`packages/biome-config`** — shared Biome configuration.
+- **`packages/tsconfig`** — shared TypeScript configs (base, node, web).
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Version |
+|---|---|---|
+| Runtime | Bun | 1.4.3 (isolated linker) |
+| Orchestration | Nx | 23.2 |
+| Backend framework | Elysia | 1.4.30 |
+| ORM | Drizzle ORM | 0.45.4 |
+| Database | PostgreSQL | 18.6 |
+| DB driver | postgres (postgres-js) | 3.4.9 |
+| Frontend framework | TanStack Start | 1.169.3 |
+| React | React | 19.3.1 |
+| Build tool | Vite | 8.3.4 |
+| Production server | Nitro | 3.0.260903-beta |
+| Styling | Tailwind CSS | 4.3.3 |
+| UI library | shadcn/ui | aria-sera style |
+| Linter/Formatter | Biome | 2.4.5 (→ 2.5.15) |
+| TypeScript | TypeScript | 6.0.3 (→ 7.0.2 available) |
+| Container base | oven/bun | 1.4.3-slim (Debian 13 trixie) |
+
+---
+
+## Design System
+
+All design tokens are defined in `packages/ui/src/styles/global.css`. This is the single source of truth for colors, typography, spacing, and radius.
+
+- **Zero radius** — all `--radius-*` values are `0px`.
+- **Tailwind v4** with `@theme inline` — tokens map to CSS custom properties.
+- **Dark mode** via `.dark` class with overridden CSS variables.
+- **Brand colors:** forest (`#19382d`), gold (`#d8b65c`), ivory (`#f5f2e9`), graphite (`#29332f`), sage (`#a4b4a7`).
+- **App colors:** canvas, panel, text, border, focus, action, attention, etc.
+- **Status colors:** success, warning, danger, info, neutral (each with bg variant).
+
+**Rule:** Never use direct colors or values in Tailwind classes. Always use token classes (e.g., `bg-app-canvas`, `text-app-text`, `border-app-border`).
+
+See `RULES.md` Rule 3 for full details.
+
+---
+
+## Rules
+
+All coding rules are defined in `RULES.md` (21 rules). Key rules:
+
+- No em dashes in text
+- No standalone CSS files — Tailwind only
+- Design tokens only (no direct colors/values)
+- Web = frontend only, API = backend
+- Never touch `drizzle/` folder — migrations via drizzle-kit
+- DRY — no duplicated logic
+- No `any` type
+- No `console.log` in production
+- No hardcoded URLs/ports/secrets
+- Component reuse first
+- Accessibility (WCAG 2.2 AA)
+- Comment every file and logic block
+- Conventional commits
+- Never make changes on `main` branch
+
+---
+
+## Docker Setup
+
+| File | Purpose |
+|---|---|
+| `compose.yaml` | Production stack (project: `ultra`) |
+| `compose.dev.yaml` | Development stack with watch (project: `ultra-dev`) |
+| `apps/api/Dockerfile` | API — compiles to standalone binary |
+| `apps/web/Dockerfile` | Web — Nitro bundle, no node_modules at runtime |
+
+**Commands:**
+- `bun run docker:prod` — production
+- `bun run docker:dev` — development with hot reload
+- `bun run docker:prod:down` / `bun run docker:dev:down` — stop
+
+**Note:** Docker commands require user approval (gated in `opencode.json`).
+
+---
+
+## AI / MCP Setup
+
+`opencode.json` configures 6 MCP servers:
+
+| Server | Type | Purpose |
+|---|---|---|
+| `nx-mcp` | local | Nx workspace queries, generators, tasks |
+| `drizzle` | local | Drizzle Kit migration tools (drizzle-kit is a devDep) |
+| `better-auth` | remote | Better Auth docs search |
+| `chrome-devtools` | local | Browser debugging (requires approval) |
+| `shadcn` | local | Component browsing/installation |
+| `postgres` | local | Direct SQL access to dev DB |
+
+**Skills** are in `.agents/skills/` — includes drizzle-orm, shadcn-ui, better-auth-*, ux-*, frontend-design, motion-design, web-perf, lint-check, etc.
+
+**Permissions:** Docker commands and Chrome DevTools require explicit approval.
+
+---
+
+## Key Conventions
+
+- **SPA mode** — no SSR. All rendering on client. Server functions are thin proxies to API.
+- **Conventional commits** — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `style:`
+- **Import order** — external → internal (`@org/*`) → relative
+- **No em dashes** in any text
+- **Comment everything** — file headers + logic blocks
+- **Never commit to `main`** — always use a feature branch
+- **Biome** handles formatting, linting, import sorting. Run `bun run format` and `bun run check`.
+- **Nx** for task running: `bunx nx run-many -t build`, `bunx nx run api:build`, etc.
