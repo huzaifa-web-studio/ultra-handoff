@@ -152,9 +152,6 @@ services:
         - path: ./apps/web/tsconfig.json
           action: sync
           target: /workspace/apps/web/tsconfig.json
-        - path: ./apps/web/server.mjs
-          action: sync
-          target: /workspace/apps/web/server.mjs
         # packages/ui is imported through a workspace symlink, so syncing the
         # whole packages tree is what makes shared-component edits hot reload.
         - path: ./packages

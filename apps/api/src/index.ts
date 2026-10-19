@@ -9,7 +9,7 @@ const port = Number(process.env.PORT ?? 3001);
 const hostname = process.env.HOST ?? "0.0.0.0";
 
 const app = new Elysia()
-	.get("/", () => "Hello Elysia")
+	.get("/", () => "Hello Huzaifa")
 	.get("/health", () => ({ status: "ok" }))
 	.get("/users", async () => db.select().from(users))
 	.listen({ port, hostname });
