@@ -56,6 +56,7 @@ function Button({
 	VariantProps<typeof buttonVariants> & {
 		className?: string;
 		loading?: boolean;
+		// biome-ignore lint/suspicious/noExplicitAny: react-aria ButtonPrimitive children type
 		children?: any;
 	}) {
 	return (
@@ -84,6 +85,7 @@ function LinkButton({
 	VariantProps<typeof buttonVariants> & {
 		className?: string;
 		loading?: boolean;
+		// biome-ignore lint/suspicious/noExplicitAny: react-aria ButtonPrimitive children type
 		children?: any;
 	}) {
 	return (

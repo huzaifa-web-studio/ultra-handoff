@@ -47,6 +47,15 @@
 	--color-app-selected: var(--app-selected);
 	--color-app-sidebar: var(--app-sidebar);
 	--color-app-sidebar-text: var(--app-sidebar-text);
+
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
 	--color-app-action: var(--app-action);
 	--color-app-action-text: var(--app-action-text);
 	--color-app-attention: var(--app-attention);
@@ -98,6 +107,16 @@
 	--app-selected: #f4e8c6;
 	--app-sidebar: #19382d;
 	--app-sidebar-text: #f5f2e9;
+
+	/* Sidebar (shadcn) tokens: neutral sidebar, highlighted active item */
+	--sidebar: var(--app-panel-subtle);
+	--sidebar-foreground: var(--app-text);
+	--sidebar-primary: var(--brand-forest);
+	--sidebar-primary-foreground: var(--app-action-text);
+	--sidebar-accent: var(--app-selected);
+	--sidebar-accent-foreground: var(--app-text);
+	--sidebar-border: var(--app-border);
+	--sidebar-ring: var(--app-focus);
 	--app-action: #19382d;
 	--app-action-text: #ffffff;
 	--app-attention: #d8b65c;

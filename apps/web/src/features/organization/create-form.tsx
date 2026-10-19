@@ -2,11 +2,13 @@ import { Button } from "@org/ui/components/button";
 import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { useForm } from "@tanstack/react-form";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "#/features/auth/client";
 import { createOrganizationSchema } from "./schema";
 
 export function CreateOrganizationForm() {
+	const navigate = useNavigate();
 	const [error, setError] = useState<string | null>(null);
 
 	const form = useForm({
@@ -21,9 +23,13 @@ export function CreateOrganizationForm() {
 				});
 				if (error) {
 					setError(error.message ?? "Failed to create organization");
+					return;
 				}
+				navigate({ to: "/app" });
 			} catch (err) {
-				setError(err instanceof Error ? err.message : "Failed to create organization");
+				setError(
+					err instanceof Error ? err.message : "Failed to create organization",
+				);
 			}
 		},
 	});

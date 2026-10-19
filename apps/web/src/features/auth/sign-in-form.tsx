@@ -5,12 +5,14 @@ import { PasswordInput } from "@org/ui/components/password-input";
 import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
 import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "./client";
 import { signInSchema } from "./schema";
 import { closeAuthDialog } from "./store";
 
 export function AuthSignInForm() {
+	const navigate = useNavigate();
 	const [error, setError] = useState<string | null>(null);
 
 	const form = useForm({
@@ -28,6 +30,7 @@ export function AuthSignInForm() {
 					return;
 				}
 				closeAuthDialog();
+				navigate({ to: "/app" });
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign in failed");
 			}
@@ -93,7 +96,7 @@ export function AuthSignInForm() {
 					onPress={() =>
 						authClient.signIn.social({
 							provider: "github",
-							callbackURL: window.location.origin,
+							callbackURL: `${window.location.origin}/app`,
 						})
 					}
 				>
@@ -105,7 +108,7 @@ export function AuthSignInForm() {
 					onPress={() =>
 						authClient.signIn.social({
 							provider: "google",
-							callbackURL: window.location.origin,
+							callbackURL: `${window.location.origin}/app`,
 						})
 					}
 				>

@@ -144,7 +144,7 @@ export function AuthSignUpForm() {
 						closeAuthDialog();
 						authClient.signIn.social({
 							provider: "github",
-							callbackURL: window.location.origin,
+							callbackURL: `${window.location.origin}/app`,
 						});
 					}}
 				>
@@ -157,7 +157,7 @@ export function AuthSignUpForm() {
 						closeAuthDialog();
 						authClient.signIn.social({
 							provider: "google",
-							callbackURL: window.location.origin,
+							callbackURL: `${window.location.origin}/app`,
 						});
 					}}
 				>
