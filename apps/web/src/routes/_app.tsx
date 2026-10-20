@@ -1,10 +1,7 @@
-import {
-	SidebarInset,
-	SidebarProvider,
-	SidebarTrigger,
-} from "@org/ui/components/sidebar";
+import { SidebarInset, SidebarProvider } from "@org/ui/components/sidebar";
 import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { AppHeader } from "#/components/app-sidebar/app-header";
 import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
 import { AppNotFound } from "#/components/app-sidebar/not-found";
 import { authClient } from "#/features/auth/client";
@@ -47,14 +44,7 @@ function AppLayout() {
 				onSignOut={handleSignOut}
 			/>
 			<SidebarInset>
-				<header className="flex h-14 items-center justify-between border-b border-app-border px-4">
-					<div className="flex items-center gap-2">
-						<SidebarTrigger />
-						<span className="text-sm font-semibold text-app-text">
-							Dashboard
-						</span>
-					</div>
-				</header>
+				<AppHeader />
 				<main className="flex-1 p-8">
 					<Outlet />
 				</main>
