@@ -29,6 +29,7 @@ export default function ResetPasswordEmail({ url }: ResetPasswordEmailProps) {
 					<Section>
 						<Link href={url}>Reset password</Link>
 					</Section>
+					<Text>This link expires in one hour.</Text>
 					<Text>If you did not request this, you can ignore this email.</Text>
 				</Container>
 			</Body>

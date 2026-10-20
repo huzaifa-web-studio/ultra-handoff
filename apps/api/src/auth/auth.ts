@@ -78,6 +78,12 @@ export const auth = betterAuth({
 		minPasswordLength: 8,
 		requireEmailVerification: true,
 		autoSignIn: true,
+		// Reset links stay valid for one hour. The email and the forgot
+		// password screen both state this expiry, so keep them in sync.
+		resetPasswordTokenExpiresIn: 60 * 60,
+		// A reset usually means someone else may have had access. Sign out
+		// every device, including the one that opened the link.
+		revokeSessionsOnPasswordReset: true,
 		sendResetPassword: async ({ user, url }) => {
 			await enqueueEmail({ to: user.email, template: "reset-password", url });
 		},

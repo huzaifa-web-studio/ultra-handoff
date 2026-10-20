@@ -26,17 +26,21 @@ import {
 	FieldLabel,
 } from "@org/ui/components/field";
 import { PasswordInput } from "@org/ui/components/password-input";
+import { Separator } from "@org/ui/components/separator";
 import { Skeleton } from "@org/ui/components/skeleton";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
 
 import { authClient } from "#/features/auth/client";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
+import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
 import { setAccountPassword } from "./api";
 import { changePasswordSchema, setPasswordSchema } from "./schema";
 
 type PasswordCardProps = {
+	/** Address the reset link is sent to. */
+	email: string;
 	hasPassword: boolean;
 	/** True while the linked account list is still loading. */
 	isLoading?: boolean;
@@ -45,6 +49,7 @@ type PasswordCardProps = {
 };
 
 export function PasswordCard({
+	email,
 	hasPassword,
 	isLoading = false,
 	onChanged,
@@ -78,7 +83,11 @@ export function PasswordCard({
 					// whether a credential account exists.
 					<Skeleton className="h-40 w-full" />
 				) : hasPassword ? (
-					<ChangePasswordForm />
+					<>
+						<ChangePasswordForm />
+						<Separator />
+						<SendResetLink email={email} />
+					</>
 				) : (
 					<SetPasswordForm
 						onSet={async () => {
@@ -321,5 +330,93 @@ function SetPasswordForm({
 				</form.Subscribe>
 			</div>
 		</form>
+	);
+}
+
+/**
+ * Email a password reset link from the account page.
+ *
+ * Why: a signed-in user may not remember the current password, so the change
+ * form is not usable. The link uses the same magic link flow as sign in and
+ * revokes every session once it is used.
+ */
+function SendResetLink({ email }: { email: string }) {
+	const [sending, setSending] = useState(false);
+	const [sent, setSent] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const cooldown = useCooldown();
+
+	// Clear the confirmation after a few seconds, like the other cards.
+	useAutoDismiss(sent ? "Reset link sent." : null, () => setSent(false));
+
+	async function handleSend() {
+		if (sending || cooldown.isActive) return;
+
+		setSending(true);
+		setError(null);
+		setSent(false);
+
+		try {
+			const { error: requestError } = await authClient.requestPasswordReset({
+				email,
+				// The API validates the token and redirects to this page.
+				redirectTo: `${window.location.origin}/reset-password`,
+			});
+
+			if (requestError) {
+				setError(requestError.message ?? "Could not send the reset link.");
+				return;
+			}
+
+			setSent(true);
+			// Same one minute policy as the sign in and sign up resend actions.
+			cooldown.start();
+		} catch (submitError) {
+			setError(
+				submitError instanceof Error
+					? submitError.message
+					: "Could not send the reset link.",
+			);
+		} finally {
+			setSending(false);
+		}
+	}
+
+	return (
+		<div className="flex flex-col gap-3">
+			<div>
+				<p className="text-sm font-medium text-app-text">
+					Forgot your current password?
+				</p>
+				<p className="text-sm text-app-text-muted">
+					Send a reset link to {email}. Using it signs you out of all devices.
+				</p>
+			</div>
+
+			{error && (
+				<p role="alert" className="text-sm text-danger">
+					{error}
+				</p>
+			)}
+
+			{sent && !error && (
+				<output className="block text-sm text-success">
+					Reset link sent. Check your inbox.
+				</output>
+			)}
+
+			<div>
+				<Button
+					variant="outline"
+					loading={sending}
+					isDisabled={sending || cooldown.isActive}
+					onPress={handleSend}
+				>
+					{cooldown.isActive
+						? `Resend in ${cooldown.remaining}s`
+						: "Send reset link"}
+				</Button>
+			</div>
+		</div>
 	);
 }

@@ -10,7 +10,7 @@ import { useState } from "react";
 import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
 import { signInSchema } from "./schema";
-import { closeAuthDialog } from "./store";
+import { closeAuthDialog, openForgotPassword } from "./store";
 
 export function AuthSignInForm() {
 	const navigate = useNavigate();
@@ -76,7 +76,21 @@ export function AuthSignInForm() {
 					</Field>
 				)}
 			</form.Field>
-			{error && <p className="text-sm text-danger">{error}</p>}
+			<div className="flex justify-end">
+				<Button
+					type="button"
+					variant="link"
+					className="h-auto px-0 py-0 active:!transform-none"
+					onPress={() => openForgotPassword(form.state.values.email)}
+				>
+					Forgot password?
+				</Button>
+			</div>
+			{error && (
+				<p role="alert" className="text-sm text-danger">
+					{error}
+				</p>
+			)}
 			<form.Subscribe selector={(s) => s.isSubmitting}>
 				{(isSubmitting) => (
 					<Button type="submit" loading={isSubmitting}>

@@ -3,6 +3,7 @@ import { Dialog, DialogHeader, DialogTitle } from "@org/ui/components/dialog";
 import { useSelector } from "@tanstack/react-store";
 import { useEffect } from "react";
 import { authClient } from "./client";
+import { AuthForgotPasswordForm } from "./forgot-password-form";
 import { AuthSignInForm } from "./sign-in-form";
 import { AuthSignUpForm } from "./sign-up-form";
 import {
@@ -13,15 +14,24 @@ import {
 } from "./store";
 
 export function AuthDialog() {
-	const { isOpen, mode } = useSelector(authDialogStore);
-	const isSignIn = mode === "signin";
+	const { isOpen, mode, email } = useSelector(authDialogStore);
 	const { data: session } = authClient.useSession();
 
 	useEffect(() => {
-		if (session?.user && isOpen) {
+		// A signed-in user may still ask for a reset link, for example from an
+		// expired link page. Only the sign in and sign up modes close on a
+		// session.
+		if (session?.user && isOpen && mode !== "forgot") {
 			closeAuthDialog();
 		}
-	}, [session, isOpen]);
+	}, [session, isOpen, mode]);
+
+	const title =
+		mode === "signin"
+			? "Sign in"
+			: mode === "signup"
+				? "Sign up"
+				: "Reset password";
 
 	return (
 		<Dialog
@@ -31,11 +41,17 @@ export function AuthDialog() {
 			}}
 		>
 			<DialogHeader>
-				<DialogTitle>{isSignIn ? "Sign in" : "Sign up"}</DialogTitle>
+				<DialogTitle>{title}</DialogTitle>
 			</DialogHeader>
-			{isSignIn ? <AuthSignInForm /> : <AuthSignUpForm />}
+			{mode === "signin" && <AuthSignInForm />}
+			{mode === "signup" && <AuthSignUpForm />}
+			{mode === "forgot" && (
+				// Keyed by email so a new prefill remounts the form with the
+				// carried address instead of keeping stale default values.
+				<AuthForgotPasswordForm key={email} defaultEmail={email} />
+			)}
 			<p className="text-center text-sm text-app-text-muted">
-				{isSignIn ? (
+				{mode === "signin" ? (
 					<>
 						Don&apos;t have an account?{" "}
 						<Button
@@ -51,7 +67,9 @@ export function AuthDialog() {
 					</>
 				) : (
 					<>
-						Already have an account?{" "}
+						{mode === "signup"
+							? "Already have an account?"
+							: "Remembered your password?"}{" "}
 						<Button
 							variant="link"
 							className="h-auto px-0 py-0 active:!transform-none"

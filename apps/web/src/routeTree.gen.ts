@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AppOrgSlugRouteImport } from './routes/_app/$orgSlug'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AppOrgSlugSettingsRouteImport } from './routes/_app/$orgSlug.settings'
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppOrgSlugRoute = AppOrgSlugRouteImport.update({
@@ -42,12 +48,14 @@ const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/account': typeof AppAccountRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/account': typeof AppAccountRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
@@ -56,19 +64,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/_app/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/_app/account': typeof AppAccountRoute
   '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$orgSlug' | '/account' | '/$orgSlug/settings'
+  fullPaths:
+    '/' | '/reset-password' | '/$orgSlug' | '/account' | '/$orgSlug/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$orgSlug' | '/account' | '/$orgSlug/settings'
+  to: '/' | '/reset-password' | '/$orgSlug' | '/account' | '/$orgSlug/settings'
   id:
     | '__root__'
     | '/'
     | '/_app'
+    | '/reset-password'
     | '/_app/$orgSlug'
     | '/_app/account'
     | '/_app/$orgSlug/settings'
@@ -77,6 +88,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  ResetPasswordRoute: typeof ResetPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -93,6 +105,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/$orgSlug': {
@@ -146,6 +165,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  ResetPasswordRoute: ResetPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

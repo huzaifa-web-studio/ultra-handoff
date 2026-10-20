@@ -6,41 +6,23 @@ import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLigh
 import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
+import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
 import { signUpSchema } from "./schema";
 import { closeAuthDialog, openSignIn } from "./store";
-
-/** Seconds a user must wait between verification emails. */
-const RESEND_COOLDOWN_SECONDS = 60;
 
 export function AuthSignUpForm() {
 	const [sentEmail, setSentEmail] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [resending, setResending] = useState(false);
 	const [resendNotice, setResendNotice] = useState<string | null>(null);
-	const [cooldown, setCooldown] = useState(0);
+	const cooldown = useCooldown();
 
 	// The resend confirmation is transient. Errors stay until the user acts.
 	useAutoDismiss(resendNotice, () => setResendNotice(null));
-
-	/**
-	 * Count the cooldown down one second at a time.
-	 *
-	 * A timeout that re-arms itself is enough here. The screen always shows a
-	 * whole number of seconds, so drift within a tick does not matter.
-	 */
-	useEffect(() => {
-		if (cooldown <= 0) return;
-
-		const timer = window.setTimeout(() => {
-			setCooldown((remaining) => Math.max(0, remaining - 1));
-		}, 1000);
-
-		return () => window.clearTimeout(timer);
-	}, [cooldown]);
 
 	/**
 	 * Ask the API to queue another verification email.
@@ -49,7 +31,7 @@ export function AuthSignUpForm() {
 	 * delayed or land in spam. The user should not have to sign up again.
 	 */
 	async function handleResend() {
-		if (!sentEmail || resending || cooldown > 0) return;
+		if (!sentEmail || resending || cooldown.isActive) return;
 
 		setResending(true);
 		setError(null);
@@ -69,7 +51,7 @@ export function AuthSignUpForm() {
 
 			setResendNotice("Verification email sent again.");
 			// Start the wait again so a queued message cannot be spammed.
-			setCooldown(RESEND_COOLDOWN_SECONDS);
+			cooldown.start();
 		} catch (err) {
 			setError(
 				err instanceof Error
@@ -98,7 +80,7 @@ export function AuthSignUpForm() {
 				}
 				setSentEmail(value.email);
 				// The first message was just queued, so start the wait now.
-				setCooldown(RESEND_COOLDOWN_SECONDS);
+				cooldown.start();
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign up failed");
 			}
@@ -139,10 +121,12 @@ export function AuthSignUpForm() {
 				<Button
 					variant="outline"
 					loading={resending}
-					isDisabled={resending || cooldown > 0}
+					isDisabled={resending || cooldown.isActive}
 					onPress={handleResend}
 				>
-					{cooldown > 0 ? `Resend in ${cooldown}s` : "Resend email"}
+					{cooldown.isActive
+						? `Resend in ${cooldown.remaining}s`
+						: "Resend email"}
 				</Button>
 				<Button
 					variant="outline"
@@ -150,7 +134,7 @@ export function AuthSignUpForm() {
 						setSentEmail(null);
 						setResendNotice(null);
 						setError(null);
-						setCooldown(0);
+						cooldown.clear();
 						form.setFieldValue("password", "");
 					}}
 				>

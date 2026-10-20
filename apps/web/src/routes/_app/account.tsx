@@ -49,6 +49,7 @@ function AccountPage() {
 			<SignInMethodsCard hasPassword={hasPassword} />
 
 			<PasswordCard
+				email={session.user.email}
 				hasPassword={hasPassword}
 				isLoading={accountsQuery.isPending}
 				onChanged={async () => {

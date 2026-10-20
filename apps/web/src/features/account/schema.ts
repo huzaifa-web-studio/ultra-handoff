@@ -10,11 +10,7 @@
 
 import { z } from "zod";
 
-/** Mirrors the API rule so a bad password is caught before the request. */
-const passwordRule = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
-
-export const passwordRuleMessage =
-	"Password must be 8+ characters with upper, lower, number, and special char";
+import { passwordRule, passwordRuleMessage } from "#/lib/password";
 
 export const profileSchema = z.object({
 	name: z
