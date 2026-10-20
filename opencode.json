@@ -25,7 +25,7 @@
     },
     "shadcn": {
       "type": "local",
-      "command": ["bunx", "--bun", "shadcn@latest", "mcp"],
+      "command": ["bunx", "--bun", "shadcn@4.22.1", "mcp"],
       "enabled": true
     },
     "postgres": {

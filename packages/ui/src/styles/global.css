@@ -47,6 +47,8 @@
 	--color-app-selected: var(--app-selected);
 	--color-app-sidebar: var(--app-sidebar);
 	--color-app-sidebar-text: var(--app-sidebar-text);
+	--color-app-sidebar-accent: var(--app-sidebar-accent);
+	--color-app-sidebar-border: var(--app-sidebar-border);
 
 	--color-sidebar: var(--sidebar);
 	--color-sidebar-foreground: var(--sidebar-foreground);
@@ -107,16 +109,18 @@
 	--app-selected: #f4e8c6;
 	--app-sidebar: #19382d;
 	--app-sidebar-text: #f5f2e9;
+	--app-sidebar-accent: #315345;
+	--app-sidebar-border: #536c5d;
 
-	/* Sidebar (shadcn) tokens: neutral sidebar, highlighted active item */
-	--sidebar: var(--app-panel-subtle);
-	--sidebar-foreground: var(--app-text);
-	--sidebar-primary: var(--brand-forest);
-	--sidebar-primary-foreground: var(--app-action-text);
-	--sidebar-accent: var(--app-selected);
-	--sidebar-accent-foreground: var(--app-text);
-	--sidebar-border: var(--app-border);
-	--sidebar-ring: var(--app-focus);
+	/* Sidebar (shadcn) tokens: dark forest sidebar */
+	--sidebar: var(--app-sidebar);
+	--sidebar-foreground: var(--app-sidebar-text);
+	--sidebar-primary: var(--brand-gold);
+	--sidebar-primary-foreground: var(--brand-graphite);
+	--sidebar-accent: var(--app-sidebar-accent);
+	--sidebar-accent-foreground: var(--app-sidebar-text);
+	--sidebar-border: var(--app-sidebar-border);
+	--sidebar-ring: var(--brand-gold-ink);
 	--app-action: #19382d;
 	--app-action-text: #ffffff;
 	--app-attention: #d8b65c;
@@ -174,6 +178,16 @@
 	--border: #536c5d;
 	--input: #536c5d;
 	--ring: #b18a32;
+
+	/* Sidebar (shadcn) tokens: keep dark forest sidebar in dark mode */
+	--sidebar: var(--app-sidebar);
+	--sidebar-foreground: var(--app-sidebar-text);
+	--sidebar-primary: var(--brand-gold);
+	--sidebar-primary-foreground: var(--brand-graphite);
+	--sidebar-accent: var(--app-sidebar-accent);
+	--sidebar-accent-foreground: var(--app-sidebar-text);
+	--sidebar-border: var(--app-sidebar-border);
+	--sidebar-ring: var(--brand-gold-ink);
 }
 
 @layer base {

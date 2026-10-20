@@ -10,7 +10,7 @@ import {
 	Link as LinkPrimitive,
 	type LinkProps,
 } from "react-aria-components";
-import { useIsMobile } from "../../hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-mobile.ts";
 import { Button } from "./button";
 import { Input } from "./input";
 import { Separator } from "./separator";
