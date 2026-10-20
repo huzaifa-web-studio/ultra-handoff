@@ -143,6 +143,8 @@ These dashboards are not mounted in production and return 404 there.
 
 **Mailpit:** in development the API sends email to Mailpit by default (`SMTP_HOST=mailpit`, `SMTP_PORT=1025`). Open http://localhost:8025 to read captured messages. Override `SMTP_HOST` in `.env` to test a real SMTP server.
 
+Verification, password reset and account deletion emails are queued through BullMQ, not sent inline. A captured message can take a moment to appear in Mailpit, and the job is visible in Bull Board while it runs. Sessions, verification tokens and auth rate limit counters are stored in Redis through Better Auth's secondary storage, with a copy of each session kept in Postgres.
+
 ### Production stack (`compose.yaml`)
 
 | Service | Purpose | Exposure |

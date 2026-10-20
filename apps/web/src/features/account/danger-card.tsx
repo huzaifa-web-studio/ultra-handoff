@@ -56,7 +56,7 @@ export function DangerCard({ email }: DangerCardProps) {
 
 		setConfirmEmail("");
 		setNotice(
-			"Check your email to finish deleting your account. Nothing is deleted until you open the link in a signed-in browser.",
+			"We are sending a confirmation email. Open the link in a signed-in browser to finish deleting your account. It can take a minute to arrive.",
 		);
 	}
 

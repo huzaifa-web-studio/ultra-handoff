@@ -3,12 +3,13 @@
  *
  * Why: the API process owns a small set of background workers today. Keeping
  * the start and stop logic in one place means the entrypoint does not need to
- * know each queue, and adding a second worker later is a one line change.
+ * know each queue, and adding another worker later is a one line change.
  *
  * Used by: src/index.ts.
  */
 
 import { closeRedis } from "../lib/redis";
+import { startEmailWorker, stopEmailWorker } from "../queues/email";
 import {
 	startUploadVerificationWorker,
 	stopUploadVerification,
@@ -22,11 +23,13 @@ import {
  * a dedicated container later does not require touching the routes.
  */
 export function startWorkers(): () => Promise<void> {
+	startEmailWorker();
 	startUploadVerificationWorker();
 
 	return async () => {
+		// Close the workers before the shared Redis client they depend on.
+		await stopEmailWorker();
 		await stopUploadVerification();
-		// The upload session client is separate from BullMQ's connections.
 		await closeRedis();
 	};
 }

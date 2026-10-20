@@ -6,15 +6,80 @@ import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLigh
 import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
 import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
 import { signUpSchema } from "./schema";
-import { closeAuthDialog } from "./store";
+import { closeAuthDialog, openSignIn } from "./store";
+
+/** Seconds a user must wait between verification emails. */
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export function AuthSignUpForm() {
 	const [sentEmail, setSentEmail] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [resending, setResending] = useState(false);
+	const [resendNotice, setResendNotice] = useState<string | null>(null);
+	const [cooldown, setCooldown] = useState(0);
+
+	// The resend confirmation is transient. Errors stay until the user acts.
+	useAutoDismiss(resendNotice, () => setResendNotice(null));
+
+	/**
+	 * Count the cooldown down one second at a time.
+	 *
+	 * A timeout that re-arms itself is enough here. The screen always shows a
+	 * whole number of seconds, so drift within a tick does not matter.
+	 */
+	useEffect(() => {
+		if (cooldown <= 0) return;
+
+		const timer = window.setTimeout(() => {
+			setCooldown((remaining) => Math.max(0, remaining - 1));
+		}, 1000);
+
+		return () => window.clearTimeout(timer);
+	}, [cooldown]);
+
+	/**
+	 * Ask the API to queue another verification email.
+	 *
+	 * Why a separate action: delivery is asynchronous now, so a message can be
+	 * delayed or land in spam. The user should not have to sign up again.
+	 */
+	async function handleResend() {
+		if (!sentEmail || resending || cooldown > 0) return;
+
+		setResending(true);
+		setError(null);
+		setResendNotice(null);
+
+		try {
+			const { error: resendError } = await authClient.sendVerificationEmail({
+				email: sentEmail,
+			});
+
+			if (resendError) {
+				setError(
+					resendError.message ?? "Could not resend the verification email.",
+				);
+				return;
+			}
+
+			setResendNotice("Verification email sent again.");
+			// Start the wait again so a queued message cannot be spammed.
+			setCooldown(RESEND_COOLDOWN_SECONDS);
+		} catch (err) {
+			setError(
+				err instanceof Error
+					? err.message
+					: "Could not resend the verification email.",
+			);
+		} finally {
+			setResending(false);
+		}
+	}
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "" },
@@ -32,6 +97,8 @@ export function AuthSignUpForm() {
 					return;
 				}
 				setSentEmail(value.email);
+				// The first message was just queued, so start the wait now.
+				setCooldown(RESEND_COOLDOWN_SECONDS);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign up failed");
 			}
@@ -42,16 +109,48 @@ export function AuthSignUpForm() {
 		return (
 			<div className="flex flex-col gap-4 text-center">
 				<p className="text-app-text">
-					We have sent a verification email to{" "}
-					<span className="font-semibold">{sentEmail}</span>.
+					If <span className="font-semibold">{sentEmail}</span> still needs
+					verification, a link is on its way.
 				</p>
 				<p className="text-sm text-app-text-muted">
-					Please check your inbox and click the link to verify your account.
+					It usually arrives within a minute. The link expires in one hour.
 				</p>
+				<p className="text-sm text-app-text-muted">
+					Already have an account?{" "}
+					<Button
+						variant="link"
+						className="h-auto px-0 py-0 active:!transform-none"
+						onPress={() => {
+							closeAuthDialog();
+							openSignIn();
+						}}
+					>
+						Sign in instead
+					</Button>
+				</p>
+				{resendNotice && (
+					<output className="text-sm text-success">{resendNotice}</output>
+				)}
+				{error && (
+					<p role="alert" className="text-sm text-danger">
+						{error}
+					</p>
+				)}
+				<Button
+					variant="outline"
+					loading={resending}
+					isDisabled={resending || cooldown > 0}
+					onPress={handleResend}
+				>
+					{cooldown > 0 ? `Resend in ${cooldown}s` : "Resend email"}
+				</Button>
 				<Button
 					variant="outline"
 					onPress={() => {
 						setSentEmail(null);
+						setResendNotice(null);
+						setError(null);
+						setCooldown(0);
 						form.setFieldValue("password", "");
 					}}
 				>
@@ -119,7 +218,11 @@ export function AuthSignUpForm() {
 					</Field>
 				)}
 			</form.Field>
-			{error && <p className="text-sm text-danger">{error}</p>}
+			{error && (
+				<p role="alert" className="text-sm text-danger">
+					{error}
+				</p>
+			)}
 			<form.Subscribe selector={(s) => s.isSubmitting}>
 				{(isSubmitting) => (
 					<Button type="submit" loading={isSubmitting}>

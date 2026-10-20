@@ -20,7 +20,7 @@ interface DeleteAccountEmailProps {
  * Why: Better Auth cannot delete an OAuth-only account without proof that the
  * request came from the account owner. The generated link carries that proof.
  *
- * Used by: sendDeleteAccountEmail in src/lib/mailer.tsx, triggered by the
+ * Used by: the delete-account template in src/lib/mailer.tsx, queued from the
  * `sendDeleteAccountVerification` callback in src/auth/auth.ts.
  */
 export default function DeleteAccountEmail({ url }: DeleteAccountEmailProps) {

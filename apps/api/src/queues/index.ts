@@ -4,8 +4,9 @@ import { redisConnectionOptions } from "../lib/redis";
 
 /**
  * Registry of BullMQ queues exposed to Bull Board.
- * Add new queues here so they show up in the dev dashboard.
- * Empty by default; production never mounts Bull Board anyway.
+ * Every queue module calls `createQueue` at import time, so the dashboard
+ * lists all of them without an extra registration step.
+ * Production never mounts Bull Board anyway.
  */
 export const queues: Queue[] = [];
 

@@ -73,10 +73,13 @@ void buildApp()
 		app.listen({ port, hostname });
 
 		const shutdown = async () => {
+			// Stop accepting requests first. Better Auth now reads sessions from
+			// Redis, so closing the connections before in-flight requests finish
+			// would turn a graceful deploy into visible auth errors.
+			await app.stop();
 			// A failing Redis connection must not stop the HTTP server from
 			// closing cleanly during a deploy.
 			await stopWorkers().catch(() => undefined);
-			await app.stop();
 			process.exit(0);
 		};
 

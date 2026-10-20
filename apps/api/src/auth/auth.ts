@@ -4,15 +4,12 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { openAPI, organization } from "better-auth/plugins";
 
 import { adminDb } from "../db";
-import { authEnv, isDevelopment, isProduction, serverEnv } from "../lib/env";
-import {
-	sendDeleteAccountEmail,
-	sendResetPasswordEmail,
-	sendVerificationEmail,
-} from "../lib/mailer";
+import { authEnv, isDevelopment, serverEnv } from "../lib/env";
 import { passwordRegex, passwordRuleMessage } from "../lib/password";
+import { enqueueEmail } from "../queues/email";
 import { getAccountDeletionBlocker } from "../services/account.service";
 import { deletePreviousAvatar } from "../services/upload.service";
+import { authSecondaryStorage } from "./secondary-storage";
 
 /**
  * Better Auth instance for the Handoff API.
@@ -31,6 +28,13 @@ export const auth = betterAuth({
 	// organizations (list orgs, accept invitation, setActive), which RLS on
 	// organization/member/invitation would block.
 	database: drizzleAdapter(adminDb, { provider: "pg" }),
+	// Sessions, verification tokens and rate limit counters live in Redis.
+	// `storeSessionInDatabase` keeps a durable copy, so a Redis restart falls
+	// back to Postgres instead of signing every user out.
+	secondaryStorage: authSecondaryStorage,
+	session: {
+		storeSessionInDatabase: true,
+	},
 	user: {
 		deleteUser: {
 			// Disabled by default in Better Auth. The account page owns the UI
@@ -48,7 +52,11 @@ export const auth = betterAuth({
 
 				// Required for Google and GitHub users, who have no password to
 				// re-enter before a destructive action.
-				await sendDeleteAccountEmail(user.email, url);
+				await enqueueEmail({
+					to: user.email,
+					template: "delete-account",
+					url,
+				});
 			},
 			beforeDelete: async (user) => {
 				// Final safeguard for a direct API call that skipped the
@@ -71,17 +79,26 @@ export const auth = betterAuth({
 		requireEmailVerification: true,
 		autoSignIn: true,
 		sendResetPassword: async ({ user, url }) => {
-			await sendResetPasswordEmail(user.email, url);
+			await enqueueEmail({ to: user.email, template: "reset-password", url });
 		},
 	},
 	emailVerification: {
+		// One hour is Better Auth's default, stated here because the sign-up
+		// screen tells the user how long the link stays valid.
+		expiresIn: 60 * 60,
 		sendVerificationEmail: async ({ user, url }) => {
-			if (!isProduction) {
-				console.log("[auth] sending verification email to", user.email, url);
-			}
 			const verifyUrl = new URL(url);
-			verifyUrl.searchParams.set("callbackURL", serverEnv.webUrl);
-			await sendVerificationEmail(user.email, verifyUrl.toString());
+			// Send the browser back to the web app with a flag the home page
+			// turns into a confirmation. Without it the redirect is silent.
+			const verifiedUrl = new URL(serverEnv.webUrl);
+			verifiedUrl.searchParams.set("verified", "1");
+			verifyUrl.searchParams.set("callbackURL", verifiedUrl.toString());
+
+			await enqueueEmail({
+				to: user.email,
+				template: "verification",
+				url: verifyUrl.toString(),
+			});
 		},
 		sendOnSignUp: true,
 		sendOnSignIn: true,
@@ -89,6 +106,29 @@ export const auth = betterAuth({
 	},
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
+			// Sign-up with an existing email must fail loudly. Better Auth
+			// returns a generic success when email verification is required,
+			// which leaves the user waiting for a link that is never sent.
+			// The trade-off is that this reveals whether an address is
+			// registered, which is acceptable for a client-facing app where
+			// the user needs a clear next step.
+			if (ctx.path === "/sign-up/email") {
+				const email = ctx.body?.email;
+
+				if (typeof email === "string") {
+					const existing = await ctx.context.internalAdapter.findUserByEmail(
+						email.trim().toLowerCase(),
+					);
+
+					if (existing?.user) {
+						throw new APIError("UNPROCESSABLE_ENTITY", {
+							message:
+								"An account with this email already exists. Sign in instead.",
+						});
+					}
+				}
+			}
+
 			// Every endpoint that writes a password enforces the same rule.
 			// `set-password` and `change-password` are included so a caller
 			// cannot skip the policy by using a different route.

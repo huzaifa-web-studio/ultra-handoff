@@ -6,10 +6,26 @@ import { authClient } from "#/features/auth/client";
 import { openSignIn, openSignUp } from "#/features/auth/store";
 import { OrganizationDialog } from "#/features/organization/organization-dialog";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({
+	/**
+	 * The verification email redirects here with `verified=1`.
+	 *
+	 * Why validate: the flag comes from a URL, so it has to be parsed into a
+	 * typed boolean before the page can render a confirmation instead of
+	 * silently dropping the user on the home screen. The key stays optional so
+	 * every other link to `/` does not have to pass a search object.
+	 */
+	validateSearch: (search: Record<string, unknown>): { verified?: boolean } => {
+		const verified = search.verified === "1" || search.verified === true;
+
+		return verified ? { verified } : {};
+	},
+	component: Home,
+});
 
 function Home() {
 	const navigate = useNavigate();
+	const { verified } = Route.useSearch();
 	const { data: session } = authClient.useSession();
 	const { data: activeOrg } = authClient.useActiveOrganization();
 	const hasOrg = !!session?.user && !!session.session?.activeOrganizationId;
@@ -46,6 +62,12 @@ function Home() {
 					)}
 				</div>
 			</header>
+			{/* Confirmation for the emailed verification link. */}
+			{verified && (
+				<output className="block border-b border-success bg-success-bg px-6 py-3 text-center text-sm text-success">
+					Email verified. Your account is ready.
+				</output>
+			)}
 			<main className="flex flex-1 items-center justify-center">
 				<h1 className="text-5xl font-bold text-app-text">Ultra Handoff</h1>
 			</main>
