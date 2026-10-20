@@ -53,3 +53,6 @@ Thumbs.db
 .nx/migrate-runs
 
 .env
+
+# SeaweedFS local data (if mounted to host)
+seaweedfs/data/

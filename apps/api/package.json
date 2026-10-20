@@ -16,11 +16,17 @@
     "email": "email dev --dir src/emails"
   },
   "dependencies": {
+    "@bull-board/api": "^9.10.4",
+    "@bull-board/elysia": "^9.10.4",
+    "@bull-board/ui": "^9.10.4",
     "@elysiajs/cors": "^1.4.2",
+    "@elysiajs/openapi": "^1.4.16",
     "@react-email/components": "^1.0.12",
     "better-auth": "^1.7.11",
+    "bullmq": "^6.3.18",
     "drizzle-orm": "^0.45.4",
     "elysia": "^1.4.30",
+    "ioredis": "^6.0.0",
     "nodemailer": "^10.1.7",
     "postgres": "^3.4.9"
   },

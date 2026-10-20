@@ -95,6 +95,54 @@ cd apps/api && bun run db:push
 bun run db:studio
 ```
 
+## Services
+
+### Development stack (`compose.dev.yaml`)
+
+| Service | Purpose | Access |
+|---|---|---|
+| `web` | TanStack Start SPA | http://localhost:3000 |
+| `api` | Elysia REST API | http://localhost:3001 |
+| `postgres` | PostgreSQL 18 database | `localhost:5432` |
+| `redis` | Better Auth sessions and BullMQ job queues | `localhost:6379` |
+| `seaweedfs` | S3-compatible object storage (all-in-one) | S3 API http://localhost:8333, master http://localhost:9333 |
+| `mailpit` | Captures outgoing email for testing | UI http://localhost:8025, SMTP `localhost:1025` |
+| `redis-insight` | Web GUI for browsing Redis | http://localhost:5540 |
+| `db-studio` | Drizzle Studio database browser | https://local.drizzle.studio?host=localhost |
+| `migrate` | One-shot schema migration job | n/a |
+
+Dev-only API dashboards (mounted only when `NODE_ENV=development`):
+
+| Dashboard | URL | Purpose |
+|---|---|---|
+| OpenAPI | http://localhost:3001/openapi | Interactive docs for the Elysia routes |
+| Better Auth reference | http://localhost:3001/api/auth/reference | Docs for auth endpoints and plugins |
+| Bull Board | http://localhost:3001/bull-board | BullMQ queue monitoring |
+
+These dashboards are not mounted in production and return 404 there.
+
+**Drizzle Studio:** the browser may ask for permission to access apps or devices on your local network. Allow it, otherwise the page stays on "Connecting to the Drizzle Kit on localhost:4983". Port 4983 is the local bridge; the UI itself is served from `local.drizzle.studio`.
+
+**Mailpit:** in development the API sends email to Mailpit by default (`SMTP_HOST=mailpit`, `SMTP_PORT=1025`). Open http://localhost:8025 to read captured messages. Override `SMTP_HOST` in `.env` to test a real SMTP server.
+
+### Production stack (`compose.yaml`)
+
+| Service | Purpose | Exposure |
+|---|---|---|
+| `web` | TanStack Start SPA (Nitro) | `WEB_PORT` (3000) |
+| `api` | Compiled Elysia binary | `API_PORT` (3001) |
+| `postgres` | PostgreSQL 18 database | Internal only |
+| `redis` | Sessions and queues | Internal only |
+| `seaweedfs` | S3-compatible object storage | Internal only |
+| `migrate` | Runs migrations before API starts | n/a |
+
+Production uses two Docker networks:
+
+- `ultra-backend`: `postgres`, `redis`, `seaweedfs`, `migrate`, `api`
+- `ultra-frontend`: `api`, `web`
+
+The `web` container can only reach `api`. It cannot resolve or connect to the database, Redis, or object storage. SeaweedFS ports are not published in production.
+
 ## Building
 
 ```bash

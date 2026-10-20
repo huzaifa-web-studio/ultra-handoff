@@ -37,6 +37,91 @@ services:
       retries: 12
       start_period: 10s
 
+  redis:
+    image: redis:8.8.3-alpine3.23
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata-dev:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
+    command:
+      [
+        "server",
+        "-dir=/data",
+        "-s3",
+        "-s3.config=/etc/seaweedfs/s3.json",
+      ]
+    volumes:
+      - seaweedfsdata-dev:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "${SEAWEEDFS_S3_PORT:-8333}:8333"
+      - "${SEAWEEDFS_MASTER_PORT:-9333}:9333"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/ >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  mailpit:
+    # Dev-only email capture. SMTP on 1025, web UI on 8025.
+    image: axllent/mailpit:v1.31.1
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+  redis-insight:
+    # Dev-only Redis GUI. Reachable at http://localhost:5540
+    image: redis/redisinsight:latest
+    restart: unless-stopped
+    ports:
+      - "${REDIS_INSIGHT_PORT:-5540}:5540"
+    volumes:
+      - redisinsight:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  db-studio:
+    # Dev-only Drizzle Studio. Reachable at http://localhost:4983
+    # Built from the dev target because drizzle-kit is a devDependency.
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    command:
+      [
+        "bunx",
+        "drizzle-kit",
+        "studio",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "4983",
+      ]
+    working_dir: /workspace/apps/api
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${DB_STUDIO_PORT:-4983}:4983"
+    restart: "no"
+
   # Runs once per `up`. Idempotent, so re-running is harmless.
   # To skip it: docker compose -f compose.dev.yaml up --no-deps api web
   migrate:
@@ -71,15 +156,29 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-Handoff <[email protected]>}
+      SMTP_FROM: ${SMTP_FROM:-Handoff <[email protected]>}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-admin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-admin}
+      S3_BUCKET: ${S3_BUCKET:-handoff}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_USE_SSL: ${S3_USE_SSL:-false}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
     ports:
@@ -181,3 +280,9 @@ services:
 volumes:
   pgdata-dev:
     name: ultra-pgdata-dev
+  redisdata-dev:
+    name: ultra-redisdata-dev
+  seaweedfsdata-dev:
+    name: ultra-seaweedfsdata-dev
+  redisinsight:
+    name: ultra-redisinsight-dev
