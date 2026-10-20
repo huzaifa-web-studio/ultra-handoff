@@ -8,7 +8,7 @@ import {
 	SidebarMenuItem,
 	SidebarRail,
 } from "@org/ui/components/sidebar";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
 import type * as React from "react";
 import { authClient } from "#/features/auth/client";
@@ -29,6 +29,7 @@ export function AppSidebar({
 	onSignOut?: () => void | Promise<void>;
 }) {
 	const navigate = useNavigate();
+	const { pathname } = useLocation();
 	const { data: activeOrg } = authClient.useActiveOrganization();
 	const orgSlug = activeOrg?.slug ?? "";
 	return (
@@ -41,6 +42,7 @@ export function AppSidebar({
 					<SidebarMenuItem>
 						<SidebarMenuButton
 							href={`/${orgSlug}`}
+							isActive={pathname === `/${orgSlug}`}
 							onClick={(e: React.MouseEvent) => {
 								e.preventDefault();
 								if (orgSlug) navigate({ to: "/$orgSlug", params: { orgSlug } });
