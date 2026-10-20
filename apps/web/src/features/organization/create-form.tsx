@@ -7,7 +7,11 @@ import { useState } from "react";
 import { authClient } from "#/features/auth/client";
 import { createOrganizationSchema } from "./schema";
 
-export function CreateOrganizationForm() {
+export function CreateOrganizationForm({
+	onSuccess,
+}: {
+	onSuccess?: (organizationId: string) => void;
+} = {}) {
 	const navigate = useNavigate();
 	const [error, setError] = useState<string | null>(null);
 
@@ -17,15 +21,24 @@ export function CreateOrganizationForm() {
 		onSubmit: async ({ value }) => {
 			setError(null);
 			try {
-				const { error } = await authClient.organization.create({
+				const { data: org, error } = await authClient.organization.create({
 					name: value.name,
 					slug: value.slug,
 				});
-				if (error) {
-					setError(error.message ?? "Failed to create organization");
+				if (error || !org) {
+					setError(error?.message ?? "Failed to create organization");
 					return;
 				}
-				navigate({ to: "/app" });
+				const { error: activeError } = await authClient.organization.setActive({
+					organizationId: org.id,
+				});
+				if (activeError) {
+					setError(activeError.message ?? "Failed to switch organization");
+					return;
+				}
+				await authClient.getSession();
+				onSuccess?.(org.id);
+				navigate({ to: "/$orgSlug", params: { orgSlug: org.slug } });
 			} catch (err) {
 				setError(
 					err instanceof Error ? err.message : "Failed to create organization",
@@ -49,6 +62,8 @@ export function CreateOrganizationForm() {
 						<FieldLabel>Organization name</FieldLabel>
 						<Input
 							type="text"
+							autoFocus
+							tabIndex={0}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => {

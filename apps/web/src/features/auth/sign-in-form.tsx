@@ -30,7 +30,7 @@ export function AuthSignInForm() {
 					return;
 				}
 				closeAuthDialog();
-				navigate({ to: "/app" });
+				navigate({ to: "/" });
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign in failed");
 			}
@@ -52,6 +52,8 @@ export function AuthSignInForm() {
 						<FieldLabel>Email</FieldLabel>
 						<Input
 							type="email"
+							autoFocus
+							tabIndex={0}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
@@ -96,7 +98,7 @@ export function AuthSignInForm() {
 					onPress={() =>
 						authClient.signIn.social({
 							provider: "github",
-							callbackURL: `${window.location.origin}/app`,
+							callbackURL: `${window.location.origin}/`,
 						})
 					}
 				>
@@ -108,7 +110,7 @@ export function AuthSignInForm() {
 					onPress={() =>
 						authClient.signIn.social({
 							provider: "google",
-							callbackURL: `${window.location.origin}/app`,
+							callbackURL: `${window.location.origin}/`,
 						})
 					}
 				>

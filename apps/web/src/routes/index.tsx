@@ -11,13 +11,14 @@ export const Route = createFileRoute("/")({ component: Home });
 function Home() {
 	const navigate = useNavigate();
 	const { data: session } = authClient.useSession();
+	const { data: activeOrg } = authClient.useActiveOrganization();
 	const hasOrg = !!session?.user && !!session.session?.activeOrganizationId;
 
 	useEffect(() => {
-		if (hasOrg) {
-			navigate({ to: "/app" });
+		if (hasOrg && activeOrg?.slug) {
+			navigate({ to: "/$orgSlug", params: { orgSlug: activeOrg.slug } });
 		}
-	}, [hasOrg, navigate]);
+	}, [hasOrg, activeOrg, navigate]);
 
 	return (
 		<div className="flex min-h-screen flex-col">

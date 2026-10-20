@@ -9,14 +9,9 @@ import {
 	SidebarRail,
 } from "@org/ui/components/sidebar";
 import { useNavigate } from "@tanstack/react-router";
-import {
-	AudioLinesIcon,
-	GalleryVerticalEndIcon,
-	LayoutDashboardIcon,
-	Settings2Icon,
-	TerminalIcon,
-} from "lucide-react";
+import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
 import type * as React from "react";
+import { authClient } from "#/features/auth/client";
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
 import { OrganizationSwitcher } from "./organization-switcher";
@@ -34,37 +29,21 @@ export function AppSidebar({
 	onSignOut?: () => void | Promise<void>;
 }) {
 	const navigate = useNavigate();
+	const { data: activeOrg } = authClient.useActiveOrganization();
+	const orgSlug = activeOrg?.slug ?? "";
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
-				<OrganizationSwitcher
-					organizations={[
-						{
-							name: "Acme Inc",
-							logo: <GalleryVerticalEndIcon />,
-							plan: "Enterprise",
-						},
-						{
-							name: "Acme Corp.",
-							logo: <AudioLinesIcon />,
-							plan: "Startup",
-						},
-						{
-							name: "Evil Corp.",
-							logo: <TerminalIcon />,
-							plan: "Free",
-						},
-					]}
-				/>
+				<OrganizationSwitcher />
 			</SidebarHeader>
 			<SidebarContent>
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<SidebarMenuButton
-							href="/app"
+							href={`/${orgSlug}`}
 							onClick={(e: React.MouseEvent) => {
 								e.preventDefault();
-								navigate({ to: "/app" });
+								if (orgSlug) navigate({ to: "/$orgSlug", params: { orgSlug } });
 							}}
 						>
 							<LayoutDashboardIcon />
@@ -76,11 +55,11 @@ export function AppSidebar({
 					items={[
 						{
 							title: "Settings",
-							url: "/app/settings",
+							url: `/${orgSlug}/settings`,
 							icon: <Settings2Icon />,
 							items: [
-								{ title: "General", url: "/app/settings" },
-								{ title: "Members", url: "/app/settings/members" },
+								{ title: "General", url: `/${orgSlug}/settings` },
+								{ title: "Members", url: `/${orgSlug}/settings/members` },
 							],
 						},
 					]}

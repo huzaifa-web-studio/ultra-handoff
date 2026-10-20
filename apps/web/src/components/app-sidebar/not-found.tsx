@@ -9,7 +9,7 @@ export function AppNotFound() {
 			<p className="text-app-text-muted">
 				The page you are looking for does not exist.
 			</p>
-			<Button onPress={() => navigate({ to: "/app" })}>Go to Dashboard</Button>
+			<Button onPress={() => navigate({ to: "/" })}>Go home</Button>
 		</div>
 	);
 }

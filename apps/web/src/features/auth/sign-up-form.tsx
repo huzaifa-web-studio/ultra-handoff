@@ -81,6 +81,8 @@ export function AuthSignUpForm() {
 						<FieldLabel>Name</FieldLabel>
 						<Input
 							type="text"
+							autoFocus
+							tabIndex={0}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
@@ -144,7 +146,7 @@ export function AuthSignUpForm() {
 						closeAuthDialog();
 						authClient.signIn.social({
 							provider: "github",
-							callbackURL: `${window.location.origin}/app`,
+							callbackURL: `${window.location.origin}/`,
 						});
 					}}
 				>
@@ -157,7 +159,7 @@ export function AuthSignUpForm() {
 						closeAuthDialog();
 						authClient.signIn.social({
 							provider: "google",
-							callbackURL: `${window.location.origin}/app`,
+							callbackURL: `${window.location.origin}/`,
 						});
 					}}
 				>

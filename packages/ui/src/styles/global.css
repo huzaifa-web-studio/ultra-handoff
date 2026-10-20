@@ -207,3 +207,36 @@
 		font-family: var(--font-display);
 	}
 }
+
+/* Custom thin scrollbars (unlayered for higher priority) */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--app-border-strong) transparent;
+}
+html,
+body {
+	scrollbar-width: thin;
+	scrollbar-color: var(--app-border-strong) transparent;
+}
+*::-webkit-scrollbar,
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+	width: 4px;
+	height: 4px;
+}
+*::-webkit-scrollbar-track,
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+	background: var(--app-border-strong);
+	border-radius: 0px;
+}
+*::-webkit-scrollbar-thumb:hover,
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+	background: var(--app-text-muted);
+}

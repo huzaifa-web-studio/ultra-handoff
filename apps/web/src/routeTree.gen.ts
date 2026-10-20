@@ -11,7 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
-import { Route as AppAppRouteImport } from './routes/_app/app'
+import { Route as AppOrgSlugRouteImport } from './routes/_app/$orgSlug'
+import { Route as AppOrgSlugSettingsRouteImport } from './routes/_app/$orgSlug.settings'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,32 +23,40 @@ const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppAppRoute = AppAppRouteImport.update({
-  id: '/app',
-  path: '/app',
+const AppOrgSlugRoute = AppOrgSlugRouteImport.update({
+  id: '/$orgSlug',
+  path: '/$orgSlug',
   getParentRoute: () => AppRoute,
+} as any)
+const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppOrgSlugRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/app': typeof AppAppRoute
+  '/$orgSlug': typeof AppOrgSlugRouteWithChildren
+  '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/app': typeof AppAppRoute
+  '/$orgSlug': typeof AppOrgSlugRouteWithChildren
+  '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
-  '/_app/app': typeof AppAppRoute
+  '/_app/$orgSlug': typeof AppOrgSlugRouteWithChildren
+  '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app'
+  fullPaths: '/' | '/$orgSlug' | '/$orgSlug/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app'
-  id: '__root__' | '/' | '/_app' | '/_app/app'
+  to: '/' | '/$orgSlug' | '/$orgSlug/settings'
+  id: '__root__' | '/' | '/_app' | '/_app/$orgSlug' | '/_app/$orgSlug/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -71,22 +80,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/app': {
-      id: '/_app/app'
-      path: '/app'
-      fullPath: '/app'
-      preLoaderRoute: typeof AppAppRouteImport
+    '/_app/$orgSlug': {
+      id: '/_app/$orgSlug'
+      path: '/$orgSlug'
+      fullPath: '/$orgSlug'
+      preLoaderRoute: typeof AppOrgSlugRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/$orgSlug/settings': {
+      id: '/_app/$orgSlug/settings'
+      path: '/settings'
+      fullPath: '/$orgSlug/settings'
+      preLoaderRoute: typeof AppOrgSlugSettingsRouteImport
+      parentRoute: typeof AppOrgSlugRoute
     }
   }
 }
 
+interface AppOrgSlugRouteChildren {
+  AppOrgSlugSettingsRoute: typeof AppOrgSlugSettingsRoute
+}
+
+const AppOrgSlugRouteChildren: AppOrgSlugRouteChildren = {
+  AppOrgSlugSettingsRoute: AppOrgSlugSettingsRoute,
+}
+
+const AppOrgSlugRouteWithChildren = AppOrgSlugRoute._addFileChildren(
+  AppOrgSlugRouteChildren,
+)
+
 interface AppRouteChildren {
-  AppAppRoute: typeof AppAppRoute
+  AppOrgSlugRoute: typeof AppOrgSlugRouteWithChildren
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAppRoute: AppAppRoute,
+  AppOrgSlugRoute: AppOrgSlugRouteWithChildren,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
