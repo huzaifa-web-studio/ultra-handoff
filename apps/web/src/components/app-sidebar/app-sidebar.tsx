@@ -3,9 +3,6 @@ import {
 	SidebarContent,
 	SidebarFooter,
 	SidebarHeader,
-	SidebarMenu,
-	SidebarMenuButton,
-	SidebarMenuItem,
 	SidebarRail,
 } from "@org/ui/components/sidebar";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -38,23 +35,13 @@ export function AppSidebar({
 				<OrganizationSwitcher />
 			</SidebarHeader>
 			<SidebarContent>
-				<SidebarMenu>
-					<SidebarMenuItem>
-						<SidebarMenuButton
-							href={`/${orgSlug}`}
-							isActive={pathname === `/${orgSlug}`}
-							onClick={(e: React.MouseEvent) => {
-								e.preventDefault();
-								if (orgSlug) navigate({ to: "/$orgSlug", params: { orgSlug } });
-							}}
-						>
-							<LayoutDashboardIcon />
-							<span>Dashboard</span>
-						</SidebarMenuButton>
-					</SidebarMenuItem>
-				</SidebarMenu>
 				<NavMain
 					items={[
+						{
+							title: "Dashboard",
+							url: `/${orgSlug}`,
+							icon: <LayoutDashboardIcon />,
+						},
 						{
 							title: "Settings",
 							url: `/${orgSlug}/settings`,
