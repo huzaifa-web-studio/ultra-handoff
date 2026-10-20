@@ -43,7 +43,7 @@ export function NavProjects({
 						</SidebarMenuButton>
 
 						<DropdownMenuTrigger>
-							<SidebarMenuAction showOnHover className="aria-expanded:bg-muted">
+							<SidebarMenuAction showOnHover>
 								<MoreHorizontalIcon />
 								<span className="sr-only">More</span>
 							</SidebarMenuAction>
