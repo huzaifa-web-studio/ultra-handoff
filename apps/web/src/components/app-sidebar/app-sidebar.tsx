@@ -5,7 +5,7 @@ import {
 	SidebarHeader,
 	SidebarRail,
 } from "@org/ui/components/sidebar";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+
 import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
 import type * as React from "react";
 import { authClient } from "#/features/auth/client";
@@ -25,8 +25,6 @@ export function AppSidebar({
 	};
 	onSignOut?: () => void | Promise<void>;
 }) {
-	const navigate = useNavigate();
-	const { pathname } = useLocation();
 	const { data: activeOrg } = authClient.useActiveOrganization();
 	const orgSlug = activeOrg?.slug ?? "";
 	return (
