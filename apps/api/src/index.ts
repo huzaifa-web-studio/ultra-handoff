@@ -1,30 +1,11 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
-import { auth } from "./auth";
-import { db } from "./db";
-import { users } from "./db/schema";
+import { betterAuth } from "./auth/plugin";
+import { isDevelopment, serverEnv } from "./lib/env";
 import { queues } from "./queues";
 
-const port = Number(process.env.PORT ?? 3001);
-// Elysia defaults to "localhost", which is unreachable from outside the
-// container. Bind every interface so the published port actually works.
-const hostname = process.env.HOST ?? "0.0.0.0";
-
-const betterAuth = new Elysia({ name: "better-auth" })
-	.mount(auth.handler)
-	.macro({
-		auth: {
-			async resolve({ status, request: { headers } }) {
-				const session = await auth.api.getSession({ headers });
-				if (!session) return status(401);
-				return {
-					user: session.user,
-					session: session.session,
-				};
-			},
-		},
-	});
+const { port, host: hostname, webUrl } = serverEnv;
 
 // Bull Board is a development-only dashboard for BullMQ queues.
 // It is never mounted in production, so the routes stay inaccessible there.
@@ -32,7 +13,7 @@ async function buildApp() {
 	const app = new Elysia()
 		.use(
 			cors({
-				origin: process.env.WEB_URL ?? "http://localhost:3000",
+				origin: webUrl,
 				methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 				credentials: true,
 				allowedHeaders: ["Content-Type", "Authorization"],
@@ -40,11 +21,9 @@ async function buildApp() {
 		)
 		.use(betterAuth)
 		.get("/", () => "Hello Huzaifa")
-		.get("/health", () => ({ status: "ok" }))
-		.get("/users", async () => db.select().from(users))
-		.get("/me", ({ user }) => user, { auth: true });
+		.get("/health", () => ({ status: "ok" }));
 
-	if (process.env.NODE_ENV === "development") {
+	if (isDevelopment) {
 		const { openapi } = await import("@elysiajs/openapi");
 		app.use(openapi());
 
@@ -68,11 +47,20 @@ async function buildApp() {
 	return app;
 }
 
-const app = await buildApp();
-app.listen({ port, hostname });
+// Top-level await is not supported by `bun build --compile`, so the async
+// bootstrap runs through a promise chain instead. The exported type is derived
+// from the builder, keeping Eden Treaty types intact.
+export type App = Awaited<ReturnType<typeof buildApp>>;
 
-export type App = typeof app;
+void buildApp()
+	.then((app) => {
+		app.listen({ port, hostname });
 
-console.log(
-	`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`,
-);
+		console.log(
+			`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`,
+		);
+	})
+	.catch((error) => {
+		console.error("Failed to start API", error);
+		process.exit(1);
+	});

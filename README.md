@@ -71,13 +71,31 @@ cd apps/web && bun run dev
 
 ### Environment Setup
 
-Copy `.env.example` to `.env` and adjust values:
+Development and production use separate env files:
 
 ```bash
+# Development
+cp .env.example .env.dev
+
+# Production
 cp .env.example .env
 ```
 
-Key variables: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `WEB_PORT`, `API_PORT`, `VITE_API_URL`.
+The compose scripts pass the right file explicitly:
+
+- `bun run docker:dev` uses `.env.dev`
+- `bun run docker:prod` uses `.env`
+
+If you run Docker Compose by hand, pass the file yourself:
+
+```bash
+docker compose --env-file .env.dev -f compose.dev.yaml up --build --watch
+docker compose --env-file .env -f compose.yaml up -d --build
+```
+
+Compose cannot select its own interpolation env file from inside a compose file. The file is chosen by the CLI flag `--env-file` or by the `COMPOSE_ENV_FILES` environment variable. That is why the commands above include it.
+
+Key variables: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `WEB_PORT`, `API_PORT`, `VITE_API_URL`. In `.env.dev`, point `SMTP_HOST` to `mailpit` and `SMTP_PORT` to `1025` to capture mail locally.
 
 ### Database
 

@@ -3,8 +3,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { openAPI, organization } from "better-auth/plugins";
 
-import { db } from "./db";
-import { sendResetPasswordEmail, sendVerificationEmail } from "./lib/mailer";
+import { db } from "../db";
+import { authEnv, isDevelopment, isProduction, serverEnv } from "../lib/env";
+import { sendResetPasswordEmail, sendVerificationEmail } from "../lib/mailer";
 
 const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
@@ -13,12 +14,14 @@ const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
  * Provides email/password auth, GitHub + Google social login, and the
  * organization plugin for agency/client workspaces.
  *
- * Used by: Elysia route handler in src/index.ts (mounted at /api/auth/*).
+ * Used by: Elysia plugin in src/auth/plugin.ts.
  * Env: BETTER_AUTH_SECRET, BETTER_AUTH_URL, DATABASE_URL,
  *      GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET,
  *      GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET.
  */
 export const auth = betterAuth({
+	secret: authEnv.secret || undefined,
+	baseURL: authEnv.url,
 	database: drizzleAdapter(db, { provider: "pg" }),
 	emailAndPassword: {
 		enabled: true,
@@ -31,12 +34,11 @@ export const auth = betterAuth({
 	},
 	emailVerification: {
 		sendVerificationEmail: async ({ user, url }) => {
-			if (process.env.NODE_ENV !== "production") {
+			if (!isProduction) {
 				console.log("[auth] sending verification email to", user.email, url);
 			}
-			const webUrl = process.env.WEB_URL ?? "http://localhost:3000";
 			const verifyUrl = new URL(url);
-			verifyUrl.searchParams.set("callbackURL", webUrl);
+			verifyUrl.searchParams.set("callbackURL", serverEnv.webUrl);
 			await sendVerificationEmail(user.email, verifyUrl.toString());
 		},
 		sendOnSignUp: true,
@@ -58,20 +60,17 @@ export const auth = betterAuth({
 	},
 	socialProviders: {
 		github: {
-			clientId: process.env.GITHUB_CLIENT_ID ?? "",
-			clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
+			clientId: authEnv.github.clientId,
+			clientSecret: authEnv.github.clientSecret,
 		},
 		google: {
-			clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-			clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+			clientId: authEnv.google.clientId,
+			clientSecret: authEnv.google.clientSecret,
 		},
 	},
-	plugins: [
-		organization(),
-		...(process.env.NODE_ENV === "development" ? [openAPI()] : []),
-	],
+	plugins: [organization(), ...(isDevelopment ? [openAPI()] : [])],
 	trustedOrigins: [
-		process.env.BETTER_AUTH_URL ?? "http://localhost:3001",
+		authEnv.url,
 		"http://localhost:3000",
 		"http://localhost:3001",
 	],

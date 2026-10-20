@@ -1,8 +1,12 @@
 # Development stack with hot reload.
 #
-#   docker compose -f compose.dev.yaml up --build
-#   docker compose -f compose.dev.yaml logs -f
-#   docker compose -f compose.dev.yaml down
+#   docker compose --env-file .env.dev -f compose.dev.yaml up --build --watch
+#   docker compose --env-file .env.dev -f compose.dev.yaml logs -f
+#   docker compose --env-file .env.dev -f compose.dev.yaml down
+#
+# Compose cannot choose its own interpolation env file inside this file: the
+# env file is selected by the CLI (--env-file) or COMPOSE_ENV_FILES. The
+# package.json scripts already pass --env-file .env.dev.
 #
 # Nothing is bind-mounted. Code reaches the containers through Compose's
 # native `develop.watch`, which means:
@@ -97,11 +101,9 @@ services:
 
   db-studio:
     # Dev-only Drizzle Studio. Reachable at http://localhost:4983
-    # Built from the dev target because drizzle-kit is a devDependency.
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-      target: dev
+    # Reuses the API dev image instead of building its own, so `bun install`
+    # runs once for the whole stack.
+    image: ultra-dev-api
     command:
       [
         "bunx",
@@ -125,10 +127,7 @@ services:
   # Runs once per `up`. Idempotent, so re-running is harmless.
   # To skip it: docker compose -f compose.dev.yaml up --no-deps api web
   migrate:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-      target: dev
+    image: ultra-dev-api
     command: ["bun", "run", "db:migrate"]
     working_dir: /workspace/apps/api
     environment:
@@ -139,6 +138,7 @@ services:
     restart: "no"
 
   api:
+    image: ultra-dev-api
     build:
       context: .
       dockerfile: apps/api/Dockerfile

@@ -3,22 +3,23 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import ResetPasswordEmail from "../emails/reset-password";
 import VerificationEmail from "../emails/verification";
+import { isProduction, smtpEnv } from "./env";
 
 /**
  * Nodemailer transporter for sending transactional emails.
  * Configured via SMTP_* environment variables.
  */
 const transporter = nodemailer.createTransport({
-	host: process.env.SMTP_HOST ?? "localhost",
-	port: Number(process.env.SMTP_PORT ?? 587),
-	secure: process.env.SMTP_SECURE === "true",
+	host: smtpEnv.host,
+	port: smtpEnv.port,
+	secure: smtpEnv.secure,
 	auth:
-		process.env.SMTP_USER && process.env.SMTP_PASS
-			? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+		smtpEnv.user && smtpEnv.pass
+			? { user: smtpEnv.user, pass: smtpEnv.pass }
 			: undefined,
 });
 
-const FROM = process.env.SMTP_FROM ?? "Handoff <[email protected]>";
+const FROM = smtpEnv.from;
 
 /**
  * Send a verification email to a newly registered user.
@@ -35,11 +36,11 @@ export async function sendVerificationEmail(
 			subject: "Verify your email address",
 			html,
 		});
-		if (process.env.NODE_ENV !== "production") {
+		if (!isProduction) {
 			console.log("[mailer] verification sent:", info.messageId, "to", to);
 		}
 	} catch (err) {
-		if (process.env.NODE_ENV !== "production") {
+		if (!isProduction) {
 			console.error("[mailer] verification failed:", err);
 		}
 		throw err;

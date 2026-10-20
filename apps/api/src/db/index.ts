@@ -1,12 +1,11 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { databaseEnv } from "../lib/env";
 import * as authSchema from "./auth-schema";
 import * as schema from "./schema";
 
-const connectionString = process.env.DATABASE_URL ?? "";
-
-const client = postgres(connectionString, {
-	max: Number(process.env.DB_POOL_MAX ?? 10),
+const client = postgres(databaseEnv.url, {
+	max: databaseEnv.poolMax,
 });
 
 const mergedSchema = { ...schema, ...authSchema };
