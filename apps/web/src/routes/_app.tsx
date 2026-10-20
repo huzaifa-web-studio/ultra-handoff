@@ -6,9 +6,13 @@ import {
 import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
+import { AppNotFound } from "#/components/app-sidebar/not-found";
 import { authClient } from "#/features/auth/client";
 
-export const Route = createFileRoute("/_app")({ component: AppLayout });
+export const Route = createFileRoute("/_app")({
+	component: AppLayout,
+	notFoundComponent: AppNotFound,
+});
 
 function AppLayout() {
 	const navigate = useNavigate();

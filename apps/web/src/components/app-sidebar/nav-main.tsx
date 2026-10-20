@@ -14,6 +14,7 @@ import {
 	SidebarMenuSubButton,
 	SidebarMenuSubItem,
 } from "@org/ui/components/sidebar";
+import { useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
 
@@ -31,35 +32,58 @@ export function NavMain({
 		}[];
 	}[];
 }) {
+	const navigate = useNavigate();
 	return (
 		<SidebarGroup>
 			<SidebarGroupLabel>Platform</SidebarGroupLabel>
 			<SidebarMenu>
-				{items.map((item) => (
-					<Collapsible
-						key={item.title}
-						defaultExpanded={item.isActive}
-						className="group/collapsible"
-						render={(props) => <SidebarMenuItem {...props} />}
-					>
-						<SidebarMenuButton slot="trigger" tooltip={item.title}>
-							{item.icon}
-							<span>{item.title}</span>
-							<ChevronRightIcon className="ml-auto transition-transform duration-200 group-data-expanded/collapsible:rotate-90" />
-						</SidebarMenuButton>
-						<CollapsibleContent>
-							<SidebarMenuSub>
-								{item.items?.map((subItem) => (
-									<SidebarMenuSubItem key={subItem.title}>
-										<SidebarMenuSubButton href={subItem.url}>
-											<span>{subItem.title}</span>
-										</SidebarMenuSubButton>
-									</SidebarMenuSubItem>
-								))}
-							</SidebarMenuSub>
-						</CollapsibleContent>
-					</Collapsible>
-				))}
+				{items.map((item) =>
+					item.items && item.items.length > 0 ? (
+						<Collapsible
+							key={item.title}
+							defaultExpanded={item.isActive}
+							className="group/collapsible"
+							render={(props) => <SidebarMenuItem {...props} />}
+						>
+							<SidebarMenuButton slot="trigger" tooltip={item.title}>
+								{item.icon}
+								<span>{item.title}</span>
+								<ChevronRightIcon className="ml-auto transition-transform duration-200 group-data-expanded/collapsible:rotate-90" />
+							</SidebarMenuButton>
+							<CollapsibleContent>
+								<SidebarMenuSub>
+									{item.items.map((subItem) => (
+										<SidebarMenuSubItem key={subItem.title}>
+											<SidebarMenuSubButton
+												href={subItem.url}
+												onClick={(e: React.MouseEvent) => {
+													e.preventDefault();
+													navigate({ to: subItem.url });
+												}}
+											>
+												<span>{subItem.title}</span>
+											</SidebarMenuSubButton>
+										</SidebarMenuSubItem>
+									))}
+								</SidebarMenuSub>
+							</CollapsibleContent>
+						</Collapsible>
+					) : (
+						<SidebarMenuItem key={item.title}>
+							<SidebarMenuButton
+								href={item.url}
+								onClick={(e: React.MouseEvent) => {
+									e.preventDefault();
+									navigate({ to: item.url });
+								}}
+								tooltip={item.title}
+							>
+								{item.icon}
+								<span>{item.title}</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					),
+				)}
 			</SidebarMenu>
 		</SidebarGroup>
 	);

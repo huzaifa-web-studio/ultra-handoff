@@ -3,154 +3,23 @@ import {
 	SidebarContent,
 	SidebarFooter,
 	SidebarHeader,
+	SidebarMenu,
+	SidebarMenuButton,
+	SidebarMenuItem,
+	SidebarRail,
 } from "@org/ui/components/sidebar";
+import { useNavigate } from "@tanstack/react-router";
 import {
 	AudioLinesIcon,
-	BookOpenIcon,
-	BotIcon,
-	FrameIcon,
 	GalleryVerticalEndIcon,
-	MapIcon,
-	PieChartIcon,
+	LayoutDashboardIcon,
 	Settings2Icon,
 	TerminalIcon,
-	TerminalSquareIcon,
 } from "lucide-react";
 import type * as React from "react";
 import { NavMain } from "./nav-main";
-import { NavProjects } from "./nav-projects";
 import { NavUser } from "./nav-user";
 import { OrganizationSwitcher } from "./organization-switcher";
-
-// This is sample data.
-const data = {
-	user: {
-		name: "shadcn",
-		email: "m@example.com",
-		avatar: "/avatars/shadcn.jpg",
-	},
-	organizations: [
-		{
-			name: "Acme Inc",
-			logo: <GalleryVerticalEndIcon />,
-			plan: "Enterprise",
-		},
-		{
-			name: "Acme Corp.",
-			logo: <AudioLinesIcon />,
-			plan: "Startup",
-		},
-		{
-			name: "Evil Corp.",
-			logo: <TerminalIcon />,
-			plan: "Free",
-		},
-	],
-	navMain: [
-		{
-			title: "Playground",
-			url: "#",
-			icon: <TerminalSquareIcon />,
-			isActive: true,
-			items: [
-				{
-					title: "History",
-					url: "#",
-				},
-				{
-					title: "Starred",
-					url: "#",
-				},
-				{
-					title: "Settings",
-					url: "#",
-				},
-			],
-		},
-		{
-			title: "Models",
-			url: "#",
-			icon: <BotIcon />,
-			items: [
-				{
-					title: "Genesis",
-					url: "#",
-				},
-				{
-					title: "Explorer",
-					url: "#",
-				},
-				{
-					title: "Quantum",
-					url: "#",
-				},
-			],
-		},
-		{
-			title: "Documentation",
-			url: "#",
-			icon: <BookOpenIcon />,
-			items: [
-				{
-					title: "Introduction",
-					url: "#",
-				},
-				{
-					title: "Get Started",
-					url: "#",
-				},
-				{
-					title: "Tutorials",
-					url: "#",
-				},
-				{
-					title: "Changelog",
-					url: "#",
-				},
-			],
-		},
-		{
-			title: "Settings",
-			url: "#",
-			icon: <Settings2Icon />,
-			items: [
-				{
-					title: "General",
-					url: "#",
-				},
-				{
-					title: "Team",
-					url: "#",
-				},
-				{
-					title: "Billing",
-					url: "#",
-				},
-				{
-					title: "Limits",
-					url: "#",
-				},
-			],
-		},
-	],
-	projects: [
-		{
-			name: "Design Engineering",
-			url: "#",
-			icon: <FrameIcon />,
-		},
-		{
-			name: "Sales & Marketing",
-			url: "#",
-			icon: <PieChartIcon />,
-		},
-		{
-			name: "Travel",
-			url: "#",
-			icon: <MapIcon />,
-		},
-	],
-};
 
 export function AppSidebar({
 	user,
@@ -164,18 +33,72 @@ export function AppSidebar({
 	};
 	onSignOut?: () => void | Promise<void>;
 }) {
+	const navigate = useNavigate();
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
-				<OrganizationSwitcher organizations={data.organizations} />
+				<OrganizationSwitcher
+					organizations={[
+						{
+							name: "Acme Inc",
+							logo: <GalleryVerticalEndIcon />,
+							plan: "Enterprise",
+						},
+						{
+							name: "Acme Corp.",
+							logo: <AudioLinesIcon />,
+							plan: "Startup",
+						},
+						{
+							name: "Evil Corp.",
+							logo: <TerminalIcon />,
+							plan: "Free",
+						},
+					]}
+				/>
 			</SidebarHeader>
 			<SidebarContent>
-				<NavMain items={data.navMain} />
-				<NavProjects projects={data.projects} />
+				<SidebarMenu>
+					<SidebarMenuItem>
+						<SidebarMenuButton
+							href="/app"
+							onClick={(e: React.MouseEvent) => {
+								e.preventDefault();
+								navigate({ to: "/app" });
+							}}
+						>
+							<LayoutDashboardIcon />
+							<span>Dashboard</span>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+				</SidebarMenu>
+				<NavMain
+					items={[
+						{
+							title: "Settings",
+							url: "/app/settings",
+							icon: <Settings2Icon />,
+							items: [
+								{ title: "General", url: "/app/settings" },
+								{ title: "Members", url: "/app/settings/members" },
+							],
+						},
+					]}
+				/>
 			</SidebarContent>
 			<SidebarFooter>
-				<NavUser user={user ?? data.user} onSignOut={onSignOut} />
+				<NavUser
+					user={
+						user ?? {
+							name: "shadcn",
+							email: "m@example.com",
+							avatar: "/avatars/shadcn.jpg",
+						}
+					}
+					onSignOut={onSignOut}
+				/>
 			</SidebarFooter>
+			<SidebarRail />
 		</Sidebar>
 	);
 }
