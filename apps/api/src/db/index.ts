@@ -1,14 +1,29 @@
+/**
+ * Privileged database client.
+ *
+ * Why: this connection authenticates as the Postgres superuser (`app`), which
+ * owns every table and therefore bypasses row level security. It exists for
+ * the things that legitimately need cross-tenant access: migrations, the
+ * Better Auth adapter (list orgs, accept invitations, setActive) and resolving
+ * an organization slug to its id before a tenant scope exists.
+ *
+ * Rule: application services must never import this. Tenant data goes through
+ * `withTenant` in src/db/tenant.ts, which runs as the unprivileged
+ * `app_tenant` role and is subject to RLS.
+ *
+ * Used by: src/auth/**, src/middleware/tenant.ts, scripts/*.
+ */
+
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { databaseEnv } from "../lib/env";
-import * as authSchema from "./auth-schema";
-import * as schema from "./schema";
+import { dbSchema } from "./schema-bundle";
 
-const client = postgres(databaseEnv.url, {
+const adminClient = postgres(databaseEnv.url, {
 	max: databaseEnv.poolMax,
 });
 
-const mergedSchema = { ...schema, ...authSchema };
+export const adminDb = drizzle(adminClient, { schema: dbSchema });
 
-export const db = drizzle(client, { schema: mergedSchema });
-export { schema, authSchema };
+export { adminClient };
+export { authSchema, schema } from "./schema-bundle";

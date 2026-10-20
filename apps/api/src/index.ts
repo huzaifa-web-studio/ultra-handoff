@@ -3,6 +3,7 @@ import { Elysia } from "elysia";
 
 import { betterAuth } from "./auth/plugin";
 import { isDevelopment, serverEnv } from "./lib/env";
+import { tenantPlugin } from "./middleware/tenant";
 import { queues } from "./queues";
 
 const { port, host: hostname, webUrl } = serverEnv;
@@ -20,6 +21,9 @@ async function buildApp() {
 			}),
 		)
 		.use(betterAuth)
+		// Exposes the `tenant` macro. Routes opt in with `{ tenant: true }`
+		// and must live under an `:orgSlug` path.
+		.use(tenantPlugin)
 		.get("/", () => "Hello Huzaifa")
 		.get("/health", () => ({ status: "ok" }));
 

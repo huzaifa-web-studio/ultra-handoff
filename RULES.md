@@ -228,6 +228,24 @@ Components installed in `packages/ui/src/components/ui/` are shared across all a
 
 ---
 
+## 23. Business Data Goes Through RLS
+
+**Row level security covers business tables only.** Better Auth's tables (`user`, `session`, `account`, `verification`, `organization`, `member`, `invitation`) belong to the auth library and stay on the privileged client, without policies. Everything Handoff owns is business data and must run inside `withTenant` from `src/db/tenant.ts`.
+
+Postgres enforces isolation for the unprivileged `app_tenant` role only. The superuser `app` role owns every table and therefore bypasses every policy, so using it for business data silently disables the whole boundary.
+
+- ✅ `withTenant(tenant, (tx) => projectService.list(tx))`
+- ❌ `adminDb.select().from(project)`
+
+Rules:
+
+- `adminDb` (`src/db/index.ts`) is for migrations, the Better Auth adapter and resolving an org slug to an id. Nothing else.
+- Better Auth tables are read and written through its API, never joined into a business query.
+- Services accept the `TenantTx` object, never `adminDb`.
+- New business tables need `organization_id`, an index on it, and `tenantIsolation(...)` from `src/db/rls.ts`, then `.enableRLS()`.
+- Add each new business table to `TENANT_TABLES` in `scripts/bootstrap-db.ts` so the role is granted access explicitly.
+- Never set `app.current_org_id` outside `withTenant`, and never take it from a request body. It comes from `resolveTenantScope` after a membership check.
+
 ## Enforcement
 
 These rules are enforced by:

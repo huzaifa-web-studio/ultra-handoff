@@ -3,7 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { openAPI, organization } from "better-auth/plugins";
 
-import { db } from "../db";
+import { adminDb } from "../db";
 import { authEnv, isDevelopment, isProduction, serverEnv } from "../lib/env";
 import { sendResetPasswordEmail, sendVerificationEmail } from "../lib/mailer";
 
@@ -22,7 +22,10 @@ const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 export const auth = betterAuth({
 	secret: authEnv.secret || undefined,
 	baseURL: authEnv.url,
-	database: drizzleAdapter(db, { provider: "pg" }),
+	// Runs on the privileged client on purpose: Better Auth reads across
+	// organizations (list orgs, accept invitation, setActive), which RLS on
+	// organization/member/invitation would block.
+	database: drizzleAdapter(adminDb, { provider: "pg" }),
 	emailAndPassword: {
 		enabled: true,
 		minPasswordLength: 8,

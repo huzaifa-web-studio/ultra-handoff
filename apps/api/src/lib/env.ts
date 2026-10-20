@@ -41,9 +41,17 @@ export const serverEnv = {
 	webUrl: readString("WEB_URL", "http://localhost:3000"),
 };
 
-/** PostgreSQL connection settings. */
+/**
+ * PostgreSQL connection settings.
+ *
+ * `url` connects as the privileged role (migrations, Better Auth).
+ * `appUrl` connects as `app_tenant`, the unprivileged role that row level
+ * security applies to. They are deliberately separate: falling back to `url`
+ * would silently disable every tenant policy.
+ */
 export const databaseEnv = {
 	url: readString("DATABASE_URL"),
+	appUrl: readString("DATABASE_APP_URL"),
 	poolMax: readNumber("DB_POOL_MAX", 10),
 };
 

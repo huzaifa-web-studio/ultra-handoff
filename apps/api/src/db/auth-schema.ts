@@ -74,6 +74,13 @@ export const verification = pgTable(
 	(table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
+/**
+ * Organization (tenant root). Owned by the Better Auth organization plugin.
+ *
+ * Deliberately has no RLS: these tables are Better Auth's internal state and
+ * are only ever touched through its API on the privileged client. RLS applies
+ * to business tables instead.
+ */
 export const organization = pgTable("organization", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),

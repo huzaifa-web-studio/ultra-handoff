@@ -1,0 +1,6 @@
+ALTER TABLE "invitation" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "member" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "organization" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
+CREATE POLICY "tenant_isolation" ON "invitation" AS PERMISSIVE FOR ALL TO "app_tenant" USING ("invitation"."organization_id" = current_setting('app.current_org_id', true)) WITH CHECK ("invitation"."organization_id" = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "tenant_isolation" ON "member" AS PERMISSIVE FOR ALL TO "app_tenant" USING ("member"."organization_id" = current_setting('app.current_org_id', true)) WITH CHECK ("member"."organization_id" = current_setting('app.current_org_id', true));--> statement-breakpoint
+CREATE POLICY "tenant_isolation" ON "organization" AS PERMISSIVE FOR ALL TO "app_tenant" USING ("organization"."id" = current_setting('app.current_org_id', true)) WITH CHECK ("organization"."id" = current_setting('app.current_org_id', true));

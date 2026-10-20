@@ -128,10 +128,13 @@ services:
   # To skip it: docker compose -f compose.dev.yaml up --no-deps api web
   migrate:
     image: ultra-dev-api
-    command: ["bun", "run", "db:migrate"]
+    # db:setup creates the app_tenant role before migrations, because the RLS
+    # policies reference it. Both steps are idempotent.
+    command: ["bun", "run", "db:setup"]
     working_dir: /workspace/apps/api
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+      DATABASE_APP_URL: postgres://${POSTGRES_APP_USER:-app_tenant}:${POSTGRES_APP_PASSWORD:-tenant}@postgres:5432/${POSTGRES_DB:-app}
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,6 +152,8 @@ services:
       PORT: "3001"
       HOST: 0.0.0.0
       DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+      # Unprivileged role. Every tenant query goes through it, so RLS applies.
+      DATABASE_APP_URL: postgres://${POSTGRES_APP_USER:-app_tenant}:${POSTGRES_APP_PASSWORD:-tenant}@postgres:5432/${POSTGRES_DB:-app}
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}

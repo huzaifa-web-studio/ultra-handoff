@@ -10,12 +10,17 @@
     "lint": "biome lint .",
     "check": "biome check .",
     "db:generate": "drizzle-kit generate",
+    "db:bootstrap": "bun run scripts/bootstrap-db.ts",
+    "db:setup": "bun run db:bootstrap && bun run db:migrate",
+    "db:verify-rls": "bun run scripts/verify-rls.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "email": "email dev --dir src/emails"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1153.0",
+    "@aws-sdk/s3-request-presigner": "^3.1153.0",
     "@bull-board/api": "^9.10.4",
     "@bull-board/elysia": "^9.10.4",
     "@bull-board/ui": "^9.10.4",
