@@ -18,7 +18,10 @@ export function AuthSignInForm() {
 
 	const form = useForm({
 		defaultValues: { email: "", password: "" },
-		validators: { onChange: signInSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// each field's own onChange validator, so typing in one input never
+		// marks the untouched ones as invalid.
+		validators: { onSubmit: signInSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			try {
@@ -47,7 +50,10 @@ export function AuthSignInForm() {
 			}}
 			className="flex flex-col gap-4"
 		>
-			<form.Field name="email">
+			<form.Field
+				name="email"
+				validators={{ onChange: signInSchema.shape.email }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel>Email</FieldLabel>
@@ -63,7 +69,10 @@ export function AuthSignInForm() {
 					</Field>
 				)}
 			</form.Field>
-			<form.Field name="password">
+			<form.Field
+				name="password"
+				validators={{ onChange: signInSchema.shape.password }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel>Password</FieldLabel>

@@ -73,7 +73,10 @@ export function AuthForgotPasswordForm({
 
 	const form = useForm({
 		defaultValues: { email: defaultEmail },
-		validators: { onChange: forgotPasswordSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// the field's own onChange validator, so nothing is flagged before the
+		// user has typed in it.
+		validators: { onSubmit: forgotPasswordSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 
@@ -159,7 +162,10 @@ export function AuthForgotPasswordForm({
 				new password.
 			</p>
 
-			<form.Field name="email">
+			<form.Field
+				name="email"
+				validators={{ onChange: forgotPasswordSchema.shape.email }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="forgot-email">Email</FieldLabel>

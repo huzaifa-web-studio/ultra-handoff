@@ -43,7 +43,10 @@ export function ResetPasswordForm({
 
 	const form = useForm({
 		defaultValues: { newPassword: "", confirmPassword: "" },
-		validators: { onChange: resetPasswordSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// each field's own onChange validator, so typing in one input never
+		// marks the untouched ones as invalid.
+		validators: { onSubmit: resetPasswordSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			setNeedsNewLink(false);
@@ -108,7 +111,10 @@ export function ResetPasswordForm({
 			}}
 			className="flex flex-col gap-4"
 		>
-			<form.Field name="newPassword">
+			<form.Field
+				name="newPassword"
+				validators={{ onChange: resetPasswordSchema.shape.newPassword }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="reset-new-password">New password</FieldLabel>
@@ -125,7 +131,12 @@ export function ResetPasswordForm({
 				)}
 			</form.Field>
 
-			<form.Field name="confirmPassword">
+			<form.Field
+				name="confirmPassword"
+				validators={{
+					onChange: resetPasswordSchema.shape.confirmPassword,
+				}}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="reset-confirm-password">

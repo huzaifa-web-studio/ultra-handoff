@@ -18,7 +18,10 @@ export function CreateOrganizationForm({
 
 	const form = useForm({
 		defaultValues: { name: "", slug: "" },
-		validators: { onChange: createOrganizationSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// each field's own onChange validator, so typing in one input never
+		// marks the untouched ones as invalid.
+		validators: { onSubmit: createOrganizationSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			try {
@@ -57,7 +60,10 @@ export function CreateOrganizationForm({
 			}}
 			className="flex flex-col gap-4"
 		>
-			<form.Field name="name">
+			<form.Field
+				name="name"
+				validators={{ onChange: createOrganizationSchema.shape.name }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel>Organization name</FieldLabel>
@@ -74,14 +80,24 @@ export function CreateOrganizationForm({
 									.toLowerCase()
 									.replace(/[^a-z0-9]+/g, "-")
 									.replace(/^-|-$/g, "");
-								form.setFieldValue("slug", slug);
+								// The user is editing the name, not the slug. Only
+								// revalidate the slug once they have touched it, so
+								// a derived value never flags an untouched field.
+								const slugTouched = form.getFieldMeta("slug")?.isTouched;
+								form.setFieldValue("slug", slug, {
+									dontUpdateMeta: !slugTouched,
+									dontValidate: !slugTouched,
+								});
 							}}
 						/>
 						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>
-			<form.Field name="slug">
+			<form.Field
+				name="slug"
+				validators={{ onChange: createOrganizationSchema.shape.slug }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel>Slug</FieldLabel>

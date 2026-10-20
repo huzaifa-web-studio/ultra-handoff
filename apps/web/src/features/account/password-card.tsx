@@ -113,7 +113,10 @@ function ChangePasswordForm() {
 			newPassword: "",
 			confirmPassword: "",
 		},
-		validators: { onChange: changePasswordSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// each field's own onChange validator, so typing in one input never
+		// marks the untouched ones as invalid.
+		validators: { onSubmit: changePasswordSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			setSaved(null);
@@ -159,7 +162,10 @@ function ChangePasswordForm() {
 			}}
 			className="flex flex-col gap-4"
 		>
-			<form.Field name="currentPassword">
+			<form.Field
+				name="currentPassword"
+				validators={{ onChange: changePasswordSchema.shape.currentPassword }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="current-password">Current password</FieldLabel>
@@ -175,7 +181,10 @@ function ChangePasswordForm() {
 				)}
 			</form.Field>
 
-			<form.Field name="newPassword">
+			<form.Field
+				name="newPassword"
+				validators={{ onChange: changePasswordSchema.shape.newPassword }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="new-password">New password</FieldLabel>
@@ -194,7 +203,10 @@ function ChangePasswordForm() {
 				)}
 			</form.Field>
 
-			<form.Field name="confirmPassword">
+			<form.Field
+				name="confirmPassword"
+				validators={{ onChange: changePasswordSchema.shape.confirmPassword }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="confirm-password">
@@ -245,7 +257,10 @@ function SetPasswordForm({
 
 	const form = useForm({
 		defaultValues: { newPassword: "", confirmPassword: "" },
-		validators: { onChange: setPasswordSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// each field's own onChange validator, so typing in one input never
+		// marks the untouched ones as invalid.
+		validators: { onSubmit: setPasswordSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 
@@ -277,7 +292,10 @@ function SetPasswordForm({
 			}}
 			className="flex flex-col gap-4"
 		>
-			<form.Field name="newPassword">
+			<form.Field
+				name="newPassword"
+				validators={{ onChange: setPasswordSchema.shape.newPassword }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="set-new-password">New password</FieldLabel>
@@ -296,7 +314,10 @@ function SetPasswordForm({
 				)}
 			</form.Field>
 
-			<form.Field name="confirmPassword">
+			<form.Field
+				name="confirmPassword"
+				validators={{ onChange: setPasswordSchema.shape.confirmPassword }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel htmlFor="set-confirm-password">

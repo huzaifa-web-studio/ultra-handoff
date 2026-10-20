@@ -48,7 +48,10 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 
 	const form = useForm({
 		defaultValues: { name: user.name },
-		validators: { onChange: profileSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// the field's own onChange validator, so the input is only flagged
+		// once the user has edited it.
+		validators: { onSubmit: profileSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			setSaved(null);
@@ -98,7 +101,10 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 					}}
 					className="flex flex-col gap-4"
 				>
-					<form.Field name="name">
+					<form.Field
+						name="name"
+						validators={{ onChange: profileSchema.shape.name }}
+					>
 						{(field) => (
 							<Field>
 								<FieldLabel htmlFor="account-name">Display name</FieldLabel>

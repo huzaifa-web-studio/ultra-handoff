@@ -65,7 +65,10 @@ export function AuthSignUpForm() {
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "" },
-		validators: { onChange: signUpSchema },
+		// Validate the whole object on submit only. Live feedback comes from
+		// each field's own onChange validator, so typing in one input never
+		// marks the untouched ones as invalid.
+		validators: { onSubmit: signUpSchema },
 		onSubmit: async ({ value }) => {
 			setError(null);
 			try {
@@ -155,10 +158,7 @@ export function AuthSignUpForm() {
 		>
 			<form.Field
 				name="name"
-				validators={{
-					onChange: ({ value }) =>
-						value.trim() ? undefined : "Name is required",
-				}}
+				validators={{ onChange: signUpSchema.shape.name }}
 			>
 				{(field) => (
 					<Field>
@@ -175,7 +175,10 @@ export function AuthSignUpForm() {
 					</Field>
 				)}
 			</form.Field>
-			<form.Field name="email">
+			<form.Field
+				name="email"
+				validators={{ onChange: signUpSchema.shape.email }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel>Email</FieldLabel>
@@ -189,7 +192,10 @@ export function AuthSignUpForm() {
 					</Field>
 				)}
 			</form.Field>
-			<form.Field name="password">
+			<form.Field
+				name="password"
+				validators={{ onChange: signUpSchema.shape.password }}
+			>
 				{(field) => (
 					<Field>
 						<FieldLabel>Password</FieldLabel>
