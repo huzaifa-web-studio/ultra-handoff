@@ -8,6 +8,10 @@ import { authEnv, isDevelopment, serverEnv } from "../lib/env";
 import { passwordRegex, passwordRuleMessage } from "../lib/password";
 import { enqueueEmail } from "../queues/email";
 import { getAccountDeletionBlocker } from "../services/account.service";
+import {
+	rememberActiveOrganization,
+	resolveSignInOrganization,
+} from "../services/organization.service";
 import { deletePreviousAvatar } from "../services/upload.service";
 import { authSecondaryStorage } from "./secondary-storage";
 
@@ -36,6 +40,24 @@ export const auth = betterAuth({
 		storeSessionInDatabase: true,
 	},
 	user: {
+		/**
+		 * Server-owned pointer to the workspace the user was last active in.
+		 *
+		 * Why: sessions start with no active organization, so without this a
+		 * returning user would be sent back to the create-organization screen.
+		 * `input: false` keeps it out of the sign-up and update payloads and
+		 * `returned: false` keeps it out of session and user responses; only
+		 * the session hooks below (through the organization service) read and
+		 * write it.
+		 */
+		additionalFields: {
+			lastActiveOrganizationId: {
+				type: "string",
+				required: false,
+				input: false,
+				returned: false,
+			},
+		},
 		deleteUser: {
 			// Disabled by default in Better Auth. The account page owns the UI
 			// and the confirmation, but the deletion itself stays in the
@@ -109,6 +131,56 @@ export const auth = betterAuth({
 		sendOnSignUp: true,
 		sendOnSignIn: true,
 		autoSignInAfterVerification: true,
+	},
+	databaseHooks: {
+		session: {
+			create: {
+				/**
+				 * Scope a new session to the user's last workspace.
+				 *
+				 * Why a database hook: it runs inside the sign-in request (and
+				 * the social callback and post-verification sign-in), so the
+				 * session is created already scoped. Calling setActive from the
+				 * client afterwards would be a second request and a visible
+				 * detour through the create-organization screen.
+				 */
+				before: async (session) => {
+					// Respect an explicit value from an internal caller.
+					const requested = session.activeOrganizationId;
+					const activeOrganizationId =
+						typeof requested === "string" && requested
+							? requested
+							: await resolveSignInOrganization(session.userId);
+
+					return { data: { ...session, activeOrganizationId } };
+				},
+			},
+			update: {
+				/**
+				 * Remember every active-organization change.
+				 *
+				 * `setActive` and `acceptInvitation` both update the session
+				 * through the adapter, which lands here. Null is ignored: an
+				 * explicit unset, or a rejected setActive for an organization
+				 * the caller does not belong to, must not erase the memory.
+				 */
+				after: async (session) => {
+					const activeOrganizationId = session.activeOrganizationId;
+
+					if (
+						typeof activeOrganizationId !== "string" ||
+						!activeOrganizationId
+					) {
+						return;
+					}
+
+					await rememberActiveOrganization(
+						session.userId,
+						activeOrganizationId,
+					);
+				},
+			},
+		},
 	},
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {

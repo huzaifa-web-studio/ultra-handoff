@@ -12,6 +12,21 @@ export const user = pgTable("user", {
 		.defaultNow()
 		.$onUpdate(() => /* @__PURE__ */ new Date())
 		.notNull(),
+	/**
+	 * The organization the user was last working in.
+	 *
+	 * Why: a new session starts with `activeOrganizationId` unset, which would
+	 * send a returning user back to the create-organization screen. This
+	 * pointer lets the sign-in session hook restore their last workspace in
+	 * the same request. Declared in `user.additionalFields` as server-owned
+	 * (`input: false`) and hidden from responses (`returned: false`).
+	 *
+	 * `set null` keeps it safe when the organization is deleted.
+	 */
+	lastActiveOrganizationId: text("last_active_organization_id").references(
+		() => organization.id,
+		{ onDelete: "set null" },
+	),
 });
 
 export const session = pgTable(
