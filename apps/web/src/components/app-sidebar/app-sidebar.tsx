@@ -21,7 +21,7 @@ export function AppSidebar({
 	user?: {
 		name: string;
 		email: string;
-		avatar: string;
+		avatar?: string;
 	};
 	onSignOut?: () => void | Promise<void>;
 }) {
@@ -33,24 +33,32 @@ export function AppSidebar({
 				<OrganizationSwitcher />
 			</SidebarHeader>
 			<SidebarContent>
-				<NavMain
-					items={[
-						{
-							title: "Dashboard",
-							url: `/${orgSlug}`,
-							icon: <LayoutDashboardIcon />,
-						},
-						{
-							title: "Settings",
-							url: `/${orgSlug}/settings`,
-							icon: <Settings2Icon />,
-							items: [
-								{ title: "General", url: `/${orgSlug}/settings` },
-								{ title: "Members", url: `/${orgSlug}/settings/members` },
-							],
-						},
-					]}
-				/>
+				{/*
+				 * Without an active organization the dashboard and settings
+				 * links would point at `/` and `/settings`, which do not exist.
+				 * Account settings still needs the shell, so the nav is simply
+				 * empty until an organization is selected.
+				 */}
+				{activeOrg && (
+					<NavMain
+						items={[
+							{
+								title: "Dashboard",
+								url: `/${orgSlug}`,
+								icon: <LayoutDashboardIcon />,
+							},
+							{
+								title: "Settings",
+								url: `/${orgSlug}/settings`,
+								icon: <Settings2Icon />,
+								items: [
+									{ title: "General", url: `/${orgSlug}/settings` },
+									{ title: "Members", url: `/${orgSlug}/settings/members` },
+								],
+							},
+						]}
+					/>
+				)}
 			</SidebarContent>
 			<SidebarFooter>
 				<NavUser
@@ -58,7 +66,6 @@ export function AppSidebar({
 						user ?? {
 							name: "shadcn",
 							email: "m@example.com",
-							avatar: "/avatars/shadcn.jpg",
 						}
 					}
 					onSignOut={onSignOut}

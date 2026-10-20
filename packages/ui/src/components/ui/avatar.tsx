@@ -8,14 +8,16 @@ function Avatar({
 	size = "default",
 	...props
 }: React.ComponentProps<"div"> & {
-	size?: "default" | "sm" | "lg";
+	// `xl` is used by account settings, where the avatar is the primary control
+	// on the page and needs more presence than the sidebar size.
+	size?: "default" | "sm" | "lg" | "xl";
 }) {
 	return (
 		<div
 			data-slot="avatar"
 			data-size={size}
 			className={cn(
-				"group/avatar relative flex size-8 shrink-0 rounded-full select-none after:absolute after:inset-0 after:rounded-full after:border after:border-border after:mix-blend-darken data-[size=lg]:size-10 data-[size=sm]:size-6 dark:after:mix-blend-lighten",
+				"group/avatar relative flex size-8 shrink-0 rounded-full select-none after:absolute after:inset-0 after:rounded-full after:border after:border-border after:mix-blend-darken data-[size=xl]:size-20 data-[size=lg]:size-10 data-[size=sm]:size-6 dark:after:mix-blend-lighten",
 				className,
 			)}
 			{...props}
@@ -50,7 +52,7 @@ function AvatarFallback({ className, ...props }: React.ComponentProps<"div">) {
 		<div
 			data-slot="avatar-fallback"
 			className={cn(
-				"flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs peer-data-[state=error]:flex peer-[*]:hidden",
+				"flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs group-data-[size=xl]/avatar:text-2xl peer-data-[state=error]:flex peer-[*]:hidden",
 				className,
 			)}
 			{...props}
@@ -67,6 +69,7 @@ function AvatarBadge({ className, ...props }: React.ComponentProps<"span">) {
 				"group-data-[size=sm]/avatar:size-2 group-data-[size=sm]/avatar:[&>svg]:hidden",
 				"group-data-[size=default]/avatar:size-2.5 group-data-[size=default]/avatar:[&>svg]:size-2",
 				"group-data-[size=lg]/avatar:size-3 group-data-[size=lg]/avatar:[&>svg]:size-2",
+				"group-data-[size=xl]/avatar:size-4 group-data-[size=xl]/avatar:[&>svg]:size-3",
 				className,
 			)}
 			{...props}

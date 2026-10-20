@@ -7,6 +7,7 @@ import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
 import { signInSchema } from "./schema";
 import { closeAuthDialog } from "./store";
@@ -58,11 +59,7 @@ export function AuthSignInForm() {
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
-						<FieldError
-							errors={field.state.meta.errors.map((e) => ({
-								message: String(e),
-							}))}
-						/>
+						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>
@@ -75,11 +72,7 @@ export function AuthSignInForm() {
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
-						<FieldError
-							errors={field.state.meta.errors.map((e) => ({
-								message: String(e),
-							}))}
-						/>
+						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>

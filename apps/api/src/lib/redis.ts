@@ -1,3 +1,5 @@
+import Redis from "ioredis";
+
 import { redisEnv } from "./env";
 
 /**
@@ -20,3 +22,30 @@ export const redisConnectionOptions = {
 	port,
 	password: redisEnv.password,
 };
+
+/**
+ * Lazily created client for short lived application state.
+ *
+ * Why not reuse a BullMQ connection: BullMQ owns and duplicates its own
+ * connections, and closing those on shutdown must not close the client used
+ * for upload sessions. This one is ours.
+ *
+ * Used by: src/lib/storage/session.ts.
+ */
+let redisClient: Redis | null = null;
+
+export function getRedis(): Redis {
+	if (!redisClient) {
+		redisClient = new Redis(redisConnectionOptions);
+	}
+
+	return redisClient;
+}
+
+/** Close the shared client during graceful shutdown. */
+export async function closeRedis(): Promise<void> {
+	if (redisClient) {
+		await redisClient.quit();
+		redisClient = null;
+	}
+}

@@ -5,6 +5,10 @@ import { betterAuth } from "./auth/plugin";
 import { isDevelopment, serverEnv } from "./lib/env";
 import { tenantPlugin } from "./middleware/tenant";
 import { queues } from "./queues";
+import { accountRoutes } from "./routes/account";
+import { fileRoutes } from "./routes/files";
+import { uploadRoutes } from "./routes/uploads";
+import { startWorkers } from "./workers";
 
 const { port, host: hostname, webUrl } = serverEnv;
 
@@ -24,6 +28,10 @@ async function buildApp() {
 		// Exposes the `tenant` macro. Routes opt in with `{ tenant: true }`
 		// and must live under an `:orgSlug` path.
 		.use(tenantPlugin)
+		// Account level routes. Uploads are user scoped, not tenant scoped.
+		.use(uploadRoutes)
+		.use(fileRoutes)
+		.use(accountRoutes)
 		.get("/", () => "Hello Huzaifa")
 		.get("/health", () => ({ status: "ok" }));
 
@@ -58,7 +66,22 @@ export type App = Awaited<ReturnType<typeof buildApp>>;
 
 void buildApp()
 	.then((app) => {
+		// Workers share the process so deployment stays a single container.
+		// The returned function closes every queue and connection cleanly.
+		const stopWorkers = startWorkers();
+
 		app.listen({ port, hostname });
+
+		const shutdown = async () => {
+			// A failing Redis connection must not stop the HTTP server from
+			// closing cleanly during a deploy.
+			await stopWorkers().catch(() => undefined);
+			await app.stop();
+			process.exit(0);
+		};
+
+		process.once("SIGTERM", shutdown);
+		process.once("SIGINT", shutdown);
 
 		console.log(
 			`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`,

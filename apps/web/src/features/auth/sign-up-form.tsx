@@ -7,6 +7,7 @@ import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
 import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
+import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
 import { signUpSchema } from "./schema";
 import { closeAuthDialog } from "./store";
@@ -87,11 +88,7 @@ export function AuthSignUpForm() {
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
-						<FieldError
-							errors={field.state.meta.errors.map((e) => ({
-								message: String(e),
-							}))}
-						/>
+						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>
@@ -105,11 +102,7 @@ export function AuthSignUpForm() {
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
-						<FieldError
-							errors={field.state.meta.errors.map((e) => ({
-								message: String(e),
-							}))}
-						/>
+						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>
@@ -122,11 +115,7 @@ export function AuthSignUpForm() {
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
-						<FieldError
-							errors={field.state.meta.errors.map((e) => ({
-								message: String(e),
-							}))}
-						/>
+						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>

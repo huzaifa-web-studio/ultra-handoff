@@ -1,5 +1,10 @@
 import { SidebarInset, SidebarProvider } from "@org/ui/components/sidebar";
-import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
+import {
+	createFileRoute,
+	Outlet,
+	useLocation,
+	useNavigate,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 import { AppHeader } from "#/components/app-sidebar/app-header";
 import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
@@ -13,18 +18,29 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
 	const navigate = useNavigate();
+	const { pathname } = useLocation();
 	const { data: session, isPending } = authClient.useSession();
+
+	// Account settings belong to the user, not to an organization. Every other
+	// screen under `_app` still needs an active organization, so the guard is
+	// relaxed for this one path only.
+	const needsOrganization = pathname !== "/account";
+	const missingScope =
+		isPending ||
+		!session?.user ||
+		(needsOrganization && !session.session?.activeOrganizationId);
 
 	useEffect(() => {
 		if (
 			!isPending &&
-			(!session?.user || !session.session?.activeOrganizationId)
+			(!session?.user ||
+				(needsOrganization && !session.session?.activeOrganizationId))
 		) {
 			navigate({ to: "/" });
 		}
-	}, [session, isPending, navigate]);
+	}, [session, isPending, needsOrganization, navigate]);
 
-	if (isPending || !session?.user || !session.session?.activeOrganizationId) {
+	if (missingScope) {
 		return null;
 	}
 
@@ -39,15 +55,20 @@ function AppLayout() {
 				user={{
 					name: session.user.name ?? session.user.email,
 					email: session.user.email,
-					avatar: session.user.image ?? "/avatars/shadcn.jpg",
+					avatar: session.user.image ?? undefined,
 				}}
 				onSignOut={handleSignOut}
 			/>
 			<SidebarInset>
 				<AppHeader />
-				<main className="flex-1 p-8">
+				{/*
+				 * SidebarInset already renders the <main> landmark, so the
+				 * scrollable content area is a plain div. Keeping it separate
+				 * from the sticky header means only the content scrolls.
+				 */}
+				<div className="min-w-0 flex-1 p-8">
 					<Outlet />
-				</main>
+				</div>
 			</SidebarInset>
 		</SidebarProvider>
 	);

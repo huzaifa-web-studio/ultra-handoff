@@ -25,7 +25,13 @@ export function AppHeader() {
 		.filter((c): c is { label: string; pathname: string } => Boolean(c.label));
 
 	return (
-		<header className="flex h-14 items-center gap-2 border-b border-app-border px-4">
+		/*
+		 * Sticky so the breadcrumb and sidebar trigger stay reachable while the
+		 * page content scrolls. `z-30` keeps it above page content but below
+		 * the mobile sidebar sheet. A solid background is intentional: the
+		 * content must not show through the bar while scrolling.
+		 */
+		<header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-app-border bg-background px-4">
 			<SidebarTrigger />
 			<Breadcrumb>
 				<BreadcrumbList>

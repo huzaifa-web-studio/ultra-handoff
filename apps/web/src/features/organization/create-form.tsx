@@ -5,6 +5,7 @@ import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "#/features/auth/client";
+import { toFieldErrors } from "#/lib/form-errors";
 import { createOrganizationSchema } from "./schema";
 
 export function CreateOrganizationForm({
@@ -76,11 +77,7 @@ export function CreateOrganizationForm({
 								form.setFieldValue("slug", slug);
 							}}
 						/>
-						<FieldError
-							errors={field.state.meta.errors.map((e) => ({
-								message: String(e),
-							}))}
-						/>
+						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>
@@ -94,11 +91,7 @@ export function CreateOrganizationForm({
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
-						<FieldError
-							errors={field.state.meta.errors.map((e) => ({
-								message: String(e),
-							}))}
-						/>
+						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 					</Field>
 				)}
 			</form.Field>

@@ -58,12 +58,15 @@ services:
     # S3 gateway listens on 8333, master on 9333.
     image: chrislusf/seaweedfs:latest
     restart: unless-stopped
+    # `-s3.allowedOrigins` is required for browser preflight: the SPA origin is
+    # not the S3 origin, and without it the presigned PUT never starts.
     command:
       [
         "server",
         "-dir=/data",
         "-s3",
         "-s3.config=/etc/seaweedfs/s3.json",
+        "-s3.allowedOrigins=${S3_ALLOWED_ORIGINS:-http://localhost:3000}",
       ]
     volumes:
       - seaweedfsdata:/data
@@ -116,6 +119,8 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      # Public web origin. Used for CORS and Better Auth trusted origins.
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -129,6 +134,9 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
+      # Must be the browser reachable reverse proxy for SeaweedFS. The proxy
+      # has to preserve the Host header, otherwise the SigV4 signature fails.
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://seaweedfs:8333}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-admin}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-admin}
       S3_BUCKET: ${S3_BUCKET:-handoff}
@@ -155,13 +163,15 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # Client visible API URL. Vite inlines it at build time, so it has to
+        # be a build arg, not only a runtime environment variable.
+        VITE_API_URL: ${VITE_API_URL:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "3000"
       HOST: 0.0.0.0
-      # Baked into the client bundle at build time. Anything the browser needs
-      # must be passed as a build arg in apps/web/Dockerfile, not just here.
       VITE_API_URL: ${VITE_API_URL:-}
     depends_on:
       api:

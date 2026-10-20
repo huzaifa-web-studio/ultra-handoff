@@ -36,6 +36,11 @@ CMD ["bun", "run", "dev"]
 FROM deps AS builder
 COPY . .
 WORKDIR /workspace/apps/web
+# Vite inlines `import.meta.env.VITE_API_URL` into the client bundle, so the
+# value has to exist at build time. A runtime environment variable alone would
+# leave production pointing at the localhost fallback.
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 RUN bun run build
 
 # ---------------------------------------------------------------------------

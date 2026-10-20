@@ -6,8 +6,7 @@ import { openAPI, organization } from "better-auth/plugins";
 import { adminDb } from "../db";
 import { authEnv, isDevelopment, isProduction, serverEnv } from "../lib/env";
 import { sendResetPasswordEmail, sendVerificationEmail } from "../lib/mailer";
-
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+import { passwordRegex, passwordRuleMessage } from "../lib/password";
 
 /**
  * Better Auth instance for the Handoff API.
@@ -50,12 +49,21 @@ export const auth = betterAuth({
 	},
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
-			if (ctx.path === "/sign-up/email" || ctx.path === "/reset-password") {
+			// Every endpoint that writes a password enforces the same rule.
+			// `set-password` and `change-password` are included so a caller
+			// cannot skip the policy by using a different route.
+			const passwordPaths = [
+				"/sign-up/email",
+				"/reset-password",
+				"/change-password",
+				"/set-password",
+			];
+
+			if (passwordPaths.includes(ctx.path)) {
 				const password = ctx.body?.password ?? ctx.body?.newPassword;
 				if (password && !passwordRegex.test(password)) {
 					throw new APIError("BAD_REQUEST", {
-						message:
-							"Password must be at least 8 characters with uppercase, lowercase, number, and special character",
+						message: passwordRuleMessage,
 					});
 				}
 			}
@@ -74,8 +82,14 @@ export const auth = betterAuth({
 	plugins: [organization(), ...(isDevelopment ? [openAPI()] : [])],
 	trustedOrigins: [
 		authEnv.url,
-		"http://localhost:3000",
-		"http://localhost:3001",
+		// The web origin is what the browser sends. In production this is the
+		// public app URL, so it must not be left as a localhost default.
+		serverEnv.webUrl,
+		// Local ports stay allowed in development only. Keeping them out of
+		// production avoids trusting an origin that can never be correct there.
+		...(isDevelopment
+			? ["http://localhost:3000", "http://localhost:3001"]
+			: []),
 	],
 });
 

@@ -85,9 +85,29 @@ export const smtpEnv = {
 	from: readString("SMTP_FROM", "Handoff <[email protected]>"),
 };
 
-/** S3-compatible object storage (SeaweedFS) settings. */
+/**
+ * S3-compatible object storage (SeaweedFS) settings.
+ *
+ * `endpoint` is the address the API uses for server to server calls.
+ * `publicEndpoint` is the address a browser uses for presigned uploads. They
+ * are deliberately separate: inside Docker the service name resolves, but the
+ * user's browser cannot resolve `seaweedfs`. The public endpoint must be a
+ * reverse proxy that preserves the Host header, because the host is part of
+ * the SigV4 signature.
+ *
+ * The old fallback reused `S3_ENDPOINT` here, which silently produced a
+ * `http://seaweedfs:8333/...` URL that no browser could open. In development
+ * the fallback is now the published host port. In production it stays empty
+ * on purpose, and signing fails with a clear error until the operator sets a
+ * real public URL.
+ */
 export const s3Env = {
 	endpoint: readString("S3_ENDPOINT", "http://seaweedfs:8333"),
+	publicEndpoint:
+		readString("S3_PUBLIC_ENDPOINT") ||
+		(isDevelopment
+			? `http://localhost:${readNumber("S3_PUBLIC_PORT", 8333)}`
+			: ""),
 	accessKey: readString("S3_ACCESS_KEY", "admin"),
 	secretKey: readString("S3_SECRET_KEY", "admin"),
 	bucket: readString("S3_BUCKET", "handoff"),

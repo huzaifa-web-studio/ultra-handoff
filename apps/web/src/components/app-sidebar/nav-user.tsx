@@ -1,6 +1,5 @@
 "use client";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@org/ui/components/avatar";
 import {
 	DropdownMenu,
 	DropdownMenuGroup,
@@ -18,6 +17,8 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react";
 
+import { UserAvatar } from "#/components/user-avatar";
+
 export function NavUser({
 	user,
 	onSignOut,
@@ -25,7 +26,7 @@ export function NavUser({
 	user: {
 		name: string;
 		email: string;
-		avatar: string;
+		avatar?: string;
 	};
 	onSignOut?: () => void | Promise<void>;
 }) {
@@ -39,10 +40,7 @@ export function NavUser({
 						size="lg"
 						className="aria-expanded:bg-sidebar-accent aria-expanded:text-sidebar-accent-foreground"
 					>
-						<Avatar>
-							<AvatarImage src={user.avatar} alt={user.name} />
-							<AvatarFallback>CN</AvatarFallback>
-						</Avatar>
+						<UserAvatar src={user.avatar} name={user.name} />
 						<div className="grid flex-1 text-left text-sm leading-tight">
 							<span className="truncate font-medium">{user.name}</span>
 							<span className="truncate text-xs">{user.email}</span>
@@ -57,10 +55,7 @@ export function NavUser({
 						<DropdownMenuGroup>
 							<DropdownMenuLabel className="p-0 font-normal">
 								<div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-									<Avatar>
-										<AvatarImage src={user.avatar} alt={user.name} />
-										<AvatarFallback>CN</AvatarFallback>
-									</Avatar>
+									<UserAvatar src={user.avatar} name={user.name} />
 									<div className="grid flex-1 text-left text-sm leading-tight">
 										<span className="truncate font-medium">{user.name}</span>
 										<span className="truncate text-xs">{user.email}</span>
