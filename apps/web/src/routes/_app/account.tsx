@@ -10,6 +10,7 @@
 
 import { Skeleton } from "@org/ui/components/skeleton";
 import { createFileRoute } from "@tanstack/react-router";
+import { DangerCard } from "#/features/account/danger-card";
 import { useLinkedAccounts } from "#/features/account/hooks";
 import { PasswordCard } from "#/features/account/password-card";
 import { ProfileCard } from "#/features/account/profile-card";
@@ -54,6 +55,8 @@ function AccountPage() {
 					await accountsQuery.refetch();
 				}}
 			/>
+
+			<DangerCard email={session.user.email} />
 		</div>
 	);
 }
@@ -68,6 +71,8 @@ function AccountSkeleton() {
 			</div>
 			<Skeleton className="h-72 w-full" />
 			<Skeleton className="h-56 w-full" />
+			<Skeleton className="h-64 w-full" />
+			{/* Danger zone */}
 			<Skeleton className="h-64 w-full" />
 		</div>
 	);

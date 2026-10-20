@@ -15,6 +15,7 @@ import { type Job, QueueEvents, Worker } from "bullmq";
 import { redisConnectionOptions } from "../lib/redis";
 import {
 	deleteObject,
+	getUploadSession,
 	headObject,
 	isNotFoundError,
 	readHeadBytes,
@@ -22,7 +23,6 @@ import {
 	UPLOAD_POLICIES,
 	type UploadSession,
 } from "../lib/storage";
-import { getUploadSession } from "../lib/storage";
 import {
 	markUploadRejected,
 	markUploadVerified,

@@ -18,9 +18,31 @@ import { Elysia, t } from "elysia";
 import { auth } from "../auth/auth";
 import { authMacro } from "../auth/plugin";
 import { isValidPassword, passwordRuleMessage } from "../lib/password";
+import { getAccountDeletionBlocker } from "../services/account.service";
 
 export const accountRoutes = new Elysia()
 	.use(authMacro)
+	/**
+	 * Preflight for the delete account card.
+	 *
+	 * Why: Better Auth's email step happens before `beforeDelete`, so without
+	 * this check the user would receive an email even when the deletion is
+	 * blocked by organization ownership. Returning the reason here lets the
+	 * card show it before any email is sent.
+	 */
+	.get(
+		"/account/delete-check",
+		async ({ user }) => {
+			const blocker = await getAccountDeletionBlocker(user.id);
+
+			if (blocker) {
+				return { allowed: false as const, reason: blocker };
+			}
+
+			return { allowed: true as const };
+		},
+		{ auth: true },
+	)
 	/**
 	 * Add a password to an account that signed up with a social provider.
 	 *

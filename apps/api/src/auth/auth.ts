@@ -5,8 +5,14 @@ import { openAPI, organization } from "better-auth/plugins";
 
 import { adminDb } from "../db";
 import { authEnv, isDevelopment, isProduction, serverEnv } from "../lib/env";
-import { sendResetPasswordEmail, sendVerificationEmail } from "../lib/mailer";
+import {
+	sendDeleteAccountEmail,
+	sendResetPasswordEmail,
+	sendVerificationEmail,
+} from "../lib/mailer";
 import { passwordRegex, passwordRuleMessage } from "../lib/password";
+import { getAccountDeletionBlocker } from "../services/account.service";
+import { deletePreviousAvatar } from "../services/upload.service";
 
 /**
  * Better Auth instance for the Handoff API.
@@ -25,6 +31,40 @@ export const auth = betterAuth({
 	// organizations (list orgs, accept invitation, setActive), which RLS on
 	// organization/member/invitation would block.
 	database: drizzleAdapter(adminDb, { provider: "pg" }),
+	user: {
+		deleteUser: {
+			// Disabled by default in Better Auth. The account page owns the UI
+			// and the confirmation, but the deletion itself stays in the
+			// library so sessions and linked accounts cascade correctly.
+			enabled: true,
+			sendDeleteAccountVerification: async ({ user, url }) => {
+				// Check before sending anything. A blocked user should see the
+				// reason in the account card, not receive an email that can
+				// only fail when the link is opened.
+				const blocker = await getAccountDeletionBlocker(user.id);
+				if (blocker) {
+					throw new APIError("BAD_REQUEST", { message: blocker });
+				}
+
+				// Required for Google and GitHub users, who have no password to
+				// re-enter before a destructive action.
+				await sendDeleteAccountEmail(user.email, url);
+			},
+			beforeDelete: async (user) => {
+				// Final safeguard for a direct API call that skipped the
+				// preflight check. The same rule as the card and the email
+				// callback, from one shared helper.
+				const blocker = await getAccountDeletionBlocker(user.id);
+				if (blocker) {
+					throw new APIError("BAD_REQUEST", { message: blocker });
+				}
+
+				// Best effort. The user row still exists here, so we have the
+				// image URL needed to find the object in SeaweedFS.
+				await deletePreviousAvatar(user.id, user.image);
+			},
+		},
+	},
 	emailAndPassword: {
 		enabled: true,
 		minPasswordLength: 8,

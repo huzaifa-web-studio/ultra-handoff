@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import DeleteAccountEmail from "../emails/delete-account";
 import ResetPasswordEmail from "../emails/reset-password";
 import VerificationEmail from "../emails/verification";
 import { isProduction, smtpEnv } from "./env";
@@ -59,6 +60,26 @@ export async function sendResetPasswordEmail(
 		from: FROM,
 		to,
 		subject: "Reset your password",
+		html,
+	});
+}
+
+/**
+ * Send the confirmation link for account deletion.
+ *
+ * Why email: Better Auth uses this link as proof that the account owner, not
+ * just an active session, asked for the deletion. It matters most for Google
+ * and GitHub users, who have no password to re-enter.
+ */
+export async function sendDeleteAccountEmail(
+	to: string,
+	url: string,
+): Promise<void> {
+	const html = renderToStaticMarkup(<DeleteAccountEmail url={url} />);
+	await transporter.sendMail({
+		from: FROM,
+		to,
+		subject: "Confirm your account deletion",
 		html,
 	});
 }

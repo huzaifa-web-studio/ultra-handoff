@@ -12,6 +12,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { authClient } from "#/features/auth/client";
+import { api, readApiError } from "#/lib/api";
 
 /** The subset of a Better Auth account row the UI needs. */
 export type LinkedAccount = {
@@ -85,6 +86,56 @@ export function useUnlinkAccount() {
 				throw new Error(
 					error.message ?? "Could not disconnect that sign-in method.",
 				);
+			}
+		},
+	});
+}
+
+/**
+ * Ask the API whether the account is allowed to be deleted.
+ *
+ * Why a preflight: Better Auth sends the confirmation email before its
+ * `beforeDelete` hook runs. Checking here means a blocked user sees the reason
+ * in the card and never receives an email that can only fail.
+ */
+export function useAccountDeletionCheck() {
+	return useQuery({
+		queryKey: ["account", "delete-check"],
+		queryFn: async () => {
+			const { data, error } = await api.account["delete-check"].get();
+
+			if (error) {
+				throw new Error(
+					readApiError(
+						error,
+						"Could not check whether your account can be deleted.",
+					),
+				);
+			}
+
+			return data;
+		},
+	});
+}
+
+/**
+ * Start the deletion flow.
+ *
+ * Better Auth sends a confirmation email. The account is only deleted when the
+ * user opens that link in a signed-in browser, and the callback redirects back
+ * to the app afterwards.
+ */
+export function useDeleteAccount() {
+	return useMutation({
+		mutationFn: async () => {
+			const { error } = await authClient.deleteUser({
+				// Where the emailed confirmation link lands after the account
+				// is deleted. Without it the link falls back to the API origin.
+				callbackURL: `${window.location.origin}/`,
+			});
+
+			if (error) {
+				throw new Error(error.message ?? "Could not delete your account.");
 			}
 		},
 	});
