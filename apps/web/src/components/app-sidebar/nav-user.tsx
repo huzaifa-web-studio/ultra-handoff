@@ -15,7 +15,8 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "@org/ui/components/sidebar";
-import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { ChevronsUpDownIcon, LogOutIcon, UserIcon } from "lucide-react";
 
 export function NavUser({
 	user,
@@ -29,6 +30,7 @@ export function NavUser({
 	onSignOut?: () => void | Promise<void>;
 }) {
 	const { isMobile } = useSidebar();
+	const navigate = useNavigate();
 	return (
 		<SidebarMenu>
 			<SidebarMenuItem>
@@ -64,8 +66,20 @@ export function NavUser({
 							</DropdownMenuLabel>
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
+						<DropdownMenuItem
+							className="cursor-pointer"
+							onAction={() => {
+								navigate({ to: "/account" });
+							}}
+						>
+							<UserIcon />
+							Account
+						</DropdownMenuItem>
 						<DropdownMenuSeparator />
-						<DropdownMenuItem onAction={() => onSignOut?.()}>
+						<DropdownMenuItem
+							className="cursor-pointer"
+							onAction={() => onSignOut?.()}
+						>
 							<LogOutIcon />
 							Sign Out
 						</DropdownMenuItem>
