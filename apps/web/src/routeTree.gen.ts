@@ -16,8 +16,12 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AppOrgSlugRouteImport } from './routes/_app/$orgSlug'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
+import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as AppOrgSlugIndexRouteImport } from './routes/_app/$orgSlug.index'
 import { Route as AppOrgSlugSettingsRouteImport } from './routes/_app/$orgSlug.settings'
+import { Route as AppOrgSlugSettingsIndexRouteImport } from './routes/_app/$orgSlug.settings.index'
+import { Route as AppOrgSlugSettingsInvitationsRouteImport } from './routes/_app/$orgSlug.settings.invitations'
+import { Route as AppOrgSlugSettingsMembersRouteImport } from './routes/_app/$orgSlug.settings.members'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -53,6 +57,11 @@ const AuthErrorRoute = AuthErrorRouteImport.update({
   path: '/auth/error',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
+  id: '/invite/$invitationId',
+  path: '/invite/$invitationId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppOrgSlugIndexRoute = AppOrgSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -63,6 +72,23 @@ const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppOrgSlugRoute,
 } as any)
+const AppOrgSlugSettingsIndexRoute = AppOrgSlugSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppOrgSlugSettingsRoute,
+} as any)
+const AppOrgSlugSettingsInvitationsRoute =
+  AppOrgSlugSettingsInvitationsRouteImport.update({
+    id: '/invitations',
+    path: '/invitations',
+    getParentRoute: () => AppOrgSlugSettingsRoute,
+  } as any)
+const AppOrgSlugSettingsMembersRoute =
+  AppOrgSlugSettingsMembersRouteImport.update({
+    id: '/members',
+    path: '/members',
+    getParentRoute: () => AppOrgSlugSettingsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -71,8 +97,12 @@ export interface FileRoutesByFullPath {
   '/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
-  '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/$orgSlug/': typeof AppOrgSlugIndexRoute
+  '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
+  '/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
+  '/$orgSlug/settings/': typeof AppOrgSlugSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -80,8 +110,11 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
-  '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/$orgSlug': typeof AppOrgSlugIndexRoute
+  '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
+  '/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
+  '/$orgSlug/settings': typeof AppOrgSlugSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -92,8 +125,12 @@ export interface FileRoutesById {
   '/_app/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/_app/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
-  '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
+  '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/_app/$orgSlug/': typeof AppOrgSlugIndexRoute
+  '/_app/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
+  '/_app/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
+  '/_app/$orgSlug/settings/': typeof AppOrgSlugSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -104,8 +141,12 @@ export interface FileRouteTypes {
     | '/$orgSlug'
     | '/account'
     | '/auth/error'
+    | '/invite/$invitationId'
     | '/$orgSlug/settings'
     | '/$orgSlug/'
+    | '/$orgSlug/settings/invitations'
+    | '/$orgSlug/settings/members'
+    | '/$orgSlug/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -113,8 +154,11 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/account'
     | '/auth/error'
-    | '/$orgSlug/settings'
+    | '/invite/$invitationId'
     | '/$orgSlug'
+    | '/$orgSlug/settings/invitations'
+    | '/$orgSlug/settings/members'
+    | '/$orgSlug/settings'
   id:
     | '__root__'
     | '/'
@@ -124,8 +168,12 @@ export interface FileRouteTypes {
     | '/_app/$orgSlug'
     | '/_app/account'
     | '/auth/error'
+    | '/invite/$invitationId'
     | '/_app/$orgSlug/settings'
     | '/_app/$orgSlug/'
+    | '/_app/$orgSlug/settings/invitations'
+    | '/_app/$orgSlug/settings/members'
+    | '/_app/$orgSlug/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -134,6 +182,7 @@ export interface RootRouteChildren {
   DeleteAccountRoute: typeof DeleteAccountRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   AuthErrorRoute: typeof AuthErrorRoute
+  InviteInvitationIdRoute: typeof InviteInvitationIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -187,6 +236,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthErrorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invite/$invitationId': {
+      id: '/invite/$invitationId'
+      path: '/invite/$invitationId'
+      fullPath: '/invite/$invitationId'
+      preLoaderRoute: typeof InviteInvitationIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/$orgSlug/': {
       id: '/_app/$orgSlug/'
       path: '/'
@@ -201,16 +257,52 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSlugSettingsRouteImport
       parentRoute: typeof AppOrgSlugRoute
     }
+    '/_app/$orgSlug/settings/': {
+      id: '/_app/$orgSlug/settings/'
+      path: '/'
+      fullPath: '/$orgSlug/settings/'
+      preLoaderRoute: typeof AppOrgSlugSettingsIndexRouteImport
+      parentRoute: typeof AppOrgSlugSettingsRoute
+    }
+    '/_app/$orgSlug/settings/invitations': {
+      id: '/_app/$orgSlug/settings/invitations'
+      path: '/invitations'
+      fullPath: '/$orgSlug/settings/invitations'
+      preLoaderRoute: typeof AppOrgSlugSettingsInvitationsRouteImport
+      parentRoute: typeof AppOrgSlugSettingsRoute
+    }
+    '/_app/$orgSlug/settings/members': {
+      id: '/_app/$orgSlug/settings/members'
+      path: '/members'
+      fullPath: '/$orgSlug/settings/members'
+      preLoaderRoute: typeof AppOrgSlugSettingsMembersRouteImport
+      parentRoute: typeof AppOrgSlugSettingsRoute
+    }
   }
 }
 
+interface AppOrgSlugSettingsRouteChildren {
+  AppOrgSlugSettingsInvitationsRoute: typeof AppOrgSlugSettingsInvitationsRoute
+  AppOrgSlugSettingsMembersRoute: typeof AppOrgSlugSettingsMembersRoute
+  AppOrgSlugSettingsIndexRoute: typeof AppOrgSlugSettingsIndexRoute
+}
+
+const AppOrgSlugSettingsRouteChildren: AppOrgSlugSettingsRouteChildren = {
+  AppOrgSlugSettingsInvitationsRoute: AppOrgSlugSettingsInvitationsRoute,
+  AppOrgSlugSettingsMembersRoute: AppOrgSlugSettingsMembersRoute,
+  AppOrgSlugSettingsIndexRoute: AppOrgSlugSettingsIndexRoute,
+}
+
+const AppOrgSlugSettingsRouteWithChildren =
+  AppOrgSlugSettingsRoute._addFileChildren(AppOrgSlugSettingsRouteChildren)
+
 interface AppOrgSlugRouteChildren {
-  AppOrgSlugSettingsRoute: typeof AppOrgSlugSettingsRoute
+  AppOrgSlugSettingsRoute: typeof AppOrgSlugSettingsRouteWithChildren
   AppOrgSlugIndexRoute: typeof AppOrgSlugIndexRoute
 }
 
 const AppOrgSlugRouteChildren: AppOrgSlugRouteChildren = {
-  AppOrgSlugSettingsRoute: AppOrgSlugSettingsRoute,
+  AppOrgSlugSettingsRoute: AppOrgSlugSettingsRouteWithChildren,
   AppOrgSlugIndexRoute: AppOrgSlugIndexRoute,
 }
 
@@ -236,6 +328,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeleteAccountRoute: DeleteAccountRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   AuthErrorRoute: AuthErrorRoute,
+  InviteInvitationIdRoute: InviteInvitationIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

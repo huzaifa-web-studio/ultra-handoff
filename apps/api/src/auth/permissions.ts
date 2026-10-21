@@ -26,6 +26,31 @@ export type OrgRole = (typeof ORG_ROLES)[number];
 export const ORG_SETTINGS_ROLES = ["owner", "admin"] as const;
 
 /**
+ * Organization capacity limits.
+ *
+ * Why constants: the organization plugin enforces these numbers on every
+ * write, and the members and invitations pages quote them back to the user
+ * ("14 of 100 seats used"). Keeping one source prevents the UI from promising
+ * something the library will reject.
+ */
+export const ORG_MEMBERSHIP_LIMIT = 100;
+export const ORG_INVITATION_LIMIT = 100;
+
+/** An invitation stays valid for one week. The email states the same window. */
+export const ORG_INVITATION_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+/** Largest batch accepted by a bulk invite or bulk member action. */
+export const BULK_INVITE_MAX = 25;
+export const BULK_SELECTION_MAX = 100;
+
+/** Invitations one organization may send per hour, on top of Better Auth limits. */
+export const ORG_INVITES_PER_HOUR = 100;
+
+/** Magic links are short lived and can only be requested once a minute. */
+export const MAGIC_LINK_TTL_SECONDS = 60 * 10;
+export const MAGIC_LINK_COOLDOWN_SECONDS = 60;
+
+/**
  * Slugs that would collide with a root level web route or an API prefix.
  *
  * An organization lives at `/<slug>`, so a slug like `account` would make the
@@ -134,6 +159,43 @@ export function validateOrganizationSlug(slug: string): string {
 	}
 
 	return value;
+}
+
+/** True when the role may invite, remove and re-role other members. */
+export function canManageMembers(role: string): boolean {
+	return canEditOrganization(role);
+}
+
+/** True when the role may manage owners and other admins. */
+export function canManageOwners(role: string): boolean {
+	return isOrganizationOwner(role);
+}
+
+/**
+ * True when the actor is allowed to modify the target member at all.
+ *
+ * Product rule: an admin manages members only. Owners and admins are read only
+ * to an admin, which stops two admins from removing each other. The owner has
+ * no such restriction.
+ */
+export function canManageTarget(
+	actorRole: string,
+	targetRole: string,
+): boolean {
+	if (canManageOwners(actorRole)) return true;
+
+	return parseRoleList(targetRole).every((value) => value === "member");
+}
+
+/**
+ * Roles an actor may hand out through an invitation.
+ *
+ * Owner is deliberately absent. Ownership is transferred by promoting an
+ * existing member from the members page, which requires an explicit
+ * confirmation, not by email invitation.
+ */
+export function assignableInvitationRoles(actorRole: string): OrgRole[] {
+	return canManageOwners(actorRole) ? ["member", "admin"] : ["member"];
 }
 
 /** Trim a display name, rejecting an empty result. */

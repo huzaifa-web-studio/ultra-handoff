@@ -5,63 +5,21 @@ import { PasswordInput } from "@org/ui/components/password-input";
 import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
 import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
-import { ArrowLeft } from "lucide-react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
-import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
 import { signUpSchema } from "./schema";
-import { closeAuthDialog, openSignIn } from "./store";
+import { closeAuthDialog } from "./store";
+import { broadcastAuth } from "./sync";
 
 export function AuthSignUpForm() {
-	const [sentEmail, setSentEmail] = useState<string | null>(null);
+	const navigate = useNavigate();
+	const location = useLocation();
+	// On the invite page the card needs the session to move to the accept
+	// state, so the form must not navigate away.
+	const isInvitePage = location.pathname.startsWith("/invite/");
 	const [error, setError] = useState<string | null>(null);
-	const [resending, setResending] = useState(false);
-	const [resendNotice, setResendNotice] = useState<string | null>(null);
-	const cooldown = useCooldown();
-
-	// The resend confirmation is transient. Errors stay until the user acts.
-	useAutoDismiss(resendNotice, () => setResendNotice(null));
-
-	/**
-	 * Ask the API to queue another verification email.
-	 *
-	 * Why a separate action: delivery is asynchronous now, so a message can be
-	 * delayed or land in spam. The user should not have to sign up again.
-	 */
-	async function handleResend() {
-		if (!sentEmail || resending || cooldown.isActive) return;
-
-		setResending(true);
-		setError(null);
-		setResendNotice(null);
-
-		try {
-			const { error: resendError } = await authClient.sendVerificationEmail({
-				email: sentEmail,
-			});
-
-			if (resendError) {
-				setError(
-					resendError.message ?? "Could not resend the verification email.",
-				);
-				return;
-			}
-
-			setResendNotice("Verification email sent again.");
-			// Start the wait again so a queued message cannot be spammed.
-			cooldown.start();
-		} catch (err) {
-			setError(
-				err instanceof Error
-					? err.message
-					: "Could not resend the verification email.",
-			);
-		} finally {
-			setResending(false);
-		}
-	}
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "" },
@@ -81,71 +39,22 @@ export function AuthSignUpForm() {
 					setError(error.message ?? "Sign up failed");
 					return;
 				}
-				setSentEmail(value.email);
-				// The first message was just queued, so start the wait now.
-				cooldown.start();
+
+				// The account is ready and Better Auth signed the new user in,
+				// so the app can take over from here. The confirmation mail is
+				// on its way and the profile shows the address as unverified
+				// until it is opened.
+				closeAuthDialog();
+				broadcastAuth("auth:signed-in");
+
+				if (!isInvitePage) {
+					navigate({ to: "/" });
+				}
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign up failed");
 			}
 		},
 	});
-
-	if (sentEmail) {
-		return (
-			<div className="flex flex-col gap-4 text-center">
-				<p className="text-app-text">
-					If <span className="font-semibold">{sentEmail}</span> still needs
-					verification, a link is on its way.
-				</p>
-				<p className="text-sm text-app-text-muted">
-					It usually arrives within a minute. The link expires in one hour.
-				</p>
-				<p className="text-sm text-app-text-muted">
-					Already have an account?{" "}
-					<Button
-						variant="link"
-						className="h-auto px-0 py-0 active:!transform-none"
-						onPress={() => {
-							closeAuthDialog();
-							openSignIn();
-						}}
-					>
-						Sign in instead
-					</Button>
-				</p>
-				{resendNotice && (
-					<output className="text-sm text-success">{resendNotice}</output>
-				)}
-				{error && (
-					<p role="alert" className="text-sm text-danger">
-						{error}
-					</p>
-				)}
-				<Button
-					variant="outline"
-					loading={resending}
-					isDisabled={resending || cooldown.isActive}
-					onPress={handleResend}
-				>
-					{cooldown.isActive
-						? `Resend in ${cooldown.remaining}s`
-						: "Resend email"}
-				</Button>
-				<Button
-					variant="outline"
-					onPress={() => {
-						setSentEmail(null);
-						setResendNotice(null);
-						setError(null);
-						cooldown.clear();
-						form.setFieldValue("password", "");
-					}}
-				>
-					<ArrowLeft className="h-4 w-4" /> Back
-				</Button>
-			</div>
-		);
-	}
 
 	return (
 		<form
@@ -224,12 +133,22 @@ export function AuthSignUpForm() {
 				<Button
 					type="button"
 					variant="outline"
-					onPress={() => {
-						closeAuthDialog();
-						authClient.signIn.social({
+					onPress={async () => {
+						setError(null);
+						// Return to the page the user signed up from. On an
+						// invitation that is the accept page, so the session
+						// match can complete the invite instead of dropping them
+						// on the home screen.
+						const { error: socialError } = await authClient.signIn.social({
 							provider: "github",
-							callbackURL: `${window.location.origin}/`,
+							callbackURL: window.location.href,
 						});
+
+						if (socialError) {
+							setError(
+								socialError.message ?? "Could not continue with GitHub.",
+							);
+						}
 					}}
 				>
 					<GithubIcon className="h-4 w-4" /> Continue with GitHub
@@ -237,12 +156,18 @@ export function AuthSignUpForm() {
 				<Button
 					type="button"
 					variant="outline"
-					onPress={() => {
-						closeAuthDialog();
-						authClient.signIn.social({
+					onPress={async () => {
+						setError(null);
+						const { error: socialError } = await authClient.signIn.social({
 							provider: "google",
-							callbackURL: `${window.location.origin}/`,
+							callbackURL: window.location.href,
 						});
+
+						if (socialError) {
+							setError(
+								socialError.message ?? "Could not continue with Google.",
+							);
+						}
 					}}
 				>
 					<Google className="h-4 w-4" /> Continue with Google

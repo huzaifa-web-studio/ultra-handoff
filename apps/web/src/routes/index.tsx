@@ -1,14 +1,19 @@
 import { Button } from "@org/ui/components/button";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useSelector } from "@tanstack/react-store";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { HomeHeader } from "#/components/home-header";
 import { AuthDialog } from "#/features/auth/auth-dialog";
 import { authClient } from "#/features/auth/client";
 import { openSignIn, openSignUp } from "#/features/auth/store";
-import { OrganizationDialog } from "#/features/organization/organization-dialog";
-import { openOrganizationDialog } from "#/features/organization/store";
 import { broadcastAuth } from "#/features/auth/sync";
+import { OrganizationDialog } from "#/features/organization/organization-dialog";
+import {
+	openOrganizationDialog,
+	organizationDialogStore,
+	resetOrganizationDialog,
+} from "#/features/organization/store";
 
 export const Route = createFileRoute("/")({
 	/**
@@ -57,11 +62,21 @@ function Home() {
 	const isSignedIn = !!session?.user;
 	const needsOrg = isSignedIn && !session.session?.activeOrganizationId;
 
-	// Dialog open state is managed by their own stores/components now.
+	// The dismissal only has to survive the current visit, so it lives in the
+	// dialog store. A reload starts a fresh visit and the prompt returns.
+	const { wasDismissed } = useSelector(organizationDialogStore);
+
+	useEffect(() => {
+		if (!needsOrg || wasDismissed) return;
+		openOrganizationDialog();
+	}, [needsOrg, wasDismissed]);
 
 	async function handleSignOut() {
 		await authClient.signOut();
 		broadcastAuth("auth:signed-out");
+		// The next sign in is a fresh visit, so the organization prompt is
+		// allowed to appear again.
+		resetOrganizationDialog();
 		// Drop `?verified=1` so the verification banner does not linger after
 		// signing out.
 		navigate({ to: "/", search: {}, replace: true });

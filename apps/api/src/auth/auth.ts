@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { openAPI, organization } from "better-auth/plugins";
+import { magicLink, openAPI, organization } from "better-auth/plugins";
 
 import { adminDb } from "../db";
 import { authEnv, isDevelopment, serverEnv } from "../lib/env";
@@ -15,6 +15,10 @@ import {
 import { deletePreviousAvatar } from "../services/upload.service";
 import {
 	assertAllowedRoles,
+	MAGIC_LINK_TTL_SECONDS,
+	ORG_INVITATION_LIMIT,
+	ORG_INVITATION_TTL_SECONDS,
+	ORG_MEMBERSHIP_LIMIT,
 	validateOrganizationName,
 	validateOrganizationSlug,
 } from "./permissions";
@@ -108,7 +112,25 @@ export const auth = betterAuth({
 	emailAndPassword: {
 		enabled: true,
 		minPasswordLength: 8,
-		requireEmailVerification: true,
+		/**
+		 * Sign up signs the new account in.
+		 *
+		 * Why this is off: Better Auth ties the auto sign in to the email
+		 * verification requirement. While the requirement is on, the sign-up
+		 * route returns the user but no session, so a fresh account lands on
+		 * the marketing page as a stranger and can do nothing until a
+		 * verification mail arrives. With it off, the auto sign in below
+		 * creates the session right away.
+		 *
+		 * The address is still confirmed: the verification mail goes out on
+		 * sign up (emailVerification.sendOnSignUp) and the organization
+		 * plugin refuses an unverified address on invitations
+		 * (requireEmailVerificationOnInvitation). Sign in accepts an
+		 * unverified address as well, because the account is usable right
+		 * away and blocking it would only lock the owner out of their own
+		 * workspace.
+		 */
+		requireEmailVerification: false,
 		autoSignIn: true,
 		// Reset links stay valid for one hour. The email and the forgot
 		// password screen both state this expiry, so keep them in sync.
@@ -118,6 +140,21 @@ export const auth = betterAuth({
 		revokeSessionsOnPasswordReset: true,
 		sendResetPassword: async ({ user, url }) => {
 			await enqueueEmail({ to: user.email, template: "reset-password", url });
+		},
+	},
+	/**
+	 * Social sign-in and existing accounts.
+	 *
+	 * A person invited to a workspace may already have a password account, or
+	 * may prefer GitHub or Google. Implicit linking lets a same-email social
+	 * sign-in attach to the existing user, so the invitation's email match
+	 * still identifies them. GitHub and Google only report verified email
+	 * addresses, which is why they are trusted here.
+	 */
+	account: {
+		accountLinking: {
+			enabled: true,
+			trustedProviders: ["github", "google"],
 		},
 	},
 	emailVerification: {
@@ -138,8 +175,16 @@ export const auth = betterAuth({
 				url: verifyUrl.toString(),
 			});
 		},
+		// The confirmation mail goes out on sign up even though the account is
+		// usable straight away. The address is confirmed so it can join a
+		// workspace, not so the owner can sign in.
 		sendOnSignUp: true,
+		// Sign in does not wait for a confirmed address, so this no longer
+		// fires for a password sign in. It stays for a social provider that
+		// reports an unverified address, where the account is blocked.
 		sendOnSignIn: true,
+		// Opening the link signs the user in again, so a person who verified
+		// the address in another tab keeps working in this one.
 		autoSignInAfterVerification: true,
 	},
 	databaseHooks: {
@@ -195,8 +240,8 @@ export const auth = betterAuth({
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
 			// Sign-up with an existing email must fail loudly. Better Auth
-			// returns a generic success when email verification is required,
-			// which leaves the user waiting for a link that is never sent.
+			// answers with a generic error for a taken address, which leaves
+			// the person guessing whether to sign in or pick another name.
 			// The trade-off is that this reveals whether an address is
 			// registered, which is acceptable for a client-facing app where
 			// the user needs a clear next step.
@@ -257,6 +302,24 @@ export const auth = betterAuth({
 	},
 	plugins: [
 		/**
+		 * Passwordless sign in for invited users.
+		 *
+		 * Why: an invitation already proves control of the invited inbox, so
+		 * asking a new invitee to invent a password and verify a second email
+		 * is unnecessary friction. The accept page calls this plugin through a
+		 * throttled API route that always targets the invitation's own address,
+		 * never an address supplied by the browser.
+		 */
+		magicLink({
+			expiresIn: MAGIC_LINK_TTL_SECONDS,
+			// Redis holds a hash instead of the raw token, so a leaked Redis
+			// dump cannot be replayed as a sign in link.
+			storeToken: "hashed",
+			sendMagicLink: async ({ email, url }) => {
+				await enqueueEmail({ to: email, template: "magic-link", url });
+			},
+		}),
+		/**
 		 * Organizations use Better Auth's built in owner, admin and member
 		 * roles. Admin already has organization update plus member and
 		 * invitation management, and member is read only.
@@ -270,6 +333,48 @@ export const auth = betterAuth({
 		 *      root level route.
 		 */
 		organization({
+			// One source for the numbers the members and invitations pages
+			// display. See src/auth/permissions.ts.
+			membershipLimit: ORG_MEMBERSHIP_LIMIT,
+			invitationLimit: ORG_INVITATION_LIMIT,
+			invitationExpiresIn: ORG_INVITATION_TTL_SECONDS,
+			// A second invite for the same address replaces the old link instead
+			// of leaving two live invitations behind.
+			cancelPendingInvitationsOnReInvite: true,
+			// Invitation ids are visible to every member through the pending
+			// list, so accepting one also requires a verified email. Both
+			// acceptance paths satisfy this: the magic link verifies the
+			// address, and password sign up already requires verification.
+			requireEmailVerificationOnInvitation: true,
+			/**
+			 * Deliver the invitation as a single use link.
+			 *
+			 * The URL points at the web app, not the API, so the accept page
+			 * can explain the state (expired, canceled, wrong account) before
+			 * anything is accepted.
+			 */
+			sendInvitationEmail: async ({
+				id,
+				email,
+				organization: invitedOrganization,
+				inviter,
+				invitation,
+			}) => {
+				const url = new URL(
+					`/invite/${encodeURIComponent(id)}`,
+					serverEnv.webUrl,
+				);
+
+				await enqueueEmail({
+					to: email,
+					template: "organization-invitation",
+					url: url.toString(),
+					organizationName: invitedOrganization.name,
+					inviterName: inviter.user.name || inviter.user.email,
+					role: invitation.role ?? "member",
+					expiresAt: invitation.expiresAt,
+				});
+			},
 			organizationHooks: {
 				beforeCreateOrganization: async ({ organization: draft }) => {
 					const name =

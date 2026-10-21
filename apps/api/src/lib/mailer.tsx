@@ -3,6 +3,8 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import DeleteAccountEmail from "../emails/delete-account";
+import MagicLinkEmail from "../emails/magic-link";
+import OrganizationInvitationEmail from "../emails/organization-invitation";
 import ResetPasswordEmail from "../emails/reset-password";
 import VerificationEmail from "../emails/verification";
 import { isProduction, smtpEnv } from "./env";
@@ -33,52 +35,49 @@ const transporter = nodemailer.createTransport({
 
 const FROM = smtpEnv.from;
 
-/** Every transactional email the API can queue. */
-export type EmailTemplate =
-	| "verification"
-	| "reset-password"
-	| "delete-account";
-
 /**
  * Payload stored in Redis by the email queue.
  *
- * Only the recipient, the template name and the link are stored. The subject
- * and body are resolved from the local template registry, so a queued payload
- * cannot choose an arbitrary subject.
+ * A discriminated union, not a loose object: an invitation email without the
+ * organization name would fail at compile time instead of rendering "undefined"
+ * in someone's inbox. Only the recipient, the template and the template's own
+ * fields are stored. Subjects and bodies are resolved locally, so a queued
+ * payload cannot choose an arbitrary subject.
  */
-export type EmailJobData = {
-	to: string;
-	template: EmailTemplate;
-	url: string;
-};
+export type EmailJobData =
+	| { to: string; template: "verification"; url: string }
+	| { to: string; template: "reset-password"; url: string }
+	| { to: string; template: "delete-account"; url: string }
+	| {
+			to: string;
+			template: "organization-invitation";
+			url: string;
+			organizationName: string;
+			inviterName: string;
+			role: string;
+			/**
+			 * BullMQ serialises the payload to JSON, so a queued job carries a
+			 * string. An in-process render can still receive a Date.
+			 */
+			expiresAt: string | Date;
+	  }
+	| { to: string; template: "magic-link"; url: string };
 
-type EmailDefinition = {
-	subject: string;
-	render: (url: string) => ReactElement;
-};
+/** Every transactional email the API can queue. */
+export type EmailTemplate = EmailJobData["template"];
 
-/**
- * Template registry.
- *
- * Subjects live here, next to the component, so copy changes stay in one file.
- */
-const TEMPLATES = {
-	verification: {
-		subject: "Verify your email address",
-		render: (url: string) => <VerificationEmail url={url} />,
-	},
-	"reset-password": {
-		subject: "Reset your password",
-		render: (url: string) => <ResetPasswordEmail url={url} />,
-	},
-	"delete-account": {
-		subject: "Confirm your account deletion",
-		render: (url: string) => <DeleteAccountEmail url={url} />,
-	},
-} satisfies Record<EmailTemplate, EmailDefinition>;
+/** Render one element without repeating the static markup call. */
+function renderElement(element: ReactElement): string {
+	return renderToStaticMarkup(element);
+}
 
 /**
  * Render one queued email to HTML.
+ *
+ * A switch instead of a registry so the payload type narrows on every branch:
+ * the invitation template can only read invitation fields, and the magic link
+ * template cannot accidentally receive an organization name. Subjects live
+ * here, next to their component, so copy changes stay in one file.
  *
  * Exported separately from delivery so a template can be rendered without an
  * SMTP connection, which keeps the render path easy to inspect.
@@ -87,12 +86,41 @@ export function renderEmail(job: EmailJobData): {
 	subject: string;
 	html: string;
 } {
-	const definition = TEMPLATES[job.template];
-
-	return {
-		subject: definition.subject,
-		html: renderToStaticMarkup(definition.render(job.url)),
-	};
+	switch (job.template) {
+		case "verification":
+			return {
+				subject: "Verify your email address",
+				html: renderElement(<VerificationEmail url={job.url} />),
+			};
+		case "reset-password":
+			return {
+				subject: "Reset your password",
+				html: renderElement(<ResetPasswordEmail url={job.url} />),
+			};
+		case "delete-account":
+			return {
+				subject: "Confirm your account deletion",
+				html: renderElement(<DeleteAccountEmail url={job.url} />),
+			};
+		case "organization-invitation":
+			return {
+				subject: `${job.inviterName} invited you to ${job.organizationName} on Handoff`,
+				html: renderElement(
+					<OrganizationInvitationEmail
+						url={job.url}
+						organizationName={job.organizationName}
+						inviterName={job.inviterName}
+						role={job.role}
+						expiresAt={job.expiresAt}
+					/>,
+				),
+			};
+		case "magic-link":
+			return {
+				subject: "Your Handoff sign-in link",
+				html: renderElement(<MagicLinkEmail url={job.url} />),
+			};
+	}
 }
 
 /**

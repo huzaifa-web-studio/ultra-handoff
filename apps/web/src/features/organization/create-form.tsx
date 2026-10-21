@@ -6,6 +6,7 @@ import { useState } from "react";
 import { authClient } from "#/features/auth/client";
 import { toFieldErrors } from "#/lib/form-errors";
 import { createOrganizationSchema } from "./schema";
+import { resetOrganizationDialog } from "./store";
 import { useSwitchOrganization } from "./switch";
 
 export function CreateOrganizationForm({
@@ -36,6 +37,12 @@ export function CreateOrganizationForm({
 					setError(error?.message ?? "Failed to create organization");
 					return;
 				}
+
+				// Close the prompt before switching. The switch leaves the
+				// home page, and the dialog state is shared with the switcher
+				// in the app shell, so an open prompt would follow them there.
+				resetOrganizationDialog();
+
 				const result = await switchOrganization({
 					organizationId: org.id,
 					organizationSlug: org.slug,

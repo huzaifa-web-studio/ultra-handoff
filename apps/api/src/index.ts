@@ -7,6 +7,8 @@ import { tenantPlugin } from "./middleware/tenant";
 import { queues } from "./queues";
 import { accountRoutes } from "./routes/account";
 import { fileRoutes } from "./routes/files";
+import { publicInvitationRoutes } from "./routes/invitations";
+import { memberRoutes } from "./routes/members";
 import { organizationRoutes } from "./routes/organization";
 import { uploadRoutes } from "./routes/uploads";
 import { startWorkers } from "./workers";
@@ -20,7 +22,8 @@ async function buildApp() {
 		.use(
 			cors({
 				origin: webUrl,
-				methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+				// PATCH is used by the members page to change one role.
+				methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 				credentials: true,
 				allowedHeaders: ["Content-Type", "Authorization"],
 			}),
@@ -34,6 +37,10 @@ async function buildApp() {
 		.use(fileRoutes)
 		.use(accountRoutes)
 		.use(organizationRoutes)
+		// Workspace member and invitation management (tenant scoped).
+		.use(memberRoutes)
+		// Invitation preview and magic link request for the public accept page.
+		.use(publicInvitationRoutes)
 		.get("/", () => "Hello Huzaifa")
 		.get("/health", () => ({ status: "ok" }));
 

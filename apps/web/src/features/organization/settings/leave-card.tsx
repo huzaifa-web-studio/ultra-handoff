@@ -133,9 +133,21 @@ export function LeaveCard({ organization, role }: LeaveCardProps) {
 							You are the only owner of {organization.name}.
 						</p>
 						<p className="text-xs text-danger">
-							Promote another member to owner before you can leave. Member
-							management is coming in the next update.
+							Promote another member to owner before you can leave.
 						</p>
+						<Button
+							variant="outline"
+							size="sm"
+							className="self-start"
+							onPress={() =>
+								navigate({
+									to: "/$orgSlug/settings/members",
+									params: { orgSlug: organization.slug },
+								})
+							}
+						>
+							Open members
+						</Button>
 					</div>
 				)}
 

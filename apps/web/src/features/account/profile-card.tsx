@@ -1,13 +1,3 @@
-/**
- * Profile section of the account settings page.
- *
- * Owns the avatar, the display name and the read-only email row. Splitting it
- * from the page keeps the route a simple layout and makes each section easy to
- * reason about.
- *
- * Used by: src/routes/_app/account.tsx.
- */
-
 import { Button } from "@org/ui/components/button";
 import {
 	Card,
@@ -26,7 +16,10 @@ import { Input } from "@org/ui/components/input";
 import { Separator } from "@org/ui/components/separator";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
+import { toast } from "sonner";
+import { authClient } from "#/features/auth/client";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
+import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
 import { AvatarUploader } from "./avatar-uploader";
 import { useUpdateProfile } from "./hooks";
@@ -43,6 +36,8 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 	const updateProfile = useUpdateProfile();
 	const [error, setError] = useState<string | null>(null);
 	const [saved, setSaved] = useState<string | null>(null);
+	const [resending, setResending] = useState(false);
+	const resendCooldown = useCooldown();
 
 	useAutoDismiss(saved, () => setSaved(null));
 
@@ -74,6 +69,45 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 			}
 		},
 	});
+
+	/**
+	 * Send the confirmation mail again.
+	 *
+	 * Why it lives here: sign up signs the person in straight away, so the
+	 * account page is where they land when the mail never arrives. A
+	 * confirmed address is what lets them accept an invitation.
+	 */
+	async function handleResendVerification() {
+		if (resending || resendCooldown.isActive) return;
+
+		setResending(true);
+		setError(null);
+
+		try {
+			const { error: resendError } = await authClient.sendVerificationEmail({
+				email: user.email,
+			});
+
+			if (resendError) {
+				setError(
+					resendError.message ?? "Could not resend the verification email.",
+				);
+				return;
+			}
+
+			toast.success("Verification email sent.");
+			// Start the wait again so a queued message cannot be spammed.
+			resendCooldown.start();
+		} catch (resendError) {
+			setError(
+				resendError instanceof Error
+					? resendError.message
+					: "Could not resend the verification email.",
+			);
+		} finally {
+			setResending(false);
+		}
+	}
 
 	return (
 		<Card>
@@ -163,6 +197,21 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 					<FieldDescription>
 						Your email is used to sign in and is not editable here.
 					</FieldDescription>
+					{!user.emailVerified && (
+						<div>
+							<Button
+								variant="outline"
+								size="sm"
+								loading={resending}
+								isDisabled={resending || resendCooldown.isActive}
+								onPress={handleResendVerification}
+							>
+								{resendCooldown.isActive
+									? `Resend in ${resendCooldown.remaining}s`
+									: "Resend verification email"}
+							</Button>
+						</div>
+					)}
 				</Field>
 			</CardContent>
 		</Card>

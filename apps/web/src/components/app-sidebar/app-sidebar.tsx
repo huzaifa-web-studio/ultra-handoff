@@ -9,6 +9,7 @@ import {
 import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
 import type * as React from "react";
 import { authClient } from "#/features/auth/client";
+import { canManageMembers } from "#/features/organization/permissions";
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
 import { OrganizationSwitcher } from "./organization-switcher";
@@ -26,7 +27,11 @@ export function AppSidebar({
 	onSignOut?: () => void | Promise<void>;
 }) {
 	const { data: activeOrg } = authClient.useActiveOrganization();
+	const { data: activeMember } = authClient.useActiveMember();
 	const orgSlug = activeOrg?.slug ?? "";
+	// Invitations are manager only. Hiding the link is cosmetic; the API still
+	// returns 403 for a member who types the URL.
+	const showInvitations = canManageMembers(activeMember?.role);
 	return (
 		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
@@ -54,6 +59,14 @@ export function AppSidebar({
 								items: [
 									{ title: "General", url: `/${orgSlug}/settings` },
 									{ title: "Members", url: `/${orgSlug}/settings/members` },
+									...(showInvitations
+										? [
+												{
+													title: "Invitations",
+													url: `/${orgSlug}/settings/invitations`,
+												},
+											]
+										: []),
 								],
 							},
 						]}

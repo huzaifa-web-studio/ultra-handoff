@@ -15,9 +15,8 @@ import { Input } from "@org/ui/components/input";
 import { Separator } from "@org/ui/components/separator";
 import { Skeleton } from "@org/ui/components/skeleton";
 import { useState } from "react";
-
-import { useAccountDeletionCheck, useDeleteAccount } from "./hooks";
 import { broadcastAuth } from "#/features/auth/sync";
+import { useAccountDeletionCheck, useDeleteAccount } from "./hooks";
 
 type DeleteAccountContentProps = {
 	email: string;

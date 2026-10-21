@@ -5,16 +5,18 @@ import { PasswordInput } from "@org/ui/components/password-input";
 import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
 import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
-import { broadcastAuth } from "./sync";
 import { signInSchema } from "./schema";
 import { closeAuthDialog, openForgotPassword } from "./store";
+import { broadcastAuth } from "./sync";
 
 export function AuthSignInForm() {
 	const navigate = useNavigate();
+	const location = useLocation();
+	const isInvitePage = location.pathname.startsWith("/invite/");
 	const [error, setError] = useState<string | null>(null);
 
 	const form = useForm({
@@ -36,7 +38,13 @@ export function AuthSignInForm() {
 				}
 				closeAuthDialog();
 				broadcastAuth("auth:signed-in");
-				navigate({ to: "/" });
+
+				// On the invite page, stay put. The session update refetches the
+				// invitation preview and turns the card into the accept state.
+				// Everywhere else keep the existing home redirect.
+				if (!isInvitePage) {
+					navigate({ to: "/" });
+				}
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign in failed");
 			}
@@ -113,24 +121,42 @@ export function AuthSignInForm() {
 				<Button
 					type="button"
 					variant="outline"
-					onPress={() =>
-						authClient.signIn.social({
+					onPress={async () => {
+						setError(null);
+						// Return to the page the user signed in from. On an
+						// invitation that is the accept page, so the session
+						// match can complete the invite instead of dropping them
+						// on the home screen.
+						const { error: socialError } = await authClient.signIn.social({
 							provider: "github",
-							callbackURL: `${window.location.origin}/`,
-						})
-					}
+							callbackURL: window.location.href,
+						});
+
+						if (socialError) {
+							setError(
+								socialError.message ?? "Could not continue with GitHub.",
+							);
+						}
+					}}
 				>
 					<GithubIcon className="h-4 w-4" /> Continue with GitHub
 				</Button>
 				<Button
 					type="button"
 					variant="outline"
-					onPress={() =>
-						authClient.signIn.social({
+					onPress={async () => {
+						setError(null);
+						const { error: socialError } = await authClient.signIn.social({
 							provider: "google",
-							callbackURL: `${window.location.origin}/`,
-						})
-					}
+							callbackURL: window.location.href,
+						});
+
+						if (socialError) {
+							setError(
+								socialError.message ?? "Could not continue with Google.",
+							);
+						}
+					}}
 				>
 					<Google className="h-4 w-4" /> Continue with Google
 				</Button>

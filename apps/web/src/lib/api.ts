@@ -25,6 +25,32 @@ export const api = treaty<App>(API_BASE, {
 export const API_ORIGIN = API_BASE;
 
 /**
+ * An API failure that keeps its HTTP status.
+ *
+ * Why: some screens render a different state for 403 than for a generic
+ * failure. The invitations page shows an access card to a plain member, and a
+ * retry card for everything else. A plain Error lost that distinction.
+ */
+export class ApiRequestError extends Error {
+	readonly status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = "ApiRequestError";
+		this.status = status;
+	}
+}
+
+/** Read the HTTP status from an Eden error without trusting its shape. */
+export function readApiErrorStatus(error: unknown): number | null {
+	if (!error || typeof error !== "object" || !("status" in error)) return null;
+
+	const status = (error as { status?: unknown }).status;
+
+	return typeof status === "number" ? status : null;
+}
+
+/**
  * Turn an Eden error or a plain error into a message safe to show in the UI.
  *
  * Eden wraps API bodies in `{ value }` and different routes use `message` or
