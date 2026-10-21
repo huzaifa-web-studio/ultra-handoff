@@ -89,6 +89,7 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 					image={user.image}
 					name={user.name}
 					onUploaded={onUpdated}
+					onRemoved={onUpdated}
 				/>
 
 				<Separator />

@@ -15,12 +15,15 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { UserAvatar } from "#/components/user-avatar";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
 import { FILE_POLICIES, uploadFile, validateUploadFile } from "#/lib/upload";
+import { useRemoveAvatar } from "./hooks";
 
 type AvatarUploaderProps = {
 	image?: string | null;
 	name: string;
 	/** Called after the API has stored the new image on the user. */
 	onUploaded: () => void | Promise<void>;
+	/** Called after the photo has been removed. Defaults to onUploaded. */
+	onRemoved?: () => void | Promise<void>;
 };
 
 const policy = FILE_POLICIES.avatar;
@@ -29,6 +32,7 @@ export function AvatarUploader({
 	image,
 	name,
 	onUploaded,
+	onRemoved,
 }: AvatarUploaderProps) {
 	const inputRef = useRef<HTMLInputElement>(null);
 	const [progress, setProgress] = useState(0);
@@ -44,6 +48,10 @@ export function AvatarUploader({
 				onProgress: setProgress,
 			}),
 	});
+
+	const removeAvatar = useRemoveAvatar();
+
+	const handleRemoved = onRemoved ?? onUploaded;
 
 	useAutoDismiss(success, () => setSuccess(null));
 
@@ -99,6 +107,25 @@ export function AvatarUploader({
 		});
 	}
 
+	function handleRemove() {
+		setError(null);
+		setSuccess(null);
+
+		removeAvatar.mutate(undefined, {
+			onSuccess: async () => {
+				await handleRemoved();
+				setSuccess("Photo removed.");
+			},
+			onError: (removeError) => {
+				setError(
+					removeError instanceof Error
+						? removeError.message
+						: "Could not remove your photo.",
+				);
+			},
+		});
+	}
+
 	return (
 		<div className="flex flex-col gap-3">
 			<div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -114,14 +141,28 @@ export function AvatarUploader({
 						className="sr-only"
 						aria-label="Choose a profile photo"
 					/>
-					<Button
-						type="button"
-						variant="outline"
-						onPress={() => inputRef.current?.click()}
-						loading={mutation.isPending}
-					>
-						Change photo
-					</Button>
+					<div className="flex flex-wrap items-center gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							onPress={() => inputRef.current?.click()}
+							loading={mutation.isPending}
+							isDisabled={removeAvatar.isPending}
+						>
+							Change photo
+						</Button>
+						{image && !preview && (
+							<Button
+								type="button"
+								variant="outline"
+								onPress={handleRemove}
+								loading={removeAvatar.isPending}
+								isDisabled={mutation.isPending}
+							>
+								Remove photo
+							</Button>
+						)}
+					</div>
 					<p className="text-xs text-app-text-muted">{policy.label}</p>
 				</div>
 			</div>

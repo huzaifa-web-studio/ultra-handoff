@@ -41,9 +41,9 @@ export const Route = createFileRoute("/delete-account")({
 function DeleteAccountPage() {
 	const { token } = Route.useSearch();
 	const navigate = useNavigate();
-	const [status, setStatus] = useState<
-		"idle" | "working" | "done" | "error"
-	>("idle");
+	const [status, setStatus] = useState<"idle" | "working" | "done" | "error">(
+		"idle",
+	);
 	const [message, setMessage] = useState<string>("");
 
 	useEffect(() => {

@@ -19,6 +19,7 @@ import { auth } from "../auth/auth";
 import { authMacro } from "../auth/plugin";
 import { isValidPassword, passwordRuleMessage } from "../lib/password";
 import { getAccountDeletionBlocker } from "../services/account.service";
+import { deletePreviousAvatar } from "../services/upload.service";
 
 export const accountRoutes = new Elysia()
 	.use(authMacro)
@@ -81,4 +82,32 @@ export const accountRoutes = new Elysia()
 				newPassword: t.String({ minLength: 8, maxLength: 128 }),
 			}),
 		},
+	)
+	/**
+	 * Remove the current profile photo.
+	 *
+	 * Clears the image on the user record and best-effort deletes the stored
+	 * object when it is an internally uploaded avatar. External provider
+	 * photos (for example a Google avatar) are left untouched by
+	 * deletePreviousAvatar.
+	 */
+	.post(
+		"/account/avatar/remove",
+		async ({ user, request, status }) => {
+			const previousImage = user.image ?? null;
+
+			try {
+				await auth.api.updateUser({
+					body: { image: null },
+					headers: request.headers,
+				});
+			} catch {
+				return status(500, { message: "Could not remove your photo." });
+			}
+
+			await deletePreviousAvatar(user.id, previousImage);
+
+			return { status: "ok" as const };
+		},
+		{ auth: true },
 	);

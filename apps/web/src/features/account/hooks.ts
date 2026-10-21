@@ -53,6 +53,21 @@ export function useUpdateProfile() {
 	});
 }
 
+/** Remove the current profile photo. */
+export function useRemoveAvatar() {
+	return useMutation({
+		mutationFn: async () => {
+			const response = await api.account.avatar.remove.post();
+
+			if (response.error) {
+				throw new Error(
+					readApiError(response.error, "Could not remove your photo."),
+				);
+			}
+		},
+	});
+}
+
 /**
  * Start the OAuth link flow.
  *
