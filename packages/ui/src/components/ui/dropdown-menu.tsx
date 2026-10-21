@@ -27,6 +27,7 @@ function DropdownMenu({
 	placement = "bottom start",
 	offset = 4,
 	crossOffset = 0,
+	isNonModal = true,
 	className,
 	children,
 	...props
@@ -36,7 +37,7 @@ function DropdownMenu({
 > &
 	Pick<
 		React.ComponentProps<typeof PopoverPrimitive>,
-		"placement" | "offset" | "crossOffset"
+		"placement" | "offset" | "crossOffset" | "isNonModal"
 	> & {
 		"data-slot"?: string;
 		className?: string;
@@ -48,6 +49,7 @@ function DropdownMenu({
 			placement={placement}
 			offset={offset}
 			crossOffset={crossOffset}
+			isNonModal={isNonModal}
 			className={cn(
 				"z-50 w-(--trigger-width) min-w-48 origin-(--trigger-anchor-point) overflow-x-hidden overflow-y-auto rounded-none p-1.5 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-95 data-exiting:animate-out data-exiting:overflow-hidden data-exiting:fade-out-0 data-exiting:zoom-out-95 data-[placement=bottom]:slide-in-from-top-2 data-[placement=left]:slide-in-from-right-2 data-[placement=right]:slide-in-from-left-2 data-[placement=top]:slide-in-from-bottom-2 **:data-[slot$=-item]:data-focused:bg-foreground/10 animate-none! relative bg-popover/70 before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:rounded-[inherit] before:backdrop-blur-2xl before:backdrop-saturate-150 **:data-[slot$=-item]:focus:bg-foreground/10 **:data-[slot$=-item]:data-highlighted:bg-foreground/10 **:data-[slot$=-separator]:bg-foreground/5 **:data-[slot$=-trigger]:focus:bg-foreground/10 **:data-[slot$=-trigger]:aria-expanded:bg-foreground/10! **:data-[variant=destructive]:focus:bg-foreground/10! **:data-[variant=destructive]:text-accent-foreground! **:data-[variant=destructive]:**:text-accent-foreground!",
 				className,
