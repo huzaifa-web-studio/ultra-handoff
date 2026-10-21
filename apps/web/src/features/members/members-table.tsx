@@ -1,3 +1,4 @@
+import { Badge } from "@org/ui/components/badge";
 import { Button } from "@org/ui/components/button";
 import { Checkbox } from "@org/ui/components/checkbox";
 import {
@@ -475,24 +476,12 @@ function MemberRoleSelect({
 /** Small status stamps: self, unverified, active. Text always present. */
 function MemberStatus({ member }: { member: MemberRow }) {
 	if (member.isSelf) {
-		return (
-			<span className="inline-flex items-center bg-app-selected px-2 py-0.5 text-xs font-semibold tracking-widest text-app-text uppercase">
-				You
-			</span>
-		);
+		return <Badge className="bg-app-selected text-app-text">You</Badge>;
 	}
 
 	if (!member.emailVerified) {
-		return (
-			<span className="inline-flex items-center bg-warning-bg px-2 py-0.5 text-xs font-semibold tracking-widest text-warning uppercase">
-				Unverified
-			</span>
-		);
+		return <Badge className="bg-warning-bg text-warning">Unverified</Badge>;
 	}
 
-	return (
-		<span className="inline-flex items-center bg-success-bg px-2 py-0.5 text-xs font-semibold tracking-widest text-success uppercase">
-			Active
-		</span>
-	);
+	return <Badge className="bg-success-bg text-success">Active</Badge>;
 }

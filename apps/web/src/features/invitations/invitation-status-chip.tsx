@@ -1,3 +1,4 @@
+import { Badge } from "@org/ui/components/badge";
 import { cn } from "cn";
 
 import type { InvitationStatus } from "./api";
@@ -35,15 +36,9 @@ export function InvitationStatusChip({
 	className?: string;
 }) {
 	return (
-		<span
-			className={cn(
-				"inline-flex items-center px-2 py-0.5 text-xs font-semibold tracking-widest uppercase",
-				STATUS_STYLES[status],
-				className,
-			)}
-		>
+		<Badge className={cn(STATUS_STYLES[status], className)}>
 			{STATUS_LABELS[status]}
-		</span>
+		</Badge>
 	);
 }
 

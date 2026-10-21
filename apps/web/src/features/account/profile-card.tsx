@@ -1,3 +1,4 @@
+import { Badge } from "@org/ui/components/badge";
 import { Button } from "@org/ui/components/button";
 import {
 	Card,
@@ -184,15 +185,15 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 					<FieldLabel>Email</FieldLabel>
 					<div className="flex flex-wrap items-center gap-2">
 						<span className="text-sm text-app-text">{user.email}</span>
-						<span
-							className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold tracking-wide uppercase ${
+						<Badge
+							className={
 								user.emailVerified
 									? "bg-success-bg text-success"
 									: "bg-warning-bg text-warning"
-							}`}
+							}
 						>
 							{user.emailVerified ? "Verified" : "Unverified"}
-						</span>
+						</Badge>
 					</div>
 					<FieldDescription>
 						Your email is used to sign in and is not editable here.

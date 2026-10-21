@@ -1,3 +1,4 @@
+import { Badge } from "@org/ui/components/badge";
 import { cn } from "cn";
 
 import {
@@ -31,14 +32,10 @@ export function RoleChip({
 	const primary = roleParts(role)[0] ?? "member";
 
 	return (
-		<span
-			className={cn(
-				"inline-flex items-center px-2 py-0.5 text-xs font-semibold tracking-widest uppercase",
-				ROLE_STYLES[primary] ?? ROLE_STYLES.member,
-				className,
-			)}
+		<Badge
+			className={cn(ROLE_STYLES[primary] ?? ROLE_STYLES.member, className)}
 		>
 			{organizationRoleLabel(role)}
-		</span>
+		</Badge>
 	);
 }
