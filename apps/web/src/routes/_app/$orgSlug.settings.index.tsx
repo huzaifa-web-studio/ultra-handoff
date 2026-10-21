@@ -16,11 +16,11 @@ import { authClient } from "#/features/auth/client";
 import {
 	isOrganizationEditor,
 	isOrganizationOwner,
-	organizationRoleLabel,
 } from "#/features/organization/permissions";
 import { DeleteOrganizationCard } from "#/features/organization/settings/delete-card";
 import { GeneralCard } from "#/features/organization/settings/general-card";
 import { LeaveCard } from "#/features/organization/settings/leave-card";
+import { RoleChip } from "#/components/role-chip";
 
 export const Route = createFileRoute("/_app/$orgSlug/settings/")({
 	component: SettingsPage,
@@ -45,9 +45,7 @@ function SettingsPage() {
 			<header className="flex flex-col gap-2">
 				<div className="flex flex-wrap items-center gap-3">
 					<h1 className="text-2xl font-bold text-app-text">General settings</h1>
-					<span className="inline-flex items-center bg-app-selected px-2 py-0.5 text-xs font-semibold tracking-wide text-app-text uppercase">
-						{organizationRoleLabel(role)}
-					</span>
+					<RoleChip role={role} />
 				</div>
 				<p className="text-app-text-muted">
 					Manage how your organization appears and the address your team uses to

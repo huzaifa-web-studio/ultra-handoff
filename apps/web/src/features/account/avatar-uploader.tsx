@@ -9,6 +9,13 @@
  */
 
 import { Button } from "@org/ui/components/button";
+import {
+	Dialog,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@org/ui/components/dialog";
 import { useMutation } from "@tanstack/react-query";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
@@ -39,6 +46,7 @@ export function AvatarUploader({
 	const [preview, setPreview] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
+	const [removeOpen, setRemoveOpen] = useState(false);
 
 	const mutation = useMutation({
 		mutationFn: (file: File) =>
@@ -107,23 +115,22 @@ export function AvatarUploader({
 		});
 	}
 
-	function handleRemove() {
+	async function handleRemove() {
 		setError(null);
 		setSuccess(null);
 
-		removeAvatar.mutate(undefined, {
-			onSuccess: async () => {
-				await handleRemoved();
-				setSuccess("Photo removed.");
-			},
-			onError: (removeError) => {
-				setError(
-					removeError instanceof Error
-						? removeError.message
-						: "Could not remove your photo.",
-				);
-			},
-		});
+		try {
+			await removeAvatar.mutateAsync(undefined);
+			await handleRemoved();
+			setRemoveOpen(false);
+			setSuccess("Photo removed.");
+		} catch (removeError) {
+			setError(
+				removeError instanceof Error
+					? removeError.message
+					: "Could not remove your photo.",
+			);
+		}
 	}
 
 	return (
@@ -155,8 +162,14 @@ export function AvatarUploader({
 							<Button
 								type="button"
 								variant="outline"
-								onPress={handleRemove}
-								loading={removeAvatar.isPending}
+								// The outline variant switches text to foreground on
+								// hover. Keep the danger colour so the destructive
+								// intent survives the interaction.
+								className="text-danger hover:bg-danger-bg hover:text-danger"
+								onPress={() => {
+									removeAvatar.reset();
+									setRemoveOpen(true);
+								}}
 								isDisabled={mutation.isPending}
 							>
 								Remove photo
@@ -190,6 +203,40 @@ export function AvatarUploader({
 			{success && !error && (
 				<output className="block text-sm text-success">{success}</output>
 			)}
+
+			<Dialog
+				isOpen={removeOpen}
+				onOpenChange={(open) => {
+					if (!open) {
+						setRemoveOpen(false);
+						removeAvatar.reset();
+					}
+				}}
+			>
+				<DialogHeader>
+					<DialogTitle>Remove photo</DialogTitle>
+				</DialogHeader>
+				<DialogDescription>
+					Your account will fall back to your initials wherever your photo
+					appears.
+				</DialogDescription>
+				<DialogFooter>
+					<Button
+						variant="outline"
+						onPress={() => setRemoveOpen(false)}
+						isDisabled={removeAvatar.isPending}
+					>
+						Cancel
+					</Button>
+					<Button
+						variant="destructive"
+						loading={removeAvatar.isPending}
+						onPress={handleRemove}
+					>
+						Remove photo
+					</Button>
+				</DialogFooter>
+			</Dialog>
 		</div>
 	);
 }
