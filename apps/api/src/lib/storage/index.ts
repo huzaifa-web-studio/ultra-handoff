@@ -24,10 +24,12 @@ export {
 	isPublicFileKey,
 	isUploadPurpose,
 	MAX_AVATAR_BYTES,
+	MAX_ORGANIZATION_LOGO_BYTES,
 	UPLOAD_POLICIES,
 	UPLOAD_PURPOSES,
 	type UploadPolicy,
 	type UploadPurpose,
+	type UploadScope,
 } from "./config";
 export { type DetectedImageType, sniffImageType } from "./image";
 export {

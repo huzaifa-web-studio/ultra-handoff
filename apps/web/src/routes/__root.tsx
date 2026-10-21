@@ -1,10 +1,11 @@
+import { Toaster } from "@org/ui/components/sonner";
 import appCss from "@org/ui/styles/global.css?url";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import { Toaster } from "@org/ui/components/sonner";
 import { useAuthBroadcast } from "#/features/auth/sync";
+import { SwitchBlockedDialog } from "#/features/organization/switch-blocked-dialog";
 
 export const Route = createRootRoute({
 	head: () => ({
@@ -51,6 +52,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<QueryClientProvider client={queryClient}>
 					<AuthBroadcastSync />
 					<Toaster position="top-right" />
+					{/*
+					 * Mounted at the root so the same blocked switch dialog is
+					 * available in the app shell and on the create-organization
+					 * flow outside it.
+					 */}
+					<SwitchBlockedDialog />
 					{children}
 				</QueryClientProvider>
 				<TanStackDevtools

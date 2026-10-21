@@ -16,6 +16,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AppOrgSlugRouteImport } from './routes/_app/$orgSlug'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
+import { Route as AppOrgSlugIndexRouteImport } from './routes/_app/$orgSlug.index'
 import { Route as AppOrgSlugSettingsRouteImport } from './routes/_app/$orgSlug.settings'
 
 const IndexRoute = IndexRouteImport.update({
@@ -52,6 +53,11 @@ const AuthErrorRoute = AuthErrorRouteImport.update({
   path: '/auth/error',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppOrgSlugIndexRoute = AppOrgSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppOrgSlugRoute,
+} as any)
 const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -66,15 +72,16 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
+  '/$orgSlug/': typeof AppOrgSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/delete-account': typeof DeleteAccountRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
+  '/$orgSlug': typeof AppOrgSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -86,6 +93,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
+  '/_app/$orgSlug/': typeof AppOrgSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -97,15 +105,16 @@ export interface FileRouteTypes {
     | '/account'
     | '/auth/error'
     | '/$orgSlug/settings'
+    | '/$orgSlug/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/delete-account'
     | '/reset-password'
-    | '/$orgSlug'
     | '/account'
     | '/auth/error'
     | '/$orgSlug/settings'
+    | '/$orgSlug'
   id:
     | '__root__'
     | '/'
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/auth/error'
     | '/_app/$orgSlug/settings'
+    | '/_app/$orgSlug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -177,6 +187,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthErrorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/$orgSlug/': {
+      id: '/_app/$orgSlug/'
+      path: '/'
+      fullPath: '/$orgSlug/'
+      preLoaderRoute: typeof AppOrgSlugIndexRouteImport
+      parentRoute: typeof AppOrgSlugRoute
+    }
     '/_app/$orgSlug/settings': {
       id: '/_app/$orgSlug/settings'
       path: '/settings'
@@ -189,10 +206,12 @@ declare module '@tanstack/react-router' {
 
 interface AppOrgSlugRouteChildren {
   AppOrgSlugSettingsRoute: typeof AppOrgSlugSettingsRoute
+  AppOrgSlugIndexRoute: typeof AppOrgSlugIndexRoute
 }
 
 const AppOrgSlugRouteChildren: AppOrgSlugRouteChildren = {
   AppOrgSlugSettingsRoute: AppOrgSlugSettingsRoute,
+  AppOrgSlugIndexRoute: AppOrgSlugIndexRoute,
 }
 
 const AppOrgSlugRouteWithChildren = AppOrgSlugRoute._addFileChildren(

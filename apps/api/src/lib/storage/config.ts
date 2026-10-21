@@ -13,26 +13,58 @@
 /** Hard ceiling for avatars. Kept in bytes so comparisons stay exact. */
 export const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
+/** Organization logos share the image rules and the 5 MB ceiling. */
+export const MAX_ORGANIZATION_LOGO_BYTES = 5 * 1024 * 1024;
+
 /**
  * The set of purposes the API currently accepts.
  *
  * A purpose is not a free form string. It decides the validation rules, the
  * object key prefix and which post verification action runs.
  */
-export const UPLOAD_PURPOSES = ["avatar"] as const;
+export const UPLOAD_PURPOSES = ["avatar", "organization-logo"] as const;
 
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
+
+/**
+ * Who owns an uploaded object.
+ *
+ * Avatars belong to a user. Organization logos belong to a tenant and are
+ * addressed by organization id, never by the slug, so a rename cannot orphan
+ * an object.
+ */
+export type UploadScope = {
+	userId: string;
+	organizationId?: string;
+};
 
 export type UploadPolicy = {
 	/** Largest accepted object in bytes. */
 	maxBytes: number;
 	/** MIME types the browser may declare and the worker will accept. */
 	allowedMime: readonly string[];
-	/** Build the object key prefix for a user. Never trust a client path. */
-	prefix: (userId: string) => string;
+	/** Whether the object is owned by a user or by an organization. */
+	scopedTo: "user" | "organization";
+	/** Build the object key prefix. Never trust a client path. */
+	prefix: (scope: UploadScope) => string;
 	/** Short text shown in the UI and reused in validation errors. */
 	label: string;
 };
+
+/**
+ * Build the prefix for an organization owned object.
+ *
+ * The organization id is required for this scope. Callers validate membership
+ * before they get here, so a missing id is a programming error, not a user
+ * mistake.
+ */
+function organizationScopePrefix(scope: UploadScope): string {
+	if (!scope.organizationId) {
+		throw new Error("An organization id is required for this upload purpose");
+	}
+
+	return `organizations/${scope.organizationId}`;
+}
 
 /**
  * Single source of truth for upload limits.
@@ -46,7 +78,15 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 		// SVG is deliberately excluded: it can carry script and would be
 		// served from our own origin through /files.
 		allowedMime: ["image/png", "image/jpeg"],
-		prefix: (userId) => `avatars/${userId}`,
+		scopedTo: "user",
+		prefix: ({ userId }) => `avatars/${userId}`,
+		label: "PNG or JPG up to 5 MB",
+	},
+	"organization-logo": {
+		maxBytes: MAX_ORGANIZATION_LOGO_BYTES,
+		allowedMime: ["image/png", "image/jpeg"],
+		scopedTo: "organization",
+		prefix: organizationScopePrefix,
 		label: "PNG or JPG up to 5 MB",
 	},
 };
@@ -68,7 +108,7 @@ export function extensionForMime(mime: string): string | null {
  * Keeping an allowlist means a future private bucket (contracts, invoices)
  * cannot be exposed by accident just because a key exists.
  */
-const PUBLIC_KEY_PREFIXES = ["avatars/"];
+const PUBLIC_KEY_PREFIXES = ["avatars/", "organizations/"];
 
 /** True when a key belongs to a publicly readable upload purpose. */
 export function isPublicFileKey(key: string): boolean {

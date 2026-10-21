@@ -11,6 +11,7 @@
 import { Elysia, t } from "elysia";
 
 import { auth } from "../auth/auth";
+import { canEditOrganization } from "../auth/permissions";
 import { authMacro } from "../auth/plugin";
 import { objectUrl, UPLOAD_PURPOSES } from "../lib/storage";
 import {
@@ -18,8 +19,13 @@ import {
 	waitForUploadVerification,
 } from "../queues/upload-verification";
 import {
+	getOrganizationLogo,
+	getOrganizationRole,
+} from "../services/organization.service";
+import {
 	createUpload,
 	deletePreviousAvatar,
+	deletePreviousOrgLogo,
 	getOwnedUpload,
 	UploadError,
 } from "../services/upload.service";
@@ -28,6 +34,12 @@ const createUploadBody = t.Object({
 	purpose: t.UnionEnum(UPLOAD_PURPOSES),
 	contentType: t.String({ minLength: 3, maxLength: 100 }),
 	size: t.Number({ minimum: 1 }),
+	/**
+	 * Required for organization scoped purposes. The route checks membership
+	 * and the settings role before a presigned URL is issued, so a caller
+	 * cannot write into another organization's prefix.
+	 */
+	organizationId: t.Optional(t.String({ minLength: 1, maxLength: 255 })),
 });
 
 const uploadIdParams = t.Object({ id: t.String({ minLength: 1 }) });
@@ -43,11 +55,33 @@ export const uploadRoutes = new Elysia()
 	.post(
 		"/uploads",
 		async ({ body, user, status }) => {
+			const organizationId = body.organizationId?.trim();
+
+			// Organization owned objects need a verified role before storage is
+			// touched. The check lives here rather than in the service because
+			// it is an HTTP permission decision, and the same check runs again
+			// on completion in case the role changed in between.
+			if (body.purpose === "organization-logo") {
+				if (!organizationId) {
+					return status(400, {
+						message: "An organization is required for this upload",
+					});
+				}
+
+				const role = await getOrganizationRole(user.id, organizationId);
+				if (!role || !canEditOrganization(role)) {
+					return status(403, {
+						message: "You do not have permission to update this organization",
+					});
+				}
+			}
+
 			try {
 				const upload = await createUpload(user.id, {
 					purpose: body.purpose,
 					contentType: body.contentType,
 					size: body.size,
+					organizationId,
 				});
 
 				return status(201, upload);
@@ -106,6 +140,42 @@ export const uploadRoutes = new Elysia()
 					headers: request.headers,
 				});
 				await deletePreviousAvatar(user.id, user.image);
+			}
+
+			if (latest.purpose === "organization-logo") {
+				const organizationId = latest.organizationId;
+
+				if (!organizationId) {
+					return status(400, {
+						message: "The upload is not linked to an organization",
+					});
+				}
+
+				// Re-check the role here. The create call may be minutes old and
+				// the member could have been demoted in between.
+				const role = await getOrganizationRole(user.id, organizationId);
+				if (!role || !canEditOrganization(role)) {
+					return status(403, {
+						message: "You do not have permission to update this organization",
+					});
+				}
+
+				// Read the old URL before Better Auth overwrites it, so the
+				// replaced object can be removed after the write succeeds.
+				const previousLogo = await getOrganizationLogo(organizationId);
+
+				try {
+					await auth.api.updateOrganization({
+						body: { data: { logo: image }, organizationId },
+						headers: request.headers,
+					});
+				} catch {
+					return status(500, {
+						message: "Could not update the organization logo",
+					});
+				}
+
+				await deletePreviousOrgLogo(organizationId, previousLogo);
 			}
 
 			return { status: "verified" as const, url: image };

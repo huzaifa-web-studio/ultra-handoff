@@ -9,6 +9,7 @@
  */
 
 import { Avatar, AvatarFallback, AvatarImage } from "@org/ui/components/avatar";
+import { cn } from "cn";
 
 import { resolveAssetUrl } from "#/lib/files";
 
@@ -18,6 +19,11 @@ type UserAvatarProps = {
 	/** Display name, used for the accessible label and the initials. */
 	name: string;
 	size?: "sm" | "default" | "lg" | "xl";
+	/**
+	 * Organizations use the same image and fallback behaviour as people, but
+	 * the sidebar shows them in a square. People keep the circular shape.
+	 */
+	shape?: "circle" | "square";
 	className?: string;
 };
 
@@ -35,12 +41,17 @@ export function UserAvatar({
 	src,
 	name,
 	size = "default",
+	shape = "circle",
 	className,
 }: UserAvatarProps) {
 	const resolvedSrc = resolveAssetUrl(src);
+	const square = shape === "square";
 
 	return (
-		<Avatar size={size} className={className}>
+		<Avatar
+			size={size}
+			className={cn(square && "rounded-none after:rounded-none", className)}
+		>
 			{/*
 			 * The key is intentional. AvatarImage keeps its loading state in
 			 * component state, so changing `src` alone would leave a previously
@@ -51,8 +62,11 @@ export function UserAvatar({
 				key={resolvedSrc ?? "fallback"}
 				src={resolvedSrc}
 				alt={name}
+				className={square ? "rounded-none" : undefined}
 			/>
-			<AvatarFallback>{initialsFor(name)}</AvatarFallback>
+			<AvatarFallback className={square ? "rounded-none" : undefined}>
+				{initialsFor(name)}
+			</AvatarFallback>
 		</Avatar>
 	);
 }

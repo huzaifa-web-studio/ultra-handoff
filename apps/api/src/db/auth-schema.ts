@@ -115,6 +115,10 @@ export const member = pgTable(
 		userId: text("user_id")
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
+		// Handoff uses Better Auth's owner, admin and member roles. `member`
+		// is the default because it is the least privileged role. Better Auth
+		// writes the role explicitly on create and invitation, so this default
+		// is only a safety net for a row created outside those paths.
 		role: text("role").default("member").notNull(),
 		createdAt: timestamp("created_at").notNull(),
 	},

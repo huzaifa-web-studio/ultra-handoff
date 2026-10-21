@@ -18,7 +18,7 @@
 
 import { api, readApiError } from "./api";
 
-export type UploadPurpose = "avatar";
+export type UploadPurpose = "avatar" | "organization-logo";
 
 export type FilePolicy = {
 	maxBytes: number;
@@ -36,6 +36,12 @@ export const FILE_POLICIES: Record<UploadPurpose, FilePolicy> = {
 		accept: "image/png,image/jpeg",
 		label: "PNG or JPG up to 5 MB",
 	},
+	"organization-logo": {
+		maxBytes: 5 * 1024 * 1024,
+		mime: ["image/png", "image/jpeg"],
+		accept: "image/png,image/jpeg",
+		label: "PNG or JPG up to 5 MB, square recommended",
+	},
 };
 
 export type UploadedFile = {
@@ -46,6 +52,8 @@ export type UploadedFile = {
 export type UploadFileOptions = {
 	file: File;
 	purpose: UploadPurpose;
+	/** Required for organization scoped purposes. */
+	organizationId?: string;
 	onProgress?: (percent: number) => void;
 	signal?: AbortSignal;
 };
@@ -100,6 +108,7 @@ function normalizeMime(file: File): string | null {
 export async function uploadFile({
 	file,
 	purpose,
+	organizationId,
 	onProgress,
 	signal,
 }: UploadFileOptions): Promise<UploadedFile> {
@@ -113,6 +122,7 @@ export async function uploadFile({
 		purpose,
 		contentType: mime,
 		size: file.size,
+		organizationId,
 	});
 
 	if (created.error || !created.data) {

@@ -187,6 +187,64 @@ When authentication is added:
 
 ---
 
+## Organization Switch Safety
+
+> **IMPORTANT:** Every change of the active organization must go through `useSwitchOrganization` in `apps/web/src/features/organization/switch.ts`. Never call `authClient.organization.setActive` directly. Long running organization work must be wrapped with `beginOrganizationOperation`.
+
+Better Auth stores `activeOrganizationId` on the shared session, not per tab. Two tabs therefore share one active organization, and a long operation in one tab can be interrupted when the user switches organization in another tab.
+
+### Operation registry
+
+`apps/web/src/features/organization/switch-guard.ts` records long running operations in localStorage:
+
+- One key per operation, never one shared registry key, so two tabs starting at the same time cannot overwrite each other.
+- Every entry carries `organizationId`, a user facing `reason`, `startedAt` and `expiresAt`.
+- A heartbeat refreshes `expiresAt` while the operation runs.
+- Expired entries are pruned on read, so a crashed or closed tab stops blocking after the TTL.
+- The block is scoped to the organization that owns the operation. An operation in one workspace never blocks a switch between two other workspaces.
+- Only leaving the busy workspace is blocked. Entering it from another workspace is not dangerous for the operation.
+
+### Guarded flows
+
+- The organization switcher.
+- Creating an organization, specifically the switch that follows it.
+- Leaving an organization.
+- Deleting an organization.
+- Logo upload and removal.
+
+The guard is evaluated when the user acts. The switcher and create flow call `useSwitchOrganization`; leaving and deleting call `getBlockingOperation` first. A blocked action opens `SwitchBlockedDialog` with the operation's reason instead of proceeding.
+
+### Rules for new features
+
+Wrap any long running organization operation:
+
+```ts
+const operation = beginOrganizationOperation({
+  organizationId,
+  organizationSlug,
+  reason: "Sending invitations to 12 people",
+});
+
+try {
+  await doWork();
+} finally {
+  operation.end();
+}
+```
+
+- Use `useSwitchOrganization` for every active organization change, including accepting an invitation.
+- Always pass an explicit `organizationId` to organization scoped mutations. The guard is a UX safety net, not the data correctness mechanism.
+- Move bulk work to a server job when it must survive a tab reload, a crash, or another device. localStorage is local to one browser profile.
+- Keep the `reason` user facing. It is shown in the blocked dialog.
+
+### Limits
+
+- The registry is browser local, not cross device.
+- It does not replace server side authorization.
+- A switch that bypasses the helper bypasses the guard.
+
+---
+
 ## Deployment Architecture
 
 ```

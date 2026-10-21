@@ -36,6 +36,20 @@
       "when": 1792528871841,
       "tag": "0004_flippant_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792568233174,
+      "tag": "0005_green_synch",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792570834059,
+      "tag": "0006_parched_hedge_knight",
+      "breakpoints": true
     }
   ]
 }

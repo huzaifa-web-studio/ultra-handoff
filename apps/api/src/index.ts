@@ -7,6 +7,7 @@ import { tenantPlugin } from "./middleware/tenant";
 import { queues } from "./queues";
 import { accountRoutes } from "./routes/account";
 import { fileRoutes } from "./routes/files";
+import { organizationRoutes } from "./routes/organization";
 import { uploadRoutes } from "./routes/uploads";
 import { startWorkers } from "./workers";
 
@@ -32,6 +33,7 @@ async function buildApp() {
 		.use(uploadRoutes)
 		.use(fileRoutes)
 		.use(accountRoutes)
+		.use(organizationRoutes)
 		.get("/", () => "Hello Huzaifa")
 		.get("/health", () => ({ status: "ok" }));
 

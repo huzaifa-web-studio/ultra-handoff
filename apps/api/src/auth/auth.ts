@@ -13,6 +13,11 @@ import {
 	resolveSignInOrganization,
 } from "../services/organization.service";
 import { deletePreviousAvatar } from "../services/upload.service";
+import {
+	assertAllowedRoles,
+	validateOrganizationName,
+	validateOrganizationSlug,
+} from "./permissions";
 import { authSecondaryStorage } from "./secondary-storage";
 
 /**
@@ -250,7 +255,60 @@ export const auth = betterAuth({
 			clientSecret: authEnv.google.clientSecret,
 		},
 	},
-	plugins: [organization(), ...(isDevelopment ? [openAPI()] : [])],
+	plugins: [
+		/**
+		 * Organizations use Better Auth's built in owner, admin and member
+		 * roles. Admin already has organization update plus member and
+		 * invitation management, and member is read only.
+		 *
+		 * The hooks below close two gaps that the plugin leaves open:
+		 *   1. Invites and member updates accept any role string, so every
+		 *      write that carries a role is checked against the allowlist in
+		 *      src/auth/permissions.ts.
+		 *   2. The plugin only checks slug length and uniqueness, while the
+		 *      web router needs a lowercase slug that cannot collide with a
+		 *      root level route.
+		 */
+		organization({
+			organizationHooks: {
+				beforeCreateOrganization: async ({ organization: draft }) => {
+					const name =
+						typeof draft.name === "string"
+							? validateOrganizationName(draft.name)
+							: draft.name;
+					const slug =
+						typeof draft.slug === "string"
+							? validateOrganizationSlug(draft.slug)
+							: draft.slug;
+
+					return { data: { ...draft, name, slug } };
+				},
+				beforeUpdateOrganization: async ({ organization: patch }) => {
+					const data = { ...patch };
+
+					if (typeof data.name === "string") {
+						data.name = validateOrganizationName(data.name);
+					}
+
+					if (typeof data.slug === "string") {
+						data.slug = validateOrganizationSlug(data.slug);
+					}
+
+					return { data };
+				},
+				beforeAddMember: async ({ member: newMember }) => {
+					assertAllowedRoles(newMember.role);
+				},
+				beforeCreateInvitation: async ({ invitation }) => {
+					assertAllowedRoles(invitation.role);
+				},
+				beforeUpdateMemberRole: async ({ newRole }) => {
+					assertAllowedRoles(newRole);
+				},
+			},
+		}),
+		...(isDevelopment ? [openAPI()] : []),
+	],
 	trustedOrigins: [
 		authEnv.url,
 		// The web origin is what the browser sends. In production this is the

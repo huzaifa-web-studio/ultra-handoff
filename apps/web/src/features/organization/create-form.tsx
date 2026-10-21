@@ -2,19 +2,18 @@ import { Button } from "@org/ui/components/button";
 import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { useForm } from "@tanstack/react-form";
-import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "#/features/auth/client";
-import { broadcastAuth } from "#/features/auth/sync";
 import { toFieldErrors } from "#/lib/form-errors";
 import { createOrganizationSchema } from "./schema";
+import { useSwitchOrganization } from "./switch";
 
 export function CreateOrganizationForm({
 	onSuccess,
 }: {
 	onSuccess?: (organizationId: string) => void;
 } = {}) {
-	const navigate = useNavigate();
+	const switchOrganization = useSwitchOrganization();
 	const [error, setError] = useState<string | null>(null);
 
 	const form = useForm({
@@ -26,25 +25,30 @@ export function CreateOrganizationForm({
 		onSubmit: async ({ value }) => {
 			setError(null);
 			try {
+				// Trim here as well as in the schema: the form hands back the
+				// raw field values, and the API rejects a slug with surrounding
+				// spaces instead of silently rewriting it.
 				const { data: org, error } = await authClient.organization.create({
-					name: value.name,
-					slug: value.slug,
+					name: value.name.trim(),
+					slug: value.slug.trim(),
 				});
 				if (error || !org) {
 					setError(error?.message ?? "Failed to create organization");
 					return;
 				}
-				const { error: activeError } = await authClient.organization.setActive({
+				const result = await switchOrganization({
 					organizationId: org.id,
+					organizationSlug: org.slug,
+					organizationName: org.name,
 				});
-				if (activeError) {
-					setError(activeError.message ?? "Failed to switch organization");
+
+				onSuccess?.(org.id);
+
+				if (result.status === "blocked") {
+					// The workspace exists and is available in the switcher. The
+					// guard dialog explains why it is not active yet.
 					return;
 				}
-				await authClient.getSession();
-				broadcastAuth("auth:org-changed", { slug: org.slug });
-				onSuccess?.(org.id);
-				navigate({ to: "/$orgSlug", params: { orgSlug: org.slug } });
 			} catch (err) {
 				setError(
 					err instanceof Error ? err.message : "Failed to create organization",

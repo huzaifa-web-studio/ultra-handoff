@@ -43,6 +43,14 @@ export type UploadSession = {
 	id: string;
 	userId: string;
 	purpose: UploadPurpose;
+	/**
+	 * Owning organization for tenant scoped purposes.
+	 *
+	 * Stored with the session so completion can verify the caller's role
+	 * against the same organization that the object was written for, instead
+	 * of trusting a value from the completion request.
+	 */
+	organizationId?: string;
 	key: string;
 	contentType: string;
 	size: number;
@@ -108,6 +116,10 @@ export async function getUploadSession(
 			id: record.id,
 			userId: record.userId,
 			purpose: record.purpose,
+			organizationId:
+				typeof record.organizationId === "string"
+					? record.organizationId
+					: undefined,
 			key: record.key,
 			contentType: record.contentType,
 			size: record.size,

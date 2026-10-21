@@ -42,6 +42,11 @@ export type CreateUploadInput = {
 	purpose: UploadPurpose;
 	contentType: string;
 	size: number;
+	/**
+	 * Required for organization scoped purposes and rejected for user scoped
+	 * ones. The route verifies membership and role before calling this.
+	 */
+	organizationId?: string;
 };
 
 export type CreatedUpload = {
@@ -68,6 +73,24 @@ export async function createUpload(
 	input: CreateUploadInput,
 ): Promise<CreatedUpload> {
 	const policy = UPLOAD_POLICIES[input.purpose];
+	const organizationId = input.organizationId?.trim();
+
+	// A purpose declares who owns the object. Reject the two mismatches here so
+	// a caller cannot write a logo into a user prefix, or an avatar into an
+	// organization prefix.
+	if (policy.scopedTo === "organization" && !organizationId) {
+		throw new UploadError(
+			"unsupported",
+			"An organization is required for this upload",
+		);
+	}
+
+	if (policy.scopedTo === "user" && organizationId) {
+		throw new UploadError(
+			"unsupported",
+			"This upload does not belong to an organization",
+		);
+	}
 
 	// Normalise before comparing so a valid type with parameters such as
 	// `image/png; charset=binary` is still accepted, and an unsupported type
@@ -100,12 +123,13 @@ export async function createUpload(
 	const id = newUploadId();
 	// The key is fully server generated. The client filename is never used, so
 	// a caller cannot traverse directories or overwrite another user's object.
-	const key = `${policy.prefix(userId)}/${randomUUID()}.${extension}`;
+	const key = `${policy.prefix({ userId, organizationId })}/${randomUUID()}.${extension}`;
 
 	const session: UploadSession = {
 		id,
 		userId,
 		purpose: input.purpose,
+		organizationId,
 		key,
 		contentType,
 		size: input.size,
@@ -185,5 +209,29 @@ export async function deletePreviousAvatar(
 		await deleteObject(key);
 	} catch {
 		// Cleanup is not part of the user's success path.
+	}
+}
+
+/**
+ * Delete the organization logo an update or removal just replaced.
+ *
+ * Same best effort contract as the avatar cleanup. Only objects under this
+ * organization's prefix are touched, so an external or legacy URL is never
+ * deleted by mistake.
+ */
+export async function deletePreviousOrgLogo(
+	organizationId: string,
+	previousLogo: string | null | undefined,
+): Promise<void> {
+	if (!previousLogo) return;
+
+	const key = keyFromFileUrl(previousLogo);
+	if (!key || key.includes("..") || key.includes("//")) return;
+	if (!key.startsWith(`organizations/${organizationId}/`)) return;
+
+	try {
+		await deleteObject(key);
+	} catch {
+		// Cleanup is not part of the success path.
 	}
 }

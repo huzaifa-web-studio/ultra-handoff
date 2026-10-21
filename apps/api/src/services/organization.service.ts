@@ -7,17 +7,20 @@
  * src/auth/auth.ts calls this module to restore the organization the user was
  * last working in, inside the same sign-in request.
  *
- * These are Better Auth owned tables (`user`, `member`), which stay on the
- * privileged client by design. See src/services/account.service.ts for the
- * same pattern.
+ * These are Better Auth owned tables (`user`, `member`, `organization`), which
+ * stay on the privileged client by design. See src/services/account.service.ts
+ * for the same pattern. The membership lookups are only used after a session
+ * or tenant check has already identified the caller, never to grant access on
+ * their own.
  *
- * Used by: src/auth/auth.ts (session database hooks only).
+ * Used by: src/auth/auth.ts (session database hooks), src/routes/uploads.ts and
+ * src/routes/organization.ts.
  */
 
 import { and, asc, eq, isNull, ne, or } from "drizzle-orm";
 
 import { adminDb } from "../db";
-import { member, user } from "../db/auth-schema";
+import { member, organization, user } from "../db/auth-schema";
 
 /**
  * Pick the organization a new session should start in.
@@ -66,6 +69,60 @@ export async function resolveSignInOrganization(
 		.limit(1);
 
 	return fallback?.organizationId ?? null;
+}
+
+/**
+ * Read the caller's role in one organization.
+ *
+ * Why here: the generic upload endpoints are not under `:orgSlug`, so the
+ * tenant macro cannot resolve them. This is the same membership check in a
+ * smaller form. Returns null when the user is not a member, which callers must
+ * treat as "not found", never as "no role, allow".
+ */
+export async function getOrganizationRole(
+	userId: string,
+	organizationId: string,
+): Promise<string | null> {
+	const [record] = await adminDb
+		.select({ role: member.role })
+		.from(member)
+		.where(
+			and(eq(member.userId, userId), eq(member.organizationId, organizationId)),
+		)
+		.limit(1);
+
+	return record?.role ?? null;
+}
+
+/**
+ * Read an organization's current logo URL.
+ *
+ * Needed before a logo update so the replaced object can be deleted after the
+ * new URL is stored. Better Auth returns the updated row, not the old value.
+ */
+export async function getOrganizationLogo(
+	organizationId: string,
+): Promise<string | null> {
+	const [record] = await adminDb
+		.select({ logo: organization.logo })
+		.from(organization)
+		.where(eq(organization.id, organizationId))
+		.limit(1);
+
+	return record?.logo ?? null;
+}
+
+/** Read the slug for an organization id, or null when it no longer exists. */
+export async function getOrganizationSlug(
+	organizationId: string,
+): Promise<string | null> {
+	const [record] = await adminDb
+		.select({ slug: organization.slug })
+		.from(organization)
+		.where(eq(organization.id, organizationId))
+		.limit(1);
+
+	return record?.slug ?? null;
 }
 
 /**
