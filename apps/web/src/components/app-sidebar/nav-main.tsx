@@ -17,6 +17,9 @@ import {
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
+import { useEffect, useState } from "react";
+
+const SIDEBAR_EXPANDED_KEY = "handoff:sidebar:expanded";
 
 export function NavMain({
 	items,
@@ -34,6 +37,30 @@ export function NavMain({
 }) {
 	const navigate = useNavigate();
 	const { pathname } = useLocation();
+
+	// Persist which collapsible groups are open so a reload keeps the sidebar
+	// exactly as the user left it.
+	const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+		if (typeof window === "undefined") return {};
+		try {
+			const raw = window.localStorage.getItem(SIDEBAR_EXPANDED_KEY);
+			return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+		} catch {
+			return {};
+		}
+	});
+
+	useEffect(() => {
+		try {
+			window.localStorage.setItem(
+				SIDEBAR_EXPANDED_KEY,
+				JSON.stringify(expanded),
+			);
+		} catch {
+			// Storage may be unavailable (private mode); ignore.
+		}
+	}, [expanded]);
+
 	return (
 		<SidebarGroup>
 			<SidebarGroupLabel>Platform</SidebarGroupLabel>
@@ -42,7 +69,10 @@ export function NavMain({
 					item.items && item.items.length > 0 ? (
 						<Collapsible
 							key={item.title}
-							defaultExpanded={item.isActive}
+							isExpanded={expanded[item.title] ?? item.isActive ?? false}
+							onExpandedChange={(open) =>
+								setExpanded((prev) => ({ ...prev, [item.title]: open }))
+							}
 							className="group/collapsible"
 							render={(props) => <SidebarMenuItem {...props} />}
 						>
