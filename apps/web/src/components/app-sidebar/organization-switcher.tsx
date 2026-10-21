@@ -15,9 +15,11 @@ import {
 } from "@org/ui/components/sidebar";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronsUpDownIcon, PlusIcon } from "lucide-react";
-import * as React from "react";
+
 import { authClient } from "#/features/auth/client";
+import { broadcastAuth } from "#/features/auth/sync";
 import { OrganizationDialog } from "#/features/organization/organization-dialog";
+import { openOrganizationDialog } from "#/features/organization/store";
 
 export function OrganizationSwitcher() {
 	const { isMobile } = useSidebar();
@@ -25,7 +27,6 @@ export function OrganizationSwitcher() {
 	const { data: organizations } = authClient.useListOrganizations();
 	const { data: activeOrganization } = authClient.useActiveOrganization();
 	const orgs = organizations ?? [];
-	const [dialogOpen, setDialogOpen] = React.useState(false);
 
 	if (!activeOrganization) {
 		if (orgs.length === 0) {
@@ -72,6 +73,10 @@ export function OrganizationSwitcher() {
 											await authClient.organization.setActive({
 												organizationId: organization.id,
 											});
+											await authClient.getSession();
+											broadcastAuth("auth:org-changed", {
+												slug: organization.slug,
+											});
 											navigate({
 												to: "/$orgSlug",
 												params: { orgSlug: organization.slug },
@@ -90,7 +95,7 @@ export function OrganizationSwitcher() {
 							<DropdownMenuGroup>
 								<DropdownMenuItem
 									className="cursor-pointer gap-2 p-2"
-									onAction={() => setDialogOpen(true)}
+									onAction={() => openOrganizationDialog()}
 								>
 									<div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
 										<PlusIcon className="size-4" />
@@ -104,13 +109,7 @@ export function OrganizationSwitcher() {
 					</DropdownMenuTrigger>
 				</SidebarMenuItem>
 			</SidebarMenu>
-			<OrganizationDialog
-				open={dialogOpen}
-				onOpenChange={setDialogOpen}
-				onSuccess={() => {
-					setDialogOpen(false);
-				}}
-			/>
+			<OrganizationDialog />
 		</>
 	);
 }

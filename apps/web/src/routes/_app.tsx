@@ -10,6 +10,7 @@ import { AppHeader } from "#/components/app-sidebar/app-header";
 import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
 import { AppNotFound } from "#/components/app-sidebar/not-found";
 import { authClient } from "#/features/auth/client";
+import { broadcastAuth } from "#/features/auth/sync";
 
 export const Route = createFileRoute("/_app")({
 	component: AppLayout,
@@ -46,7 +47,8 @@ function AppLayout() {
 
 	async function handleSignOut() {
 		await authClient.signOut();
-		navigate({ to: "/" });
+		broadcastAuth("auth:signed-out");
+		navigate({ to: "/", search: {}, replace: true });
 	}
 
 	return (

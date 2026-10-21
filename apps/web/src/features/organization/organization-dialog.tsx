@@ -1,51 +1,39 @@
 import { Dialog, DialogHeader, DialogTitle } from "@org/ui/components/dialog";
-import { useEffect, useState } from "react";
-import { authClient } from "#/features/auth/client";
+import { useSelector } from "@tanstack/react-store";
 import { CreateOrganizationForm } from "./create-form";
+import {
+	closeOrganizationDialog,
+	organizationDialogStore,
+	resetOrganizationDialog,
+} from "./store";
 
-export function OrganizationDialog({
-	open: openProp,
-	onOpenChange,
-	onSuccess,
-}: {
-	open?: boolean;
-	onOpenChange?: (open: boolean) => void;
-	onSuccess?: (organizationId: string) => void;
-} = {}) {
-	const { data: session } = authClient.useSession();
-	const needsOrg = !!session?.user && !session.session?.activeOrganizationId;
-	const [internalOpen, setInternalOpen] = useState(needsOrg);
-
-	const isControlled = openProp !== undefined;
-	const open = isControlled ? openProp : internalOpen;
-	const setOpen = (value: boolean) => {
-		if (isControlled) {
-			onOpenChange?.(value);
-		} else {
-			setInternalOpen(value);
-		}
-	};
-
-	useEffect(() => {
-		if (!isControlled) {
-			setInternalOpen(needsOrg);
-		}
-	}, [needsOrg, isControlled]);
-
+/**
+ * Create-organization dialog.
+ *
+ * Why store-backed: open state lives in `organizationDialogStore` so any caller
+ * (home page button, organization switcher) just calls
+ * `openOrganizationDialog()` and renders `<OrganizationDialog />` once. No
+ * controlled props, no open state scattered at call sites.
+ *
+ * Used by: src/routes/index.tsx, src/components/app-sidebar/organization-switcher.tsx.
+ */
+export function OrganizationDialog() {
+	const { isOpen } = useSelector(organizationDialogStore);
 	return (
 		<Dialog
-			isOpen={open}
-			onOpenChange={setOpen}
-			isDismissable={isControlled}
-			showCloseButton={isControlled}
+			isOpen={isOpen}
+			onOpenChange={(open) => {
+				if (!open) closeOrganizationDialog();
+			}}
+			isDismissable
+			showCloseButton
 		>
 			<DialogHeader>
 				<DialogTitle>Create your organization</DialogTitle>
 			</DialogHeader>
 			<CreateOrganizationForm
-				onSuccess={(orgId) => {
-					onSuccess?.(orgId);
-					setOpen(false);
+				onSuccess={() => {
+					resetOrganizationDialog();
 				}}
 			/>
 		</Dialog>

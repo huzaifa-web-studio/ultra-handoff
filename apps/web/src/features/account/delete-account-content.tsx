@@ -17,6 +17,7 @@ import { Skeleton } from "@org/ui/components/skeleton";
 import { useState } from "react";
 
 import { useAccountDeletionCheck, useDeleteAccount } from "./hooks";
+import { broadcastAuth } from "#/features/auth/sync";
 
 type DeleteAccountContentProps = {
 	email: string;
@@ -44,6 +45,7 @@ export function DeleteAccountContent({ email }: DeleteAccountContentProps) {
 			return;
 		}
 
+		broadcastAuth("auth:account-deleted");
 		setConfirmEmail("");
 		setNotice(
 			"We are sending a confirmation email. Open the link in a signed-in browser to finish deleting your account. It can take a minute to arrive.",

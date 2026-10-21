@@ -9,6 +9,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toFieldErrors } from "#/lib/form-errors";
 import { authClient } from "./client";
+import { broadcastAuth } from "./sync";
 import { signInSchema } from "./schema";
 import { closeAuthDialog, openForgotPassword } from "./store";
 
@@ -34,6 +35,7 @@ export function AuthSignInForm() {
 					return;
 				}
 				closeAuthDialog();
+				broadcastAuth("auth:signed-in");
 				navigate({ to: "/" });
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign in failed");

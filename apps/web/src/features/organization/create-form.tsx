@@ -5,6 +5,7 @@ import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "#/features/auth/client";
+import { broadcastAuth } from "#/features/auth/sync";
 import { toFieldErrors } from "#/lib/form-errors";
 import { createOrganizationSchema } from "./schema";
 
@@ -41,6 +42,7 @@ export function CreateOrganizationForm({
 					return;
 				}
 				await authClient.getSession();
+				broadcastAuth("auth:org-changed", { slug: org.slug });
 				onSuccess?.(org.id);
 				navigate({ to: "/$orgSlug", params: { orgSlug: org.slug } });
 			} catch (err) {
