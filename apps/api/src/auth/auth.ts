@@ -63,7 +63,7 @@ export const auth = betterAuth({
 			// and the confirmation, but the deletion itself stays in the
 			// library so sessions and linked accounts cascade correctly.
 			enabled: true,
-			sendDeleteAccountVerification: async ({ user, url }) => {
+			sendDeleteAccountVerification: async ({ user, token }) => {
 				// Check before sending anything. A blocked user should see the
 				// reason in the account card, not receive an email that can
 				// only fail when the link is opened.
@@ -74,10 +74,15 @@ export const auth = betterAuth({
 
 				// Required for Google and GitHub users, who have no password to
 				// re-enter before a destructive action.
+				// Send the browser to a frontend page that owns the confirmation
+				// and the error messaging, instead of the API callback URL. The
+				// page calls `authClient.deleteUser({ token })` itself.
+				const frontendUrl = new URL(`${serverEnv.webUrl}/delete-account`);
+				frontendUrl.searchParams.set("token", token);
 				await enqueueEmail({
 					to: user.email,
 					template: "delete-account",
-					url,
+					url: frontendUrl.toString(),
 				});
 			},
 			beforeDelete: async (user) => {
@@ -226,6 +231,14 @@ export const auth = betterAuth({
 				}
 			}
 		}),
+	},
+	// Redirect-style auth errors (OAuth callbacks, email verification,
+	// password reset, delete-account verification, validateUserInfo
+	// rejections) land on the frontend error page instead of the API's
+	// built-in one. The frontend reads `error` and `error_description`
+	// from the query string and renders the message there.
+	onAPIError: {
+		errorURL: `${serverEnv.webUrl}/auth/error`,
 	},
 	socialProviders: {
 		github: {

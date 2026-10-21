@@ -3,6 +3,7 @@ import { TanStackDevtools } from "@tanstack/react-devtools";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
+import { Toaster } from "@org/ui/components/sonner";
 import { useAuthBroadcast } from "#/features/auth/sync";
 
 export const Route = createRootRoute({
@@ -49,6 +50,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<body>
 				<QueryClientProvider client={queryClient}>
 					<AuthBroadcastSync />
+					<Toaster position="top-right" />
 					{children}
 				</QueryClientProvider>
 				<TanStackDevtools

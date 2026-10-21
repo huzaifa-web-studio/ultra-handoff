@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as DeleteAccountRouteImport } from './routes/delete-account'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AppOrgSlugRouteImport } from './routes/_app/$orgSlug'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
+import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as AppOrgSlugSettingsRouteImport } from './routes/_app/$orgSlug.settings'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +25,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeleteAccountRoute = DeleteAccountRouteImport.update({
+  id: '/delete-account',
+  path: '/delete-account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -40,6 +47,11 @@ const AppAccountRoute = AppAccountRouteImport.update({
   path: '/account',
   getParentRoute: () => AppRoute,
 } as any)
+const AuthErrorRoute = AuthErrorRouteImport.update({
+  id: '/auth/error',
+  path: '/auth/error',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -48,47 +60,70 @@ const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/delete-account': typeof DeleteAccountRoute
   '/reset-password': typeof ResetPasswordRoute
   '/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/account': typeof AppAccountRoute
+  '/auth/error': typeof AuthErrorRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/delete-account': typeof DeleteAccountRoute
   '/reset-password': typeof ResetPasswordRoute
   '/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/account': typeof AppAccountRoute
+  '/auth/error': typeof AuthErrorRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/delete-account': typeof DeleteAccountRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_app/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/_app/account': typeof AppAccountRoute
+  '/auth/error': typeof AuthErrorRoute
   '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/reset-password' | '/$orgSlug' | '/account' | '/$orgSlug/settings'
+    | '/'
+    | '/delete-account'
+    | '/reset-password'
+    | '/$orgSlug'
+    | '/account'
+    | '/auth/error'
+    | '/$orgSlug/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/reset-password' | '/$orgSlug' | '/account' | '/$orgSlug/settings'
+  to:
+    | '/'
+    | '/delete-account'
+    | '/reset-password'
+    | '/$orgSlug'
+    | '/account'
+    | '/auth/error'
+    | '/$orgSlug/settings'
   id:
     | '__root__'
     | '/'
     | '/_app'
+    | '/delete-account'
     | '/reset-password'
     | '/_app/$orgSlug'
     | '/_app/account'
+    | '/auth/error'
     | '/_app/$orgSlug/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  DeleteAccountRoute: typeof DeleteAccountRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  AuthErrorRoute: typeof AuthErrorRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -105,6 +140,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/delete-account': {
+      id: '/delete-account'
+      path: '/delete-account'
+      fullPath: '/delete-account'
+      preLoaderRoute: typeof DeleteAccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -127,6 +169,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/account'
       preLoaderRoute: typeof AppAccountRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/auth/error': {
+      id: '/auth/error'
+      path: '/auth/error'
+      fullPath: '/auth/error'
+      preLoaderRoute: typeof AuthErrorRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/$orgSlug/settings': {
       id: '/_app/$orgSlug/settings'
@@ -165,7 +214,9 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  DeleteAccountRoute: DeleteAccountRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  AuthErrorRoute: AuthErrorRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

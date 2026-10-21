@@ -1,6 +1,7 @@
 import { Button } from "@org/ui/components/button";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { HomeHeader } from "#/components/home-header";
 import { AuthDialog } from "#/features/auth/auth-dialog";
 import { authClient } from "#/features/auth/client";
@@ -33,6 +34,20 @@ function Home() {
 	const { data: activeOrg } = authClient.useActiveOrganization();
 	const hasOrg = !!session?.user && !!session.session?.activeOrganizationId;
 
+	const verifiedToastShown = useRef(false);
+
+	useEffect(() => {
+		if (verified && !verifiedToastShown.current) {
+			verifiedToastShown.current = true;
+			toast.success("Email verified. Your account is ready.");
+			// Strip `?verified=1` so the flag does not linger in the URL.
+			navigate({ to: "/", search: {}, replace: true });
+		}
+		if (!verified) {
+			verifiedToastShown.current = false;
+		}
+	}, [verified, navigate]);
+
 	useEffect(() => {
 		if (hasOrg && activeOrg?.slug) {
 			navigate({ to: "/$orgSlug", params: { orgSlug: activeOrg.slug } });
@@ -61,12 +76,7 @@ function Home() {
 				onOpenSignIn={openSignIn}
 				onOpenSignUp={openSignUp}
 			/>
-			{/* Confirmation for the emailed verification link. */}
-			{verified && (
-				<output className="block border-b border-success bg-success-bg px-6 py-3 text-center text-sm text-success">
-					Email verified. Your account is ready.
-				</output>
-			)}
+			{/* Confirmation for the emailed verification link is shown via toast. */}
 			<main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
 				{needsOrg ? (
 					<>
