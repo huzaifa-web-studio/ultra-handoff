@@ -74,6 +74,11 @@ export type InvitationHistoryResult = {
 		hasNext: boolean;
 		hasPrevious: boolean;
 	};
+	/**
+	 * Counts within the current role and search scope. The status filter is
+	 * intentionally not applied, so every status option keeps a useful number
+	 * while one status is selected.
+	 */
 	counts: Record<"all" | InvitationStatus, number>;
 	/** The caller's role, so the invite dialog offers the right roles. */
 	viewer: { role: string };
@@ -233,8 +238,29 @@ export async function listInvitationHistory(
 		};
 	});
 
+	const search = query.search.trim().toLowerCase();
+
+	/**
+	 * The scope is role plus search. The status filter is deliberately not
+	 * applied here: the status select needs to keep showing how many rows are
+	 * in each bucket while one bucket is selected.
+	 *
+	 * Counting over the full workspace made the numbers wrong as soon as a
+	 * role or search filter was active. Counting over the scope keeps the
+	 * labels honest and the buckets sum to the "all" count.
+	 */
+	const scoped = items.filter((item) => {
+		// The Role column shows the first role, so the filter matches that.
+		const primaryRole = parseRoleList(item.role)[0] ?? "member";
+		const matchesRole = query.role === "all" || primaryRole === query.role;
+		const matchesSearch =
+			search.length === 0 || item.email.toLowerCase().includes(search);
+
+		return matchesRole && matchesSearch;
+	});
+
 	const counts: InvitationHistoryResult["counts"] = {
-		all: items.length,
+		all: scoped.length,
 		pending: 0,
 		expired: 0,
 		accepted: 0,
@@ -242,22 +268,13 @@ export async function listInvitationHistory(
 		rejected: 0,
 	};
 
-	for (const item of items) {
+	for (const item of scoped) {
 		counts[item.status] += 1;
 	}
 
-	const search = query.search.trim().toLowerCase();
-	const filtered = items.filter((item) => {
-		const matchesStatus =
-			query.status === "all" || item.status === query.status;
-		// The Role column shows the first role, so the filter matches that.
-		const primaryRole = parseRoleList(item.role)[0] ?? "member";
-		const matchesRole = query.role === "all" || primaryRole === query.role;
-		const matchesSearch =
-			search.length === 0 || item.email.toLowerCase().includes(search);
-
-		return matchesStatus && matchesRole && matchesSearch;
-	});
+	const filtered = scoped.filter(
+		(item) => query.status === "all" || item.status === query.status,
+	);
 
 	const direction = query.direction === "asc" ? 1 : -1;
 	const sorted = [...filtered].sort((a, b) => {

@@ -367,6 +367,7 @@ function InvitationsPage() {
 					sortField={search.sort}
 					onSortFieldChange={(sort) => updateSearch({ sort, page: 1 })}
 					counts={data.counts}
+					resultCount={data.pagination.total}
 					search={searchInput}
 					onSearchChange={setSearchInput}
 					selectedCount={selectedRows.length}

@@ -177,10 +177,7 @@ function SelectInput({ className, ...props }: SearchFieldProps) {
 			className={cn("p-1 pb-0", className)}
 		>
 			<InputGroup>
-				<InputGroupInput
-					data-slot="select-input"
-					className="[&::-webkit-search-cancel-button]:hidden"
-				/>
+				<InputGroupInput data-slot="select-input" />
 				<InputGroupAddon>
 					<SearchIcon className="size-3.5 shrink-0 opacity-50" />
 				</InputGroupAddon>

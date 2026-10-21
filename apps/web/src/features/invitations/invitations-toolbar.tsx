@@ -38,6 +38,8 @@ type InvitationsToolbarProps = {
 	sortField: InvitationHistoryQuery["sort"];
 	onSortFieldChange: (sort: InvitationHistoryQuery["sort"]) => void;
 	counts: InvitationCounts;
+	/** Rows after every filter, including status. */
+	resultCount: number;
 	search: string;
 	onSearchChange: (value: string) => void;
 	selectedCount: number;
@@ -69,6 +71,7 @@ export function InvitationsToolbar({
 	sortField,
 	onSortFieldChange,
 	counts,
+	resultCount,
 	search,
 	onSearchChange,
 	selectedCount,
@@ -190,7 +193,10 @@ export function InvitationsToolbar({
 				</Button>
 
 				<p className="ml-auto text-xs text-app-text-muted">
-					{counts.all} invitation{counts.all === 1 ? "" : "s"} in total
+					{resultCount} invitation{resultCount === 1 ? "" : "s"}
+					{status !== "all" || roleFilter !== "all" || search.length > 0
+						? " in this view"
+						: " in total"}
 				</p>
 			</div>
 
