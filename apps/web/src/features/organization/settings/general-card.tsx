@@ -210,7 +210,7 @@ export function GeneralCard({
 								/>
 								<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 								<FieldDescription>
-									Your workspace lives at{" "}
+									Your organization lives at{" "}
 									<span className="font-medium text-app-text">
 										/{field.state.value || "your-slug"}
 									</span>

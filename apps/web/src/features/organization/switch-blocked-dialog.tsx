@@ -44,7 +44,7 @@ export function SwitchBlockedDialog() {
 			</DialogHeader>
 
 			<DialogDescription>
-				{reason ?? "An operation is still running in this workspace."}
+				{reason ?? "An operation is still running in this organization."}
 				{targetName
 					? ` Switching to ${targetName} now could interrupt it.`
 					: " Leaving now could interrupt it."}

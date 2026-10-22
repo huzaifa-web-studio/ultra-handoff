@@ -204,7 +204,7 @@ function normalizeLogo(
 
 	if (!key.startsWith(`organizations/${organizationId}/projects/`)) {
 		throw new APIError("BAD_REQUEST", {
-			message: "The project logo does not belong to this workspace.",
+			message: "The project logo does not belong to this organization.",
 		});
 	}
 
@@ -625,7 +625,7 @@ export async function createProject(
 ): Promise<ProjectDetail> {
 	if (!canCreateProject(tenant.role)) {
 		throw new APIError("FORBIDDEN", {
-			message: "Only workspace owners and admins can create projects.",
+			message: "Only organization owners and admins can create projects.",
 		});
 	}
 
@@ -899,7 +899,7 @@ export async function addProjectMember(
 
 	if (!target) {
 		throw new APIError("BAD_REQUEST", {
-			message: "That person is no longer part of this workspace.",
+			message: "That person is no longer part of this organization.",
 		});
 	}
 

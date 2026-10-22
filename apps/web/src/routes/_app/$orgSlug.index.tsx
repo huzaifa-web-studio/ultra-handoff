@@ -19,7 +19,7 @@ function DashboardPage() {
 	return (
 		<div>
 			<h1 className="text-2xl font-bold text-app-text">Dashboard</h1>
-			<p className="mt-2 text-app-text-muted">Welcome to your workspace.</p>
+			<p className="mt-2 text-app-text-muted">Welcome to your organization.</p>
 		</div>
 	);
 }

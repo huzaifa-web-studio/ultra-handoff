@@ -15,15 +15,15 @@ import { type APIError, isAPIError } from "better-auth/api";
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
 	ORGANIZATION_MEMBERSHIP_LIMIT_REACHED:
-		"This workspace has no seats left. Remove a member or raise the limit first.",
+		"This organization has no seats left. Remove a member or raise the limit first.",
 	INVITATION_LIMIT_REACHED:
 		"There are too many pending invitations. Cancel one before sending another.",
 	USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION:
-		"That person is already a member of this workspace.",
+		"That person is already a member of this organization.",
 	USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION:
 		"That person already has a pending invitation.",
 	YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION:
-		"You do not have permission to invite people to this workspace.",
+		"You do not have permission to invite people to this organization.",
 	YOU_ARE_NOT_ALLOWED_TO_CANCEL_THIS_INVITATION:
 		"You do not have permission to cancel this invitation.",
 	YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_MEMBER:
@@ -34,7 +34,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
 		"An organization needs at least one owner.",
 	YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER:
 		"The last owner cannot be removed or demoted.",
-	ROLE_NOT_FOUND: "That role is not available in this workspace.",
+	ROLE_NOT_FOUND: "That role is not available in this organization.",
 	INVITATION_NOT_FOUND: "That invitation is no longer available.",
 	YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION:
 		"This invitation was sent to a different email address.",
@@ -43,10 +43,10 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
 	EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION:
 		"Verify your email address before opening this invitation.",
 	INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION:
-		"The person who sent this invitation is no longer a member of the workspace.",
-	ORGANIZATION_NOT_FOUND: "This workspace no longer exists.",
-	MEMBER_NOT_FOUND: "That member is no longer part of this workspace.",
-	NO_ACTIVE_ORGANIZATION: "No workspace is selected.",
+		"The person who sent this invitation is no longer a member of the organization.",
+	ORGANIZATION_NOT_FOUND: "This organization no longer exists.",
+	MEMBER_NOT_FOUND: "That member is no longer part of this organization.",
+	NO_ACTIVE_ORGANIZATION: "No organization is selected.",
 };
 
 /** Read the Better Auth error code without trusting the error shape. */

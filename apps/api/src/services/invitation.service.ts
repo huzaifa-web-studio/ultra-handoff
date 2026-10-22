@@ -424,7 +424,7 @@ export async function bulkInviteMembers(
 				label: email,
 				status: "failed",
 				code: "ALREADY_MEMBER",
-				message: "Already a member of this workspace.",
+				message: "Already a member of this organization.",
 			});
 			continue;
 		}
@@ -442,7 +442,7 @@ export async function bulkInviteMembers(
 					label: email,
 					status: "skipped",
 					code: "MEMBERSHIP_LIMIT",
-					message: `No seats left. This workspace allows ${ORG_MEMBERSHIP_LIMIT} members.`,
+					message: `No seats left. This organization allows ${ORG_MEMBERSHIP_LIMIT} members.`,
 				});
 				continue;
 			}

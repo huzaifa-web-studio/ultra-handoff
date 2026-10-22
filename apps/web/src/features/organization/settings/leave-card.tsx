@@ -121,7 +121,7 @@ export function LeaveCard({ organization, role }: LeaveCardProps) {
 			<CardHeader>
 				<CardTitle className="text-danger">Leave organization</CardTitle>
 				<CardDescription>
-					Remove yourself from this workspace. This does not delete the
+					Remove yourself from this organization. This does not delete the
 					organization or the work in it.
 				</CardDescription>
 			</CardHeader>
@@ -198,7 +198,7 @@ export function LeaveCard({ organization, role }: LeaveCardProps) {
 					<DialogTitle>Leave {organization.name}?</DialogTitle>
 				</DialogHeader>
 				<DialogDescription>
-					You will lose access to this workspace immediately. Any projects,
+					You will lose access to this organization immediately. Any projects,
 					deliveries or discussions assigned to you stay with the organization.
 				</DialogDescription>
 				<DialogFooter>

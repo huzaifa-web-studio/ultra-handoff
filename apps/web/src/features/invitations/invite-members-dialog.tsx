@@ -257,7 +257,7 @@ export function InviteMembersDialog({
 					</Select>
 					<p className="text-xs text-app-text-muted">
 						{roles.includes("admin")
-							? "Admins can manage members and workspace settings."
+							? "Admins can manage members and organization settings."
 							: "Only an owner can invite someone as an admin."}
 					</p>
 				</div>

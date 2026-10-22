@@ -22,6 +22,7 @@ import {
 import {
 	BanIcon,
 	CopyIcon,
+	LockIcon,
 	MoreHorizontalIcon,
 	RefreshCwIcon,
 	UserPlusIcon,
@@ -374,10 +375,23 @@ export function InvitationsTable({
 				{table.getRowModel().rows.map((row) => (
 					<TableRow key={row.id} id={row.id}>
 						<TableCell>
-							<Checkbox
-								slot="selection"
-								aria-label={`Select ${row.original.email}`}
-							/>
+							{isActionableStatus(row.original.status) ? (
+								<Checkbox
+									slot="selection"
+									aria-label={`Select ${row.original.email}`}
+								/>
+							) : (
+								// Accepted and canceled invitations are disabled for
+								// selection, so a checkbox would only read as broken.
+								// A lock states the row is not selectable.
+								<span
+									className="flex size-4.5 items-center justify-center text-app-text-muted"
+									title="Only pending and expired invitations can be selected"
+								>
+									<LockIcon className="size-3.5" aria-hidden />
+									<span className="sr-only">Not selectable</span>
+								</span>
+							)}
 						</TableCell>
 						{row.getVisibleCells().map((cell) => (
 							<TableCell key={cell.id}>

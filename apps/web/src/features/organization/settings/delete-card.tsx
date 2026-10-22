@@ -137,7 +137,7 @@ export function DeleteOrganizationCard({
 			<CardContent className="flex flex-col gap-4">
 				<div className="flex flex-col gap-1">
 					<p className="text-sm text-app-text-muted">
-						All memberships, invitations and work in this workspace will be
+						All memberships, invitations and work in this organization will be
 						removed. The people in it will lose access immediately.
 					</p>
 				</div>

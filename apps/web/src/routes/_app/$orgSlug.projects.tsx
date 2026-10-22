@@ -347,8 +347,8 @@ function ProjectsEmptyState({
 			<div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
 				<p className="text-sm text-app-text-muted">
 					{canCreate
-						? "No projects yet. Create the first one for this workspace."
-						: "You are not a member of any project yet. A workspace owner or admin can add you."}
+						? "No projects yet. Create the first one for this organization."
+						: "You are not a member of any project yet. An organization owner or admin can add you."}
 				</p>
 				{canCreate && (
 					<Button variant="outline" onPress={onCreate}>

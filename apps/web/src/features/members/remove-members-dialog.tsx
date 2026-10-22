@@ -83,7 +83,7 @@ export function RemoveMembersDialog({
 			if (member.isOwner && ownerCount <= 1) {
 				blockedRows.push({
 					member,
-					reason: "A workspace needs at least one owner.",
+					reason: "An organization needs at least one owner.",
 				});
 				continue;
 			}
@@ -157,8 +157,9 @@ export function RemoveMembersDialog({
 				</DialogTitle>
 			</DialogHeader>
 			<DialogDescription>
-				Removing someone ends their access to this workspace immediately. Their
-				work stays with the organization, and they can be invited back later.
+				Removing someone ends their access to this organization immediately.
+				Their work stays with the organization, and they can be invited back
+				later.
 			</DialogDescription>
 
 			<div className="flex flex-col gap-4">

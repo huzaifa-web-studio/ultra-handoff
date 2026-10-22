@@ -268,8 +268,8 @@ export function ProjectDialog({
 							/>
 							<FieldError errors={toFieldErrors(field.state.meta.errors)} />
 							<FieldDescription>
-								Unique inside this workspace. Use lowercase letters, numbers and
-								hyphens.
+								Unique inside this organization. Use lowercase letters, numbers
+								and hyphens.
 							</FieldDescription>
 						</Field>
 					)}

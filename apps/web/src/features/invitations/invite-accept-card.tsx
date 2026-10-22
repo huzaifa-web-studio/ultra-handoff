@@ -229,7 +229,7 @@ export function InviteAcceptCard({
 			toast.error(
 				error instanceof Error
 					? error.message
-					: "Could not open the workspace.",
+					: "Could not open the organization.",
 			);
 		});
 	}
@@ -299,7 +299,7 @@ export function InviteAcceptCard({
 				{preview.viewer.emailMatches === true ? (
 					<Button onPress={handleOpenWorkspace}>
 						<ArrowRightIcon aria-hidden />
-						Open workspace
+						Open organization
 					</Button>
 				) : (
 					<Button onPress={() => navigate({ to: "/" })}>

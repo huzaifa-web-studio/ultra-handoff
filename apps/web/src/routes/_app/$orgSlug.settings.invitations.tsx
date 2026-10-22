@@ -349,7 +349,7 @@ function InvitationsPage() {
 					</Button>
 				</div>
 				<p className="text-app-text-muted">
-					Invite people and review every invitation this workspace has sent.
+					Invite people and review every invitation this organization has sent.
 				</p>
 			</header>
 
@@ -490,7 +490,7 @@ function InvitationsAccessCard({ orgSlug }: { orgSlug: string }) {
 		<div className="mx-auto flex w-full max-w-3xl flex-col items-start gap-3 border border-app-border bg-app-panel p-6">
 			<h1 className="text-xl font-bold text-app-text">Invitations</h1>
 			<p className="text-sm text-app-text-muted">
-				Only owners and admins can see invitations for this workspace. Ask an
+				Only owners and admins can see invitations for this organization. Ask an
 				owner if you need access.
 			</p>
 			<Button

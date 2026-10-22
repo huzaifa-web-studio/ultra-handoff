@@ -171,7 +171,7 @@ export function ProjectMembersDialog({
 				<DialogTitle>Project members</DialogTitle>
 				<DialogDescription>
 					Only people listed here can open {project?.name ?? "this project"}.
-					Workspace owners are always project owners.
+					Organization owners are always project owners.
 				</DialogDescription>
 			</DialogHeader>
 
@@ -206,12 +206,12 @@ export function ProjectMembersDialog({
 					{viewer.canManageMembers && (
 						<div className="flex flex-col gap-2 border border-app-border bg-app-panel-subtle p-3">
 							<p className="text-xs font-semibold tracking-widest text-app-text-muted uppercase">
-								Add a workspace member
+								Add an organization member
 							</p>
 							<div className="flex flex-wrap items-end gap-2">
 								<div className="min-w-0 flex-1">
 									<Select
-										aria-label="Choose a workspace member"
+										aria-label="Choose an organization member"
 										placeholder="Select a person"
 										selectedKey={addUserId}
 										onSelectionChange={(key) => {
@@ -313,7 +313,7 @@ export function ProjectMembersDialog({
 					<div className="max-h-80 overflow-y-auto border border-app-border">
 						{members.length === 0 ? (
 							<p className="px-3 py-6 text-center text-sm text-app-text-muted">
-								This project has no members besides the workspace owners.
+								This project has no members besides the organization owners.
 							</p>
 						) : (
 							<ul className="divide-y divide-app-border">
@@ -350,7 +350,7 @@ export function ProjectMembersDialog({
 
 											{member.isOrganizationOwner && (
 												<span className="text-xs text-app-text-muted">
-													Workspace owner
+													Organization owner
 												</span>
 											)}
 

@@ -298,7 +298,8 @@ function MembersPage() {
 					)}
 				</div>
 				<p className="text-app-text-muted">
-					Control who can access this workspace and what they are allowed to do.
+					Control who can access this organization and what they are allowed to
+					do.
 				</p>
 			</header>
 
@@ -447,8 +448,9 @@ function MembersPage() {
 					</DialogTitle>
 				</DialogHeader>
 				<DialogDescription>
-					Owners can change workspace settings, manage every member and delete
-					the organization. Only do this for someone you trust completely.
+					Owners can change organization settings, manage every member and
+					delete the organization. Only do this for someone you trust
+					completely.
 				</DialogDescription>
 				<DialogFooter>
 					<Button

@@ -275,7 +275,7 @@ export async function updateMemberRole(
 
 	if (!member) {
 		throw new APIError("NOT_FOUND", {
-			message: "That member is no longer part of this workspace.",
+			message: "That member is no longer part of this organization.",
 		});
 	}
 
@@ -337,7 +337,7 @@ export async function bulkUpdateMemberRole(
 				label: memberId,
 				status: "failed",
 				code: "MEMBER_NOT_FOUND",
-				message: "That member is no longer part of this workspace.",
+				message: "That member is no longer part of this organization.",
 			});
 			continue;
 		}
@@ -412,7 +412,7 @@ export async function bulkRemoveMembers(
 				label: memberId,
 				status: "failed",
 				code: "MEMBER_NOT_FOUND",
-				message: "That member is no longer part of this workspace.",
+				message: "That member is no longer part of this organization.",
 			});
 			continue;
 		}
@@ -442,7 +442,7 @@ export async function bulkRemoveMembers(
 				key: memberId,
 				label: labelFor(member),
 				status: "skipped",
-				message: "A workspace needs at least one owner.",
+				message: "An organization needs at least one owner.",
 			});
 			continue;
 		}
@@ -464,7 +464,7 @@ export async function bulkRemoveMembers(
 				key: memberId,
 				label: labelFor(member),
 				status: "removed",
-				message: "Removed from the workspace.",
+				message: "Removed from the organization.",
 			});
 		} catch (error) {
 			results.push({
