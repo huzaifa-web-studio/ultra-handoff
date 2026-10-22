@@ -14,6 +14,7 @@ import {
 import { adminDb } from "../db";
 import { user } from "../db/auth-schema";
 import { authErrorMessage, readAuthErrorCode } from "../lib/auth-error";
+import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 import type { TenantContext } from "../middleware/tenant";
 import { syncOrganizationOwnerToProjects } from "./project.service";
 
@@ -74,23 +75,13 @@ export type MemberListResult = {
 	counts: { total: number; members: number; admins: number; owners: number };
 };
 
-/** One outcome in a bulk response. Partial failure is a normal result. */
-export type BulkItemResult = {
-	key: string;
-	label: string;
-	status:
-		| "invited"
-		| "resent"
-		| "removed"
-		| "canceled"
-		| "updated"
-		| "skipped"
-		| "failed";
-	code?: string;
-	message: string;
-};
-
-export type BulkResult = { results: BulkItemResult[] };
+/**
+ * One outcome in a bulk response.
+ *
+ * Re-exported from the shared module so existing imports keep working while the
+ * project service uses the same shape.
+ */
+export type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 
 /** Roles the members page can assign in a single request. */
 export type AssignableMemberRole = Exclude<OrgRole, "owner">;

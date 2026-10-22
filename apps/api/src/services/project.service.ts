@@ -46,6 +46,7 @@ import {
 	canManageProjectMembers,
 	canManageProjectTarget,
 	effectiveProjectRole,
+	PROJECT_ROLE_LABELS,
 	type ProjectRole,
 	validateProjectDescription,
 	validateProjectName,
@@ -55,11 +56,14 @@ import { adminDb } from "../db";
 import { user } from "../db/auth-schema";
 import { project, projectMember } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
+import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
+import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 import { keyFromFileUrl } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
 import {
 	getOrganizationMember,
 	listOrganizationOwners,
+	type OrganizationMemberRecord,
 } from "./organization.service";
 import { deletePreviousProjectLogo } from "./upload.service";
 
@@ -880,36 +884,21 @@ export async function deleteProject(
 }
 
 /**
- * Add an organization member to a project.
+ * Insert the membership row for an already resolved organization member.
  *
- * The target must still be a member of the workspace (the picker may be
- * stale), must not already be on the project, and must be given a role the
- * actor is allowed to hand out. Organization owners are always project owners.
+ * Why a private helper: the single add and the bulk add share every rule
+ * (workspace membership, project access, assignable roles, duplicate guard).
+ * The bulk path resolves each target and reuses this, so the two paths can
+ * never drift apart.
  */
-export async function addProjectMember(
+async function insertProjectMember(
 	tenant: TenantContext,
 	projectId: string,
-	targetUserId: string,
+	target: OrganizationMemberRecord,
 	role: ProjectRole,
 ): Promise<{ userId: string; role: ProjectRole }> {
-	const target = await getOrganizationMember(
-		tenant.organizationId,
-		targetUserId,
-	);
-
-	if (!target) {
-		throw new APIError("BAD_REQUEST", {
-			message: "That person is no longer part of this organization.",
-		});
-	}
-
-	const finalRole: ProjectRole = isOrganizationOwner(target.role)
-		? "owner"
-		: role;
-
-	// An organization owner is added as owner by the workspace rule, not by the
-	// actor, so the actor's assignable roles do not apply to that case.
 	const forcedByOrganization = isOrganizationOwner(target.role);
+	const finalRole: ProjectRole = forcedByOrganization ? "owner" : role;
 
 	await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
@@ -959,6 +948,211 @@ export async function addProjectMember(
 	);
 
 	return { userId: target.userId, role: finalRole };
+}
+
+/** Read the names for a batch, so a bulk result can label its rows. */
+async function loadProjectLabels(
+	tenant: TenantContext,
+	projectIds: string[],
+): Promise<Map<string, string>> {
+	if (projectIds.length === 0) return new Map();
+
+	const rows = await withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		(tx) =>
+			tx
+				.select({ id: project.id, name: project.name })
+				.from(project)
+				.where(
+					and(
+						eq(project.organizationId, tenant.organizationId),
+						inArray(project.id, projectIds),
+					),
+				),
+	);
+
+	return new Map(rows.map((row) => [row.id, row.name]));
+}
+
+/**
+ * Archive or restore several projects in one request.
+ *
+ * Why a loop instead of one SQL update: `setProjectArchived` owns the access
+ * check and the idempotent early return. Calling it per project keeps a bulk
+ * action identical to the single row action, and a project the caller cannot
+ * edit is reported as skipped instead of failing the whole batch.
+ */
+export async function bulkSetProjectsArchived(
+	tenant: TenantContext,
+	projectIds: string[],
+	archived: boolean,
+): Promise<BulkResult> {
+	const labels = await loadProjectLabels(tenant, projectIds);
+	const results: BulkItemResult[] = [];
+
+	for (const projectId of projectIds) {
+		const label = labels.get(projectId) ?? projectId;
+
+		try {
+			await setProjectArchived(tenant, projectId, archived);
+
+			results.push({
+				key: projectId,
+				label,
+				status: archived ? "archived" : "restored",
+				message: archived ? "Project archived." : "Project restored.",
+			});
+		} catch (error) {
+			const status = authErrorStatus(error);
+			const skipped = status === 400 || status === 403 || status === 404;
+
+			results.push({
+				key: projectId,
+				label,
+				status: skipped ? "skipped" : "failed",
+				message: authErrorMessage(
+					error,
+					archived
+						? "Could not archive that project."
+						: "Could not restore that project.",
+				),
+			});
+		}
+	}
+
+	return { results };
+}
+
+/**
+ * Permanently delete several projects in one request.
+ *
+ * The owner check, cascade and logo cleanup stay inside `deleteProject`, so the
+ * bulk path cannot bypass a rule the single delete enforces. Each outcome is
+ * returned so a mixed selection is not silently partial.
+ */
+export async function bulkDeleteProjects(
+	tenant: TenantContext,
+	projectIds: string[],
+): Promise<BulkResult> {
+	const labels = await loadProjectLabels(tenant, projectIds);
+	const results: BulkItemResult[] = [];
+
+	for (const projectId of projectIds) {
+		const label = labels.get(projectId) ?? projectId;
+
+		try {
+			await deleteProject(tenant, projectId);
+
+			results.push({
+				key: projectId,
+				label,
+				status: "deleted",
+				message: "Project deleted.",
+			});
+		} catch (error) {
+			const status = authErrorStatus(error);
+			const skipped = status === 400 || status === 403 || status === 404;
+
+			results.push({
+				key: projectId,
+				label,
+				status: skipped ? "skipped" : "failed",
+				message: authErrorMessage(error, "Could not delete that project."),
+			});
+		}
+	}
+
+	return { results };
+}
+
+/**
+ * Add an organization member to a project.
+ *
+ * The target must still be a member of the workspace (the picker may be
+ * stale), must not already be on the project, and must be given a role the
+ * actor is allowed to hand out. Organization owners are always project owners.
+ */
+export async function addProjectMember(
+	tenant: TenantContext,
+	projectId: string,
+	targetUserId: string,
+	role: ProjectRole,
+): Promise<{ userId: string; role: ProjectRole }> {
+	const target = await getOrganizationMember(
+		tenant.organizationId,
+		targetUserId,
+	);
+
+	if (!target) {
+		throw new APIError("BAD_REQUEST", {
+			message: "That person is no longer part of this organization.",
+		});
+	}
+
+	return insertProjectMember(tenant, projectId, target, role);
+}
+
+/**
+ * Add several organization members to one project in a single request.
+ *
+ * Per item outcomes instead of one all or nothing error: a batch can contain
+ * someone who left the workspace, someone already on the project and someone
+ * the actor cannot assign a role to, and the user needs to see which is which.
+ * Each item still runs the same guards as the single add.
+ */
+export async function bulkAddProjectMembers(
+	tenant: TenantContext,
+	projectId: string,
+	targetUserIds: string[],
+	role: ProjectRole,
+): Promise<BulkResult> {
+	const results: BulkItemResult[] = [];
+
+	for (const userId of targetUserIds) {
+		// Resolve first so a missing person gets a readable label, not an id.
+		const target = await getOrganizationMember(tenant.organizationId, userId);
+
+		if (!target) {
+			results.push({
+				key: userId,
+				label: userId,
+				status: "skipped",
+				code: "MEMBER_NOT_FOUND",
+				message: "That person is no longer part of this organization.",
+			});
+			continue;
+		}
+
+		const label = target.name || target.email || userId;
+
+		try {
+			const added = await insertProjectMember(tenant, projectId, target, role);
+
+			results.push({
+				key: userId,
+				label,
+				status: "added",
+				message:
+					added.role === role
+						? `Added as ${PROJECT_ROLE_LABELS[added.role]}.`
+						: "Added as Owner because they own the organization.",
+			});
+		} catch (error) {
+			// A 403 or 400 means the rule refused this row, which the dialog
+			// shows as skipped. Anything else is an unexpected failure.
+			const status = authErrorStatus(error);
+			const skipped = status === 400 || status === 403 || status === 404;
+
+			results.push({
+				key: userId,
+				label,
+				status: skipped ? "skipped" : "failed",
+				message: authErrorMessage(error, "Could not add that person."),
+			});
+		}
+	}
+
+	return { results };
 }
 
 /**
@@ -1195,6 +1389,50 @@ export async function removeProjectMember(
 	);
 
 	return { status: "ok" };
+}
+
+/**
+ * Remove several project members in one request.
+ *
+ * Loops the single removal so the self check, organization owner rule, target
+ * permission and last owner rule stay identical. Per item outcomes let the
+ * dialog report a mixed selection honestly instead of failing the whole batch.
+ */
+export async function bulkRemoveProjectMembers(
+	tenant: TenantContext,
+	projectId: string,
+	targetUserIds: string[],
+): Promise<BulkResult> {
+	const people = await loadUserMap(targetUserIds);
+	const results: BulkItemResult[] = [];
+
+	for (const userId of targetUserIds) {
+		const person = people.get(userId);
+		const label = person?.name || person?.email || userId;
+
+		try {
+			await removeProjectMember(tenant, projectId, userId);
+
+			results.push({
+				key: userId,
+				label,
+				status: "removed",
+				message: "Removed from the project.",
+			});
+		} catch (error) {
+			const status = authErrorStatus(error);
+			const skipped = status === 400 || status === 403 || status === 404;
+
+			results.push({
+				key: userId,
+				label,
+				status: skipped ? "skipped" : "failed",
+				message: authErrorMessage(error, "Could not remove that person."),
+			});
+		}
+	}
+
+	return { results };
 }
 
 /**

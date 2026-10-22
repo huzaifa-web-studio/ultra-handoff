@@ -11,6 +11,7 @@
 
 import { Badge } from "@org/ui/components/badge";
 import { Button } from "@org/ui/components/button";
+import { Checkbox } from "@org/ui/components/checkbox";
 import {
 	DropdownMenu,
 	DropdownMenuItem,
@@ -41,7 +42,7 @@ import {
 	UsersIcon,
 } from "lucide-react";
 import { useMemo } from "react";
-import type { SortDescriptor } from "react-aria-components";
+import type { Selection, SortDescriptor } from "react-aria-components";
 import { SortIndicator } from "#/components/data-table/sort-indicator";
 import { UserAvatar } from "#/components/user-avatar";
 import { formatDate, formatDateTime } from "#/lib/date";
@@ -52,6 +53,9 @@ type ProjectsTableProps = {
 	projects: ProjectRow[];
 	sorting: SortingState;
 	onSortingChange: (next: SortingState) => void;
+	/** Ids of the rows currently selected for a bulk action. */
+	selected: Set<string>;
+	onSelectedChange: (next: Set<string>) => void;
 	onEdit: (project: ProjectRow) => void;
 	onManageMembers: (project: ProjectRow) => void;
 	onArchive: (project: ProjectRow) => void;
@@ -149,6 +153,8 @@ export function ProjectsTable({
 	projects,
 	sorting,
 	onSortingChange,
+	selected,
+	onSelectedChange,
 	onEdit,
 	onManageMembers,
 	onArchive,
@@ -277,11 +283,30 @@ export function ProjectsTable({
 	}, [sorting]);
 
 	const rows = table.getRowModel().rows;
+	const visibleIds = rows.map((row) => row.id);
+
+	// Only offer selection when the caller can act on at least one row, so a
+	// client or plain member never sees a checkbox that leads nowhere.
+	const selectable = projects.some(
+		(project) => project.canEdit || project.canDelete,
+	);
+
+	function handleSelectionChange(keys: Selection) {
+		if (keys === "all") {
+			onSelectedChange(new Set(visibleIds));
+			return;
+		}
+
+		onSelectedChange(new Set(Array.from(keys).map(String)));
+	}
 
 	return (
 		<Table
 			aria-label="Projects"
 			containerClassName="overflow-visible"
+			selectionMode={selectable ? "multiple" : "none"}
+			selectedKeys={selected}
+			onSelectionChange={handleSelectionChange}
 			sortDescriptor={sortDescriptor}
 			onSortChange={(descriptor) => {
 				onSortingChange([
@@ -293,6 +318,11 @@ export function ProjectsTable({
 			}}
 		>
 			<TableHeader>
+				{selectable && (
+					<TableHead className={`${STICKY_HEADER} w-10`}>
+						<Checkbox slot="selection" aria-label="Select all projects" />
+					</TableHead>
+				)}
 				{(table.getHeaderGroups()[0]?.headers ?? []).map((header) => {
 					const sorted = header.column.getIsSorted();
 					const canSort = header.column.getCanSort();
@@ -330,6 +360,14 @@ export function ProjectsTable({
 			<TableBody renderEmptyState={() => emptyState}>
 				{rows.map((row) => (
 					<TableRow key={row.id} id={row.id}>
+						{selectable && (
+							<TableCell>
+								<Checkbox
+									slot="selection"
+									aria-label={`Select ${row.original.name}`}
+								/>
+							</TableCell>
+						)}
 						{row.getVisibleCells().map((cell) => (
 							<TableCell key={cell.id}>
 								{flexRender(cell.column.columnDef.cell, cell.getContext())}

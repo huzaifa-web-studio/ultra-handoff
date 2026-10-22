@@ -10,11 +10,16 @@
 
 import { Elysia, t } from "elysia";
 
+import { BULK_SELECTION_MAX } from "../auth/permissions";
 import type { ProjectRole } from "../auth/project-permissions";
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import { tenantPlugin } from "../middleware/tenant";
 import {
 	addProjectMember,
+	bulkAddProjectMembers,
+	bulkDeleteProjects,
+	bulkRemoveProjectMembers,
+	bulkSetProjectsArchived,
 	createProject,
 	deleteProject,
 	getProjectDetail,
@@ -54,6 +59,17 @@ const projectQuery = t.Object({
 
 const PROJECT_STATUSES = ["all", "active", "archived"] as const;
 const PROJECT_SORTS = ["name", "createdAt", "updatedAt"] as const;
+
+/**
+ * A batch of ids in one request.
+ *
+ * Capped at the same limit the members bulk routes use, so no single request
+ * can turn into an unbounded loop.
+ */
+const idList = t.Array(t.String({ minLength: 1, maxLength: 64 }), {
+	minItems: 1,
+	maxItems: BULK_SELECTION_MAX,
+});
 
 /** Clamp query strings instead of trusting the browser. */
 function parseProjectQuery(query: {
@@ -209,6 +225,48 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		},
 		{ tenant: true, params: projectParams },
 	)
+	/** Archive several projects. Owners and admins. */
+	.post(
+		"/orgs/:orgSlug/projects/bulk-archive",
+		async ({ tenant, status, body }) => {
+			try {
+				return await bulkSetProjectsArchived(tenant, body.projectIds, true);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not archive those projects."),
+				});
+			}
+		},
+		{ tenant: true, body: t.Object({ projectIds: idList }) },
+	)
+	/** Restore several archived projects. Owners and admins. */
+	.post(
+		"/orgs/:orgSlug/projects/bulk-unarchive",
+		async ({ tenant, status, body }) => {
+			try {
+				return await bulkSetProjectsArchived(tenant, body.projectIds, false);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not restore those projects."),
+				});
+			}
+		},
+		{ tenant: true, body: t.Object({ projectIds: idList }) },
+	)
+	/** Permanently delete several projects. Project owners only, per item. */
+	.post(
+		"/orgs/:orgSlug/projects/bulk-delete",
+		async ({ tenant, status, body }) => {
+			try {
+				return await bulkDeleteProjects(tenant, body.projectIds);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not delete those projects."),
+				});
+			}
+		},
+		{ tenant: true, body: t.Object({ projectIds: idList }) },
+	)
 	/** Add one workspace member to the project. */
 	.post(
 		"/orgs/:orgSlug/projects/:projectId/members",
@@ -233,6 +291,54 @@ export const projectRoutes = new Elysia({ name: "projects" })
 				userId: t.String({ minLength: 1, maxLength: 64 }),
 				role: t.UnionEnum(["owner", "admin", "member", "client"]),
 			}),
+		},
+	)
+	/** Add several workspace members in one request, with per person outcomes. */
+	.post(
+		"/orgs/:orgSlug/projects/:projectId/members/bulk",
+		async ({ tenant, status, params, body }) => {
+			try {
+				return await bulkAddProjectMembers(
+					tenant,
+					params.projectId,
+					body.userIds,
+					body.role as ProjectRole,
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not add those people."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: projectParams,
+			body: t.Object({
+				userIds: idList,
+				role: t.UnionEnum(["owner", "admin", "member", "client"]),
+			}),
+		},
+	)
+	/** Remove several project members in one request, with per person outcomes. */
+	.post(
+		"/orgs/:orgSlug/projects/:projectId/members/bulk-remove",
+		async ({ tenant, status, params, body }) => {
+			try {
+				return await bulkRemoveProjectMembers(
+					tenant,
+					params.projectId,
+					body.userIds,
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not remove those people."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: projectParams,
+			body: t.Object({ userIds: idList }),
 		},
 	)
 	/** Change one project member's role. */

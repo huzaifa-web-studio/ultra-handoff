@@ -18,14 +18,18 @@ import {
 
 import { ApiRequestError } from "#/lib/api";
 import {
-	addProjectMember,
 	archiveProject,
+	bulkAddProjectMembers,
+	bulkArchiveProjects,
+	bulkDeleteProjects,
+	bulkRemoveProjectMembers,
+	bulkUnarchiveProjects,
 	createProject,
 	deleteProject,
 	fetchProject,
 	fetchProjects,
 	type ProjectListFilters,
-	removeProjectMember,
+	type ProjectRoleInput,
 	unarchiveProject,
 	updateProject,
 	updateProjectMemberRole,
@@ -151,17 +155,47 @@ export function useDeleteProject(orgSlug: string) {
 	});
 }
 
-export function useAddProjectMember(orgSlug: string, projectId: string) {
+export function useBulkArchiveProjects(orgSlug: string) {
+	const invalidate = useInvalidateProjects(orgSlug);
+
+	return useMutation({
+		mutationFn: (projectIds: string[]) =>
+			bulkArchiveProjects(orgSlug, projectIds),
+		onSuccess: invalidate,
+	});
+}
+
+export function useBulkUnarchiveProjects(orgSlug: string) {
+	const invalidate = useInvalidateProjects(orgSlug);
+
+	return useMutation({
+		mutationFn: (projectIds: string[]) =>
+			bulkUnarchiveProjects(orgSlug, projectIds),
+		onSuccess: invalidate,
+	});
+}
+
+export function useBulkDeleteProjects(orgSlug: string) {
+	const invalidate = useInvalidateProjects(orgSlug);
+
+	return useMutation({
+		mutationFn: (projectIds: string[]) =>
+			bulkDeleteProjects(orgSlug, projectIds),
+		onSuccess: invalidate,
+	});
+}
+
+export function useBulkAddProjectMembers(orgSlug: string, projectId: string) {
 	const invalidate = useInvalidateProjects(orgSlug);
 
 	return useMutation({
 		mutationFn: ({
-			userId,
+			userIds,
 			role,
 		}: {
-			userId: string;
-			role: "owner" | "admin" | "member" | "client";
-		}) => addProjectMember(orgSlug, projectId, userId, role),
+			userIds: string[];
+			role: ProjectRoleInput;
+		}) => bulkAddProjectMembers(orgSlug, projectId, userIds, role),
 		onSuccess: invalidate,
 	});
 }
@@ -175,18 +209,21 @@ export function useUpdateProjectMemberRole(orgSlug: string, projectId: string) {
 			role,
 		}: {
 			userId: string;
-			role: "owner" | "admin" | "member" | "client";
+			role: ProjectRoleInput;
 		}) => updateProjectMemberRole(orgSlug, projectId, userId, role),
 		onSuccess: invalidate,
 	});
 }
 
-export function useRemoveProjectMember(orgSlug: string, projectId: string) {
+export function useBulkRemoveProjectMembers(
+	orgSlug: string,
+	projectId: string,
+) {
 	const invalidate = useInvalidateProjects(orgSlug);
 
 	return useMutation({
-		mutationFn: (userId: string) =>
-			removeProjectMember(orgSlug, projectId, userId),
+		mutationFn: (userIds: string[]) =>
+			bulkRemoveProjectMembers(orgSlug, projectId, userIds),
 		onSuccess: invalidate,
 	});
 }

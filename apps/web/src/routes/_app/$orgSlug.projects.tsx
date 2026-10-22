@@ -2,9 +2,10 @@
  * Projects page.
  *
  * Why one page component: the table, toolbar, create/edit dialog, members
- * dialog and delete confirmation all operate on the same list, so they share
- * the search, filter, sort and pagination state here. The API owns every
- * permission check; the UI only hides actions the caller cannot perform.
+ * dialog, bulk action bar and delete confirmations all operate on the same
+ * list, so they share the search, filter, sort, pagination and selection state
+ * here. The API owns every permission check; the UI only hides actions the
+ * caller cannot perform.
  *
  * Used by: the app sidebar at `/$orgSlug/projects`.
  */
@@ -15,14 +16,21 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { SortingState } from "@tanstack/react-table";
 import { PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { TableLoader } from "#/components/data-table/table-loader";
 import { TablePagination } from "#/components/data-table/table-pagination";
 import { RoleChip } from "#/components/role-chip";
+import { beginOrganizationOperation } from "#/features/organization/switch-guard";
 import type { ProjectListFilters, ProjectRow } from "#/features/projects/api";
 import { ArchiveProjectDialog } from "#/features/projects/archive-project-dialog";
+import { BulkDeleteProjectsDialog } from "#/features/projects/bulk-delete-projects-dialog";
 import { DeleteProjectDialog } from "#/features/projects/delete-project-dialog";
-import { useProjects } from "#/features/projects/hooks";
+import {
+	useBulkArchiveProjects,
+	useBulkUnarchiveProjects,
+	useProjects,
+} from "#/features/projects/hooks";
 import { ProjectDialog } from "#/features/projects/project-dialog";
 import { ProjectMembersDialog } from "#/features/projects/project-members-dialog";
 import { ProjectsTable } from "#/features/projects/projects-table";
@@ -59,6 +67,12 @@ function ProjectsPage() {
 		mode: "archive" | "unarchive";
 	} | null>(null);
 	const [deleteTarget, setDeleteTarget] = useState<ProjectRow | null>(null);
+	/** Ids ticked in the table for a bulk action. Page scoped. */
+	const [selected, setSelected] = useState<Set<string>>(new Set());
+	const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+	const bulkArchive = useBulkArchiveProjects(orgSlug);
+	const bulkUnarchive = useBulkUnarchiveProjects(orgSlug);
 
 	// The table column id for the name is "project". Everything else maps
 	// straight to an API sort field.
@@ -82,12 +96,21 @@ function ProjectsPage() {
 	const projectsQuery = useProjects(orgSlug, filters);
 	const data = projectsQuery.data;
 
-	// A filter change always returns to the first page. Otherwise the user
-	// could land on a page that does not exist for the new filter.
+	// A filter change always returns to the first page and drops the selection.
+	// Otherwise the user could land on a page that does not exist for the new
+	// filter, or act on rows they can no longer see.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reset on filter change
 	useEffect(() => {
+		setSelected(new Set());
 		setPagination((prev) => ({ ...prev, pageIndex: 0 }));
 	}, [debouncedSearch, status]);
+
+	// Selection is page scoped, because bulk actions only ever apply to rows
+	// that are currently visible.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset on page change
+	useEffect(() => {
+		setSelected(new Set());
+	}, [pagination.pageIndex, pagination.pageSize]);
 
 	// A delete can shrink the list below the current page. Keep the state in
 	// range instead of showing an empty page.
@@ -157,6 +180,91 @@ function ProjectsPage() {
 	if (!data) return null;
 
 	const { viewer, counts } = data;
+	// Captured once so the handlers below do not need a repeated guard.
+	const organizationId = data.organizationId;
+
+	// Only rows on this page can be selected, so the selection resolves against
+	// the rows the table is currently showing.
+	const selectedProjects = data.projects.filter((project) =>
+		selected.has(project.id),
+	);
+	const archivableProjects = selectedProjects.filter(
+		(project) => project.canEdit && project.status === "active",
+	);
+	const restorableProjects = selectedProjects.filter(
+		(project) => project.canEdit && project.status === "archived",
+	);
+
+	/**
+	 * Archive or restore the selected projects.
+	 *
+	 * Both directions share this runner because the only differences are the
+	 * mutation and the status name. Rows the caller cannot edit are filtered
+	 * out before the request, so the batch only carries actionable ids.
+	 */
+	async function applyBulkArchive(
+		projectsToChange: ProjectRow[],
+		archived: boolean,
+	) {
+		if (projectsToChange.length === 0) return;
+		if (bulkArchive.isPending || bulkUnarchive.isPending) return;
+
+		const count = projectsToChange.length;
+		const operation = beginOrganizationOperation({
+			organizationId,
+			organizationSlug: orgSlug,
+			reason: `${archived ? "Archiving" : "Restoring"} ${count} project${
+				count === 1 ? "" : "s"
+			}`,
+		});
+
+		try {
+			const projectIds = projectsToChange.map((project) => project.id);
+			const result = archived
+				? await bulkArchive.mutateAsync(projectIds)
+				: await bulkUnarchive.mutateAsync(projectIds);
+
+			const successStatus = archived ? "archived" : "restored";
+			const done = result.results.filter(
+				(item) => item.status === successStatus,
+			).length;
+			// Rows filtered out before the request count as skipped too, so the
+			// summary matches what the user selected.
+			const skipped =
+				result.results.length - done + (selectedProjects.length - count);
+
+			if (done > 0) {
+				toast.success(
+					`${done} project${done === 1 ? "" : "s"} ${
+						archived ? "archived" : "restored"
+					}.`,
+				);
+			}
+
+			if (skipped > 0) {
+				toast.warning(
+					`${skipped} project${skipped === 1 ? "" : "s"} skipped.`,
+					{
+						description: `You can only ${
+							archived ? "archive" : "restore"
+						} projects you own or administer.`,
+					},
+				);
+			}
+
+			setSelected(new Set());
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: archived
+						? "Could not archive those projects."
+						: "Could not restore those projects.",
+			);
+		} finally {
+			operation.end();
+		}
+	}
 
 	return (
 		<div className="mx-auto flex w-full max-w-5xl flex-col gap-6 lg:h-full lg:min-h-0">
@@ -193,6 +301,18 @@ function ProjectsPage() {
 					onStatusChange={setStatus}
 					visibleCount={data.total}
 					totalCount={counts.all}
+					selectedCount={selectedProjects.length}
+					onClearSelection={() => setSelected(new Set())}
+					canArchive={archivableProjects.length > 0}
+					canRestore={restorableProjects.length > 0}
+					canDelete={selectedProjects.some((project) => project.canDelete)}
+					onBulkArchive={() => {
+						void applyBulkArchive(archivableProjects, true);
+					}}
+					onBulkRestore={() => {
+						void applyBulkArchive(restorableProjects, false);
+					}}
+					onBulkDelete={() => setBulkDeleteOpen(true)}
 					onRefresh={() => {
 						void projectsQuery.refetch();
 					}}
@@ -213,6 +333,8 @@ function ProjectsPage() {
 						projects={data.projects}
 						sorting={sorting}
 						onSortingChange={setSorting}
+						selected={selected}
+						onSelectedChange={setSelected}
 						onEdit={handleEdit}
 						onManageMembers={handleManageMembers}
 						onArchive={handleArchive}
@@ -309,6 +431,18 @@ function ProjectsPage() {
 					if (!open) setDeleteTarget(null);
 				}}
 				onDeleted={() => setDeleteTarget(null)}
+			/>
+
+			<BulkDeleteProjectsDialog
+				organizationId={data.organizationId}
+				orgSlug={orgSlug}
+				isOpen={bulkDeleteOpen}
+				onOpenChange={setBulkDeleteOpen}
+				projects={selectedProjects}
+				onDeleted={() => {
+					setBulkDeleteOpen(false);
+					setSelected(new Set());
+				}}
 			/>
 		</div>
 	);
