@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
 import type * as React from "react";
+import { useRef } from "react";
 import {
 	Button as ButtonPrimitive,
 	composeRenderProps,
@@ -20,6 +21,7 @@ import {
 	Separator as SeparatorPrimitive,
 } from "react-aria-components";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "./input-group";
+import { useDismissOnOutsidePress } from "./use-dismiss-on-outside-press";
 
 function Select<T extends object, M extends "single" | "multiple" = "single">({
 	className,
@@ -127,6 +129,7 @@ function SelectPopover({
 	placement = "bottom start",
 	offset = 4,
 	crossOffset = 0,
+	isNonModal = true,
 	...props
 }: Omit<
 	React.ComponentProps<typeof PopoverPrimitive>,
@@ -135,9 +138,18 @@ function SelectPopover({
 	className?: string;
 	children?: React.ReactNode;
 }) {
+	const popoverRef = useRef<HTMLDivElement>(null);
+
+	// Non-modal on purpose, so the press that dismisses the list also reaches
+	// the element underneath. The hook restores the outside press close that
+	// react-aria skips for non-modal popovers.
+	useDismissOnOutsidePress(popoverRef);
+
 	return (
 		<PopoverPrimitive
+			ref={popoverRef}
 			data-slot="select-content"
+			isNonModal={isNonModal}
 			placement={placement}
 			offset={offset}
 			crossOffset={crossOffset}

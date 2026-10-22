@@ -2,6 +2,7 @@ import { cva } from "class-variance-authority";
 import { cn } from "cn";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
+import { useRef } from "react";
 import {
 	composeRenderProps,
 	Header as HeaderPrimitive,
@@ -15,6 +16,7 @@ import {
 	Separator as SeparatorPrimitive,
 	SubmenuTrigger as SubmenuTriggerPrimitive,
 } from "react-aria-components";
+import { useDismissOnOutsidePress } from "./use-dismiss-on-outside-press";
 
 function DropdownMenuTrigger({
 	...props
@@ -43,8 +45,16 @@ function DropdownMenu({
 		className?: string;
 		children?: React.ReactNode;
 	}) {
+	const popoverRef = useRef<HTMLDivElement>(null);
+
+	// Non-modal on purpose, so the press that dismisses the menu also reaches
+	// the element underneath. The hook restores the outside press close that
+	// react-aria skips for non-modal popovers.
+	useDismissOnOutsidePress(popoverRef);
+
 	return (
 		<PopoverPrimitive
+			ref={popoverRef}
 			data-slot={dataSlot}
 			placement={placement}
 			offset={offset}
