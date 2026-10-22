@@ -25,8 +25,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useMembers } from "#/features/members/hooks";
 import { assignableInvitationRoles } from "#/features/organization/permissions";
 import { beginOrganizationOperation } from "#/features/organization/switch-guard";
+import { EMAIL_MAX } from "#/lib/limits";
 import type { InvitationBulkResult } from "./api";
 import { useBulkInvite } from "./hooks";
 import { MAX_BULK_INVITES, parseEmailInput } from "./schema";
@@ -88,8 +90,38 @@ export function InviteMembersDialog({
 	);
 	const mutation = useBulkInvite(orgSlug);
 
+	// Capacity comes from the members payload, which the Members page already
+	// caches. `counts.total` plus live pending invitations is exactly what the
+	// API counts as used seats, so the warning below matches the server rule.
+	const capacity = useMembers(orgSlug, isOpen);
+	const seatsLimit = capacity.data?.limits.membership ?? null;
+	const pendingLimit = capacity.data?.limits.invitation ?? null;
+	const pendingCount = capacity.data?.pendingInvitationCount ?? null;
+	const memberCount = capacity.data?.counts.total ?? null;
+	const seatsUsed =
+		memberCount !== null && pendingCount !== null
+			? memberCount + pendingCount
+			: null;
+	const seatsLeft =
+		seatsUsed !== null && seatsLimit !== null
+			? Math.max(0, seatsLimit - seatsUsed)
+			: null;
+	const pendingLeft =
+		pendingCount !== null && pendingLimit !== null
+			? Math.max(0, pendingLimit - pendingCount)
+			: null;
+	// A new address needs a free seat and a free invitation slot. An address
+	// that already has a live invitation already holds both, so the warning
+	// says "may" rather than blocking the batch outright.
+	const freeNewSlots =
+		seatsLeft !== null && pendingLeft !== null
+			? Math.min(seatsLeft, pendingLeft)
+			: null;
+
 	const parsed = useMemo(() => parseEmailInput(input), [input]);
 	const tooMany = parsed.valid.length > MAX_BULK_INVITES;
+	const overCapacity =
+		freeNewSlots !== null && parsed.valid.length > freeNewSlots;
 	const canSubmit =
 		parsed.valid.length > 0 &&
 		!tooMany &&
@@ -201,6 +233,10 @@ export function InviteMembersDialog({
 						}}
 						placeholder={"ayesha@studio.com\nsam@studio.com"}
 						rows={5}
+						// Enough for the largest batch, one maximum length address
+						// per line plus a separator. Stops an accidental paste from
+						// filling memory.
+						maxLength={MAX_BULK_INVITES * (EMAIL_MAX + 4)}
 						aria-describedby="invite-emails-hint"
 						disabled={mutation.isPending}
 						// The textarea grows with its content by default. Cap it
@@ -209,20 +245,57 @@ export function InviteMembersDialog({
 						className="max-h-48 overflow-y-auto"
 					/>
 					<p id="invite-emails-hint" className="text-xs text-app-text-muted">
-						One per line, or separated by commas.{" "}
-						{parsed.valid.length > 0 && (
-							<span className="text-app-text">
-								{parsed.valid.length} ready to invite
-								{parsed.duplicateCount > 0
-									? `, ${parsed.duplicateCount} duplicate`
-									: ""}
-								{parsed.invalidCount > 0
-									? `, ${parsed.invalidCount} invalid`
-									: ""}
-								.
-							</span>
-						)}
+						One per line, or separated by commas.
 					</p>
+					{parsed.valid.length > 0 && (
+						<p className="text-xs text-app-text">
+							{parsed.valid.length} ready to invite
+							{parsed.duplicateCount > 0
+								? `, ${parsed.duplicateCount} duplicate`
+								: ""}
+							{parsed.invalidCount > 0
+								? `, ${parsed.invalidCount} invalid`
+								: ""}
+							.
+						</p>
+					)}
+					{seatsLimit !== null &&
+						seatsLeft !== null &&
+						seatsUsed !== null &&
+						pendingCount !== null &&
+						pendingLimit !== null && (
+							<dl className="flex flex-col gap-1 border border-app-border bg-app-panel-subtle px-3 py-2 text-xs">
+								<div className="flex items-baseline justify-between gap-3">
+									<dt className="text-app-text-muted">Members</dt>
+									<dd className="tabular-nums text-app-text">{memberCount}</dd>
+								</div>
+								<div className="flex items-baseline justify-between gap-3">
+									<dt className="text-app-text-muted">Pending invitations</dt>
+									<dd className="tabular-nums text-app-text">
+										{pendingCount} of {pendingLimit}
+									</dd>
+								</div>
+								<div className="flex items-baseline justify-between gap-3">
+									<dt className="text-app-text-muted">Seats committed</dt>
+									<dd className="tabular-nums text-app-text">
+										{seatsUsed} of {seatsLimit}
+									</dd>
+								</div>
+								<div className="flex items-baseline justify-between gap-3">
+									<dt className="text-app-text-muted">Seats free</dt>
+									<dd className="tabular-nums text-app-text">{seatsLeft}</dd>
+								</div>
+							</dl>
+						)}
+					{overCapacity && (
+						<output className="block text-sm text-warning">
+							Only {freeNewSlots}{" "}
+							{freeNewSlots === 1 ? "new seat" : "new seats"}{" "}
+							{freeNewSlots === 1 ? "is" : "are"} available right now. Addresses
+							that already have a pending invitation keep their seat, so part of
+							this list may still be sent.
+						</output>
+					)}
 					{tooMany && (
 						<p role="alert" className="text-sm text-danger">
 							Send at most {MAX_BULK_INVITES} addresses at a time. Split the

@@ -21,7 +21,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { toFieldErrors } from "#/lib/form-errors";
-import { passwordRuleMessage } from "#/lib/password";
+import { PASSWORD_MAX, passwordRuleMessage } from "#/lib/password";
 import { authClient } from "./client";
 import { resetPasswordSchema } from "./schema";
 import { openSignIn } from "./store";
@@ -121,6 +121,7 @@ export function ResetPasswordForm({
 						<PasswordInput
 							id="reset-new-password"
 							autoComplete="new-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}
@@ -145,6 +146,7 @@ export function ResetPasswordForm({
 						<PasswordInput
 							id="reset-confirm-password"
 							autoComplete="new-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}

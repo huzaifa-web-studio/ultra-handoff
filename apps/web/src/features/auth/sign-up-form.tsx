@@ -1,5 +1,10 @@
 import { Button } from "@org/ui/components/button";
-import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
+import {
+	Field,
+	FieldDescription,
+	FieldError,
+	FieldLabel,
+} from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { PasswordInput } from "@org/ui/components/password-input";
 import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
@@ -7,7 +12,10 @@ import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { FieldMeta } from "#/components/field-meta";
 import { toFieldErrors } from "#/lib/form-errors";
+import { EMAIL_MAX, USER_NAME_MAX } from "#/lib/limits";
+import { PASSWORD_MAX, passwordRuleMessage } from "#/lib/password";
 import { authClient } from "./client";
 import { signUpSchema } from "./schema";
 import { closeAuthDialog } from "./store";
@@ -76,11 +84,21 @@ export function AuthSignUpForm() {
 							type="text"
 							autoFocus
 							tabIndex={0}
+							autoComplete="name"
+							maxLength={USER_NAME_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
 						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
+						<FieldMeta
+							counter={{
+								current: field.state.value.length,
+								max: USER_NAME_MAX,
+							}}
+						>
+							The name your team and clients will see.
+						</FieldMeta>
 					</Field>
 				)}
 			</form.Field>
@@ -93,6 +111,8 @@ export function AuthSignUpForm() {
 						<FieldLabel>Email</FieldLabel>
 						<Input
 							type="email"
+							autoComplete="email"
+							maxLength={EMAIL_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
@@ -109,11 +129,14 @@ export function AuthSignUpForm() {
 					<Field>
 						<FieldLabel>Password</FieldLabel>
 						<PasswordInput
+							autoComplete="new-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
 						/>
 						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
+						<FieldDescription>{passwordRuleMessage}.</FieldDescription>
 					</Field>
 				)}
 			</form.Field>

@@ -18,10 +18,12 @@ import { Separator } from "@org/ui/components/separator";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
 import { toast } from "sonner";
+import { FieldMeta } from "#/components/field-meta";
 import { authClient } from "#/features/auth/client";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
 import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
+import { USER_NAME_MAX } from "#/lib/limits";
 import { AvatarUploader } from "./avatar-uploader";
 import { useUpdateProfile } from "./hooks";
 import { profileSchema } from "./schema";
@@ -148,12 +150,20 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 									id="account-name"
 									type="text"
 									autoComplete="name"
+									maxLength={USER_NAME_MAX}
 									value={field.state.value}
 									onBlur={field.handleBlur}
 									onChange={(event) => field.handleChange(event.target.value)}
 								/>
 								<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-								<FieldDescription>Up to 64 characters.</FieldDescription>
+								<FieldMeta
+									counter={{
+										current: field.state.value.length,
+										max: USER_NAME_MAX,
+									}}
+								>
+									The name your team and clients see.
+								</FieldMeta>
 							</Field>
 						)}
 					</form.Field>

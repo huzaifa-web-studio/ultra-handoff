@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
 import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
+import { EMAIL_MAX } from "#/lib/limits";
 import { authClient } from "./client";
 import { forgotPasswordSchema } from "./schema";
 import { closeAuthDialog, openSignIn } from "./store";
@@ -175,6 +176,7 @@ export function AuthForgotPasswordForm({
 							// Only steal focus when the field still needs typing.
 							autoFocus={!defaultEmail}
 							autoComplete="email"
+							maxLength={EMAIL_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}

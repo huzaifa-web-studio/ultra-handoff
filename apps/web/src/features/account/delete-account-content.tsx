@@ -16,6 +16,7 @@ import { Separator } from "@org/ui/components/separator";
 import { Skeleton } from "@org/ui/components/skeleton";
 import { useState } from "react";
 import { broadcastAuth } from "#/features/auth/sync";
+import { EMAIL_MAX } from "#/lib/limits";
 import { useAccountDeletionCheck, useDeleteAccount } from "./hooks";
 
 type DeleteAccountContentProps = {
@@ -118,6 +119,7 @@ export function DeleteAccountContent({ email }: DeleteAccountContentProps) {
 							type="email"
 							autoComplete="off"
 							spellCheck={false}
+							maxLength={EMAIL_MAX}
 							value={confirmEmail}
 							onChange={(event) => setConfirmEmail(event.target.value)}
 							placeholder={email}

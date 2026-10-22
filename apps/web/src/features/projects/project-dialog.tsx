@@ -19,26 +19,25 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@org/ui/components/dialog";
-import {
-	Field,
-	FieldDescription,
-	FieldError,
-	FieldLabel,
-} from "@org/ui/components/field";
+import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { Textarea } from "@org/ui/components/textarea";
 import { useForm } from "@tanstack/react-form";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { FieldMeta } from "#/components/field-meta";
 import { toFieldErrors } from "#/lib/form-errors";
+import { slugify } from "#/lib/slug";
 import type { ProjectRow } from "./api";
 import { useCreateProject, useUpdateProject } from "./hooks";
 import { ProjectLogoUploader } from "./project-logo-uploader";
 import {
 	PROJECT_DESCRIPTION_MAX,
+	PROJECT_NAME_MAX,
+	PROJECT_SLUG_MAX,
+	PROJECT_SLUG_MIN,
 	projectSchema,
-	slugifyProjectName,
 } from "./schema";
 
 type ProjectDialogProps = {
@@ -194,6 +193,7 @@ export function ProjectDialog({
 								id="project-name"
 								type="text"
 								autoComplete="off"
+								maxLength={PROJECT_NAME_MAX}
 								value={field.state.value}
 								disabled={isSubmitting}
 								onBlur={field.handleBlur}
@@ -205,15 +205,20 @@ export function ProjectDialog({
 									if (!slugTouched) {
 										form.setFieldValue(
 											"slug",
-											slugifyProjectName(event.target.value),
+											slugify(event.target.value, PROJECT_SLUG_MAX),
 										);
 									}
 								}}
 							/>
 							<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-							<FieldDescription>
+							<FieldMeta
+								counter={{
+									current: field.state.value.length,
+									max: PROJECT_NAME_MAX,
+								}}
+							>
 								Shown in the projects table and the sidebar.
-							</FieldDescription>
+							</FieldMeta>
 						</Field>
 					)}
 				</form.Field>
@@ -238,10 +243,14 @@ export function ProjectDialog({
 								onChange={(event) => field.handleChange(event.target.value)}
 							/>
 							<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-							<FieldDescription>
-								A short summary of the engagement. {field.state.value.length}/
-								{PROJECT_DESCRIPTION_MAX} characters.
-							</FieldDescription>
+							<FieldMeta
+								counter={{
+									current: field.state.value.length,
+									max: PROJECT_DESCRIPTION_MAX,
+								}}
+							>
+								A short summary of the engagement.
+							</FieldMeta>
 						</Field>
 					)}
 				</form.Field>
@@ -258,6 +267,7 @@ export function ProjectDialog({
 								type="text"
 								autoComplete="off"
 								spellCheck={false}
+								maxLength={PROJECT_SLUG_MAX}
 								value={field.state.value}
 								disabled={isSubmitting}
 								onBlur={field.handleBlur}
@@ -267,10 +277,18 @@ export function ProjectDialog({
 								}}
 							/>
 							<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-							<FieldDescription>
-								Unique inside this organization. Use lowercase letters, numbers
-								and hyphens.
-							</FieldDescription>
+							<FieldMeta
+								counter={{
+									current: field.state.value.length,
+									max: PROJECT_SLUG_MAX,
+								}}
+							>
+								<span>Unique inside this organization.</span>
+								<span>
+									Lowercase letters, numbers and single hyphens. At least{" "}
+									{PROJECT_SLUG_MIN} characters.
+								</span>
+							</FieldMeta>
 						</Field>
 					)}
 				</form.Field>

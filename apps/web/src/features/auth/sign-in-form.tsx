@@ -8,6 +8,8 @@ import { useForm } from "@tanstack/react-form";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toFieldErrors } from "#/lib/form-errors";
+import { EMAIL_MAX } from "#/lib/limits";
+import { PASSWORD_MAX } from "#/lib/password";
 import { authClient } from "./client";
 import { signInSchema } from "./schema";
 import { closeAuthDialog, openForgotPassword } from "./store";
@@ -71,6 +73,8 @@ export function AuthSignInForm() {
 							type="email"
 							autoFocus
 							tabIndex={0}
+							autoComplete="email"
+							maxLength={EMAIL_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}
@@ -87,6 +91,8 @@ export function AuthSignInForm() {
 					<Field>
 						<FieldLabel>Password</FieldLabel>
 						<PasswordInput
+							autoComplete="current-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => field.handleChange(e.target.value)}

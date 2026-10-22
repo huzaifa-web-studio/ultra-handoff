@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 
 import { BulkActionBar } from "#/components/data-table/bulk-action-bar";
+import { BULK_SELECTION_MAX } from "#/lib/limits";
+import { PROJECT_SEARCH_MAX } from "./schema";
 
 type ProjectStatusFilter = "all" | "active" | "archived";
 
@@ -90,6 +92,9 @@ export function ProjectsToolbar({
 						onChange={(event) => onSearchChange(event.target.value)}
 						placeholder="Search name or slug"
 						aria-label="Search projects"
+						// The list route rejects a longer search string, so stop
+						// the input before the request can fail.
+						maxLength={PROJECT_SEARCH_MAX}
 						className="pl-6"
 					/>
 					{search.length > 0 && (
@@ -145,7 +150,11 @@ export function ProjectsToolbar({
 			</div>
 
 			{selectedCount > 0 && (
-				<BulkActionBar count={selectedCount} onClear={onClearSelection}>
+				<BulkActionBar
+					count={selectedCount}
+					max={BULK_SELECTION_MAX}
+					onClear={onClearSelection}
+				>
 					{canArchive && (
 						<Button
 							size="sm"

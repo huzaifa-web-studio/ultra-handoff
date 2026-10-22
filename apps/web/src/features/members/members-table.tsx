@@ -48,6 +48,7 @@ import {
 	roleParts,
 } from "#/features/organization/permissions";
 import { formatDate } from "#/lib/date";
+import { BULK_SELECTION_MAX } from "#/lib/limits";
 import type { MemberRow } from "./api";
 
 /**
@@ -326,11 +327,15 @@ export function MembersTable({
 
 	function handleSelectionChange(keys: Selection) {
 		if (keys === "all") {
-			onSelectedChange(new Set(visibleIds));
+			onSelectedChange(new Set(visibleIds.slice(0, BULK_SELECTION_MAX)));
 			return;
 		}
 
-		onSelectedChange(new Set(Array.from(keys).map(String)));
+		// Clamp even though a page cannot currently exceed the route limit. A
+		// future page size change must not silently produce a rejected request.
+		onSelectedChange(
+			new Set(Array.from(keys).map(String).slice(0, BULK_SELECTION_MAX)),
+		);
 	}
 
 	return (

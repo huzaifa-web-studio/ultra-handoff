@@ -1,3 +1,4 @@
+import { EMAIL_MAX } from "#/lib/limits";
 import type {
 	InvitationHistoryQuery,
 	InvitationRoleFilter,
@@ -78,7 +79,10 @@ export function normalizeInvitationsSearch(
 	return {
 		status,
 		role,
-		search: typeof raw.search === "string" ? raw.search : "",
+		search:
+			typeof raw.search === "string"
+				? raw.search.slice(0, EMAIL_MAX)
+				: DEFAULT_INVITATIONS_SEARCH.search,
 		page: Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1,
 		pageSize:
 			pageSize === 10 || pageSize === 20 || pageSize === 50

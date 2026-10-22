@@ -10,19 +10,24 @@
 
 import { z } from "zod";
 
-import { RESERVED_ORG_SLUGS } from "./settings/schema";
+import {
+	ORG_NAME_MAX,
+	ORG_SLUG_MAX,
+	ORG_SLUG_MIN,
+	RESERVED_ORG_SLUGS,
+} from "./settings/schema";
 
 export const createOrganizationSchema = z.object({
 	name: z
 		.string()
 		.trim()
 		.min(1, "Organization name is required")
-		.max(64, "Name must be 64 characters or fewer"),
+		.max(ORG_NAME_MAX, `Name must be ${ORG_NAME_MAX} characters or fewer`),
 	slug: z
 		.string()
 		.trim()
-		.min(3, "Slug must be at least 3 characters")
-		.max(48, "Slug must be 48 characters or fewer")
+		.min(ORG_SLUG_MIN, `Slug must be at least ${ORG_SLUG_MIN} characters`)
+		.max(ORG_SLUG_MAX, `Slug must be ${ORG_SLUG_MAX} characters or fewer`)
 		.regex(
 			/^[a-z0-9]+(?:-[a-z0-9]+)*$/,
 			"Use lowercase letters, numbers and single hyphens",

@@ -216,6 +216,9 @@ function MembersPage() {
 	}
 
 	const { viewer, counts, limits, pendingInvitationCount } = data;
+	// Seats cover members plus live pending invitations, which is how the API
+	// checks capacity and how the invite dialog reports it.
+	const seatsCommitted = counts.total + (pendingInvitationCount ?? 0);
 	// Captured after the guard so the handlers below do not need a repeated
 	// undefined check.
 	const organizationId = data.organizationId;
@@ -308,8 +311,8 @@ function MembersPage() {
 				<SummaryStat label="Admins" value={String(counts.admins)} />
 				<SummaryStat label="Owners" value={String(counts.owners)} />
 				<SummaryStat
-					label="Seats used"
-					value={`${counts.total} of ${limits.membership}`}
+					label="Seats committed"
+					value={`${seatsCommitted} of ${limits.membership}`}
 				/>
 			</div>
 

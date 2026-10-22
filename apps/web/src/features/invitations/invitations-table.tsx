@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { SortIndicator } from "#/components/data-table/sort-indicator";
 import { RoleChip } from "#/components/role-chip";
 import { formatDate, formatDateTime, formatRelativeTime } from "#/lib/date";
+import { BULK_SELECTION_MAX } from "#/lib/limits";
 import type { InvitationHistoryQuery, InvitationRow } from "./api";
 import {
 	InvitationStatusChip,
@@ -277,7 +278,7 @@ export function InvitationsTable({
 			.map((row) => row.id);
 
 		if (keys === "all") {
-			onSelectedChange(new Set(selectable));
+			onSelectedChange(new Set(selectable.slice(0, BULK_SELECTION_MAX)));
 			return;
 		}
 
@@ -286,7 +287,8 @@ export function InvitationsTable({
 			new Set(
 				Array.from(keys)
 					.map(String)
-					.filter((id) => allowed.has(id)),
+					.filter((id) => allowed.has(id))
+					.slice(0, BULK_SELECTION_MAX),
 			),
 		);
 	}

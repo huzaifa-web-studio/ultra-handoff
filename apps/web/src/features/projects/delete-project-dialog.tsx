@@ -23,6 +23,7 @@ import { toast } from "sonner";
 
 import type { ProjectRow } from "./api";
 import { useDeleteProject } from "./hooks";
+import { PROJECT_NAME_MAX } from "./schema";
 
 type DeleteProjectDialogProps = {
 	orgSlug: string;
@@ -101,6 +102,7 @@ export function DeleteProjectDialog({
 					id="delete-project-confirmation"
 					type="text"
 					autoComplete="off"
+					maxLength={PROJECT_NAME_MAX}
 					value={confirmation}
 					onChange={(event) => setConfirmation(event.target.value)}
 					disabled={deleteProject.isPending}

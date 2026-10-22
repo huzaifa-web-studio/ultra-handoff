@@ -35,6 +35,7 @@ import { authClient } from "#/features/auth/client";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
 import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
+import { PASSWORD_MAX, passwordRuleMessage } from "#/lib/password";
 import { setAccountPassword } from "./api";
 import { changePasswordSchema, setPasswordSchema } from "./schema";
 
@@ -172,6 +173,7 @@ function ChangePasswordForm() {
 						<PasswordInput
 							id="current-password"
 							autoComplete="current-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}
@@ -191,14 +193,13 @@ function ChangePasswordForm() {
 						<PasswordInput
 							id="new-password"
 							autoComplete="new-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}
 						/>
 						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-						<FieldDescription>
-							8+ characters with upper, lower, number and special character.
-						</FieldDescription>
+						<FieldDescription>{passwordRuleMessage}.</FieldDescription>
 					</Field>
 				)}
 			</form.Field>
@@ -215,6 +216,7 @@ function ChangePasswordForm() {
 						<PasswordInput
 							id="confirm-password"
 							autoComplete="new-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}
@@ -302,14 +304,13 @@ function SetPasswordForm({
 						<PasswordInput
 							id="set-new-password"
 							autoComplete="new-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}
 						/>
 						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-						<FieldDescription>
-							8+ characters with upper, lower, number and special character.
-						</FieldDescription>
+						<FieldDescription>{passwordRuleMessage}.</FieldDescription>
 					</Field>
 				)}
 			</form.Field>
@@ -326,6 +327,7 @@ function SetPasswordForm({
 						<PasswordInput
 							id="set-confirm-password"
 							autoComplete="new-password"
+							maxLength={PASSWORD_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(event) => field.handleChange(event.target.value)}

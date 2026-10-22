@@ -14,6 +14,8 @@ export const PROJECT_NAME_MAX = 80;
 export const PROJECT_DESCRIPTION_MAX = 300;
 export const PROJECT_SLUG_MIN = 3;
 export const PROJECT_SLUG_MAX = 48;
+/** Longest search text the project list route accepts. */
+export const PROJECT_SEARCH_MAX = 100;
 
 /** Control words a future project detail route must keep free. */
 export const RESERVED_PROJECT_SLUGS = new Set([
@@ -60,21 +62,3 @@ export const projectSchema = z.object({
 });
 
 export type ProjectFormValues = z.infer<typeof projectSchema>;
-
-/**
- * Suggest a slug from the project name.
- *
- * Diacritics are folded before the non alphanumeric pass so "Café" becomes
- * "cafe" instead of "caf". The result is trimmed to the same maximum the API
- * enforces, with a trailing hyphen removed.
- */
-export function slugifyProjectName(name: string): string {
-	return name
-		.normalize("NFKD")
-		.replace(/[\u0300-\u036f]/g, "")
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, PROJECT_SLUG_MAX)
-		.replace(/-+$/g, "");
-}

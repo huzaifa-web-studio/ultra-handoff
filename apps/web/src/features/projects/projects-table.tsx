@@ -46,6 +46,7 @@ import type { Selection, SortDescriptor } from "react-aria-components";
 import { SortIndicator } from "#/components/data-table/sort-indicator";
 import { UserAvatar } from "#/components/user-avatar";
 import { formatDate, formatDateTime } from "#/lib/date";
+import { BULK_SELECTION_MAX } from "#/lib/limits";
 import type { ProjectRow } from "./api";
 import { ProjectRoleChip } from "./project-role-chip";
 
@@ -293,11 +294,15 @@ export function ProjectsTable({
 
 	function handleSelectionChange(keys: Selection) {
 		if (keys === "all") {
-			onSelectedChange(new Set(visibleIds));
+			onSelectedChange(new Set(visibleIds.slice(0, BULK_SELECTION_MAX)));
 			return;
 		}
 
-		onSelectedChange(new Set(Array.from(keys).map(String)));
+		// Clamp even though a page cannot currently exceed the route limit. A
+		// future page size change must not silently produce a rejected request.
+		onSelectedChange(
+			new Set(Array.from(keys).map(String).slice(0, BULK_SELECTION_MAX)),
+		);
 	}
 
 	return (

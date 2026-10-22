@@ -17,7 +17,12 @@ import { Elysia, t } from "elysia";
 
 import { auth } from "../auth/auth";
 import { authMacro } from "../auth/plugin";
-import { isValidPassword, passwordRuleMessage } from "../lib/password";
+import {
+	isValidPassword,
+	PASSWORD_MAX,
+	PASSWORD_MIN,
+	passwordRuleMessage,
+} from "../lib/password";
 import { getAccountDeletionBlocker } from "../services/account.service";
 import { deletePreviousAvatar } from "../services/upload.service";
 
@@ -79,7 +84,10 @@ export const accountRoutes = new Elysia()
 		{
 			auth: true,
 			body: t.Object({
-				newPassword: t.String({ minLength: 8, maxLength: 128 }),
+				newPassword: t.String({
+					minLength: PASSWORD_MIN,
+					maxLength: PASSWORD_MAX,
+				}),
 			}),
 		},
 	)

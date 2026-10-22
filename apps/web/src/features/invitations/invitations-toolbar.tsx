@@ -12,6 +12,7 @@ import {
 import { BanIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
 
 import { BulkActionBar } from "#/components/data-table/bulk-action-bar";
+import { BULK_SELECTION_MAX, EMAIL_MAX } from "#/lib/limits";
 import type {
 	InvitationCounts,
 	InvitationHistoryQuery,
@@ -95,7 +96,7 @@ export function InvitationsToolbar({
 						onChange={(event) => onSearchChange(event.target.value)}
 						placeholder="Search by email"
 						aria-label="Search invitations by email"
-						maxLength={254}
+						maxLength={EMAIL_MAX}
 						className="pl-6"
 					/>
 					{search.length > 0 && (
@@ -201,7 +202,11 @@ export function InvitationsToolbar({
 			</div>
 
 			{selectedCount > 0 && (
-				<BulkActionBar count={selectedCount} onClear={onClearSelection}>
+				<BulkActionBar
+					count={selectedCount}
+					max={BULK_SELECTION_MAX}
+					onClear={onClearSelection}
+				>
 					<Button
 						size="sm"
 						variant="outline"

@@ -3,9 +3,12 @@ import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
+import { FieldMeta } from "#/components/field-meta";
 import { authClient } from "#/features/auth/client";
 import { toFieldErrors } from "#/lib/form-errors";
+import { slugify } from "#/lib/slug";
 import { createOrganizationSchema } from "./schema";
+import { ORG_NAME_MAX, ORG_SLUG_MAX, ORG_SLUG_MIN } from "./settings/schema";
 import { resetOrganizationDialog } from "./store";
 import { useSwitchOrganization } from "./switch";
 
@@ -84,15 +87,15 @@ export function CreateOrganizationForm({
 							type="text"
 							autoFocus
 							tabIndex={0}
+							maxLength={ORG_NAME_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
 							onChange={(e) => {
 								field.handleChange(e.target.value);
-								// auto-slug
-								const slug = e.target.value
-									.toLowerCase()
-									.replace(/[^a-z0-9]+/g, "-")
-									.replace(/^-|-$/g, "");
+								// auto-slug, capped at the same maximum the API
+								// enforces so a long name cannot suggest a slug
+								// that fails validation.
+								const slug = slugify(e.target.value, ORG_SLUG_MAX);
 								// The user is editing the name, not the slug. Only
 								// revalidate the slug once they have touched it, so
 								// a derived value never flags an untouched field.
@@ -104,6 +107,15 @@ export function CreateOrganizationForm({
 							}}
 						/>
 						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
+						<FieldMeta
+							counter={{
+								current: field.state.value.length,
+								max: ORG_NAME_MAX,
+							}}
+						>
+							Shown in the sidebar, the switcher and every email your clients
+							receive.
+						</FieldMeta>
 					</Field>
 				)}
 			</form.Field>
@@ -116,11 +128,32 @@ export function CreateOrganizationForm({
 						<FieldLabel>Slug</FieldLabel>
 						<Input
 							type="text"
+							autoComplete="off"
+							spellCheck={false}
+							maxLength={ORG_SLUG_MAX}
 							value={field.state.value}
 							onBlur={field.handleBlur}
-							onChange={(e) => field.handleChange(e.target.value)}
+							onChange={(e) => field.handleChange(e.target.value.toLowerCase())}
 						/>
 						<FieldError errors={toFieldErrors(field.state.meta.errors)} />
+						<FieldMeta
+							counter={{
+								current: field.state.value.length,
+								max: ORG_SLUG_MAX,
+							}}
+						>
+							<span>
+								Your organization lives at{" "}
+								<span className="font-medium text-app-text">
+									/{field.state.value || "your-slug"}
+								</span>
+								.
+							</span>
+							<span>
+								Lowercase letters, numbers and single hyphens. At least{" "}
+								{ORG_SLUG_MIN} characters.
+							</span>
+						</FieldMeta>
 					</Field>
 				)}
 			</form.Field>

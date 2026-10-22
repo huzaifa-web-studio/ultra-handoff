@@ -5,7 +5,12 @@ import { magicLink, openAPI, organization } from "better-auth/plugins";
 
 import { adminDb } from "../db";
 import { authEnv, isDevelopment, serverEnv } from "../lib/env";
-import { passwordRegex, passwordRuleMessage } from "../lib/password";
+import {
+	PASSWORD_MAX,
+	PASSWORD_MIN,
+	passwordRegex,
+	passwordRuleMessage,
+} from "../lib/password";
 import { enqueueEmail } from "../queues/email";
 import { getAccountDeletionBlocker } from "../services/account.service";
 import {
@@ -111,7 +116,11 @@ export const auth = betterAuth({
 	},
 	emailAndPassword: {
 		enabled: true,
-		minPasswordLength: 8,
+		// Keep both bounds explicit. The defaults happen to match today, but
+		// the browser copies these numbers to show the rule, so a future
+		// library default change must not silently move the goalposts.
+		minPasswordLength: PASSWORD_MIN,
+		maxPasswordLength: PASSWORD_MAX,
 		/**
 		 * Sign up signs the new account in.
 		 *

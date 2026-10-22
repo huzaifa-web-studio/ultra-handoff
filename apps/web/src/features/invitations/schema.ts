@@ -9,6 +9,8 @@
  * Used by: features/invitations/invite-members-dialog.tsx.
  */
 
+import { EMAIL_MAX } from "#/lib/limits";
+
 /** Deliberately simple. The server uses the same shape. */
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -58,7 +60,7 @@ export function parseEmailInput(input: string): ParsedEmails {
 	for (const raw of splitEmails(input)) {
 		const email = raw.toLowerCase();
 
-		if (!EMAIL_PATTERN.test(email) || email.length > 254) {
+		if (!EMAIL_PATTERN.test(email) || email.length > EMAIL_MAX) {
 			entries.push({ email: raw, state: "invalid" });
 			invalidCount += 1;
 			continue;

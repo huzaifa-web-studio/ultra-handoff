@@ -25,17 +25,24 @@ export const RESERVED_ORG_SLUGS = new Set([
 	"uploads",
 ]);
 
+/** Longest organization name the API accepts. */
+export const ORG_NAME_MAX = 64;
+
+/** Bounds the API enforces on an organization slug. */
+export const ORG_SLUG_MIN = 3;
+export const ORG_SLUG_MAX = 48;
+
 export const organizationSettingsSchema = z.object({
 	name: z
 		.string()
 		.trim()
 		.min(1, "Organization name is required")
-		.max(64, "Name must be 64 characters or fewer"),
+		.max(ORG_NAME_MAX, `Name must be ${ORG_NAME_MAX} characters or fewer`),
 	slug: z
 		.string()
 		.trim()
-		.min(3, "Slug must be at least 3 characters")
-		.max(48, "Slug must be 48 characters or fewer")
+		.min(ORG_SLUG_MIN, `Slug must be at least ${ORG_SLUG_MIN} characters`)
+		.max(ORG_SLUG_MAX, `Slug must be ${ORG_SLUG_MAX} characters or fewer`)
 		.regex(
 			/^[a-z0-9]+(?:-[a-z0-9]+)*$/,
 			"Use lowercase letters, numbers and single hyphens",

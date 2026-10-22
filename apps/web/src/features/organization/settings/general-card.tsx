@@ -16,24 +16,25 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@org/ui/components/card";
-import {
-	Field,
-	FieldDescription,
-	FieldError,
-	FieldLabel,
-} from "@org/ui/components/field";
+import { Field, FieldError, FieldLabel } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { Separator } from "@org/ui/components/separator";
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { FieldMeta } from "#/components/field-meta";
 import { broadcastAuth } from "#/features/auth/sync";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
 import { toFieldErrors } from "#/lib/form-errors";
 import { useUpdateOrganization } from "./hooks";
 import { OrganizationLogoUploader } from "./logo-uploader";
-import { organizationSettingsSchema } from "./schema";
+import {
+	ORG_NAME_MAX,
+	ORG_SLUG_MAX,
+	ORG_SLUG_MIN,
+	organizationSettingsSchema,
+} from "./schema";
 
 type GeneralCardProps = {
 	organization: {
@@ -175,16 +176,22 @@ export function GeneralCard({
 									id="organization-name"
 									type="text"
 									autoComplete="organization"
+									maxLength={ORG_NAME_MAX}
 									value={field.state.value}
 									disabled={!canEdit}
 									onBlur={field.handleBlur}
 									onChange={(event) => field.handleChange(event.target.value)}
 								/>
 								<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-								<FieldDescription>
+								<FieldMeta
+									counter={{
+										current: field.state.value.length,
+										max: ORG_NAME_MAX,
+									}}
+								>
 									Shown in the sidebar, the switcher and every email your
 									clients receive.
-								</FieldDescription>
+								</FieldMeta>
 							</Field>
 						)}
 					</form.Field>
@@ -201,6 +208,7 @@ export function GeneralCard({
 									type="text"
 									autoComplete="off"
 									spellCheck={false}
+									maxLength={ORG_SLUG_MAX}
 									value={field.state.value}
 									disabled={!canEdit}
 									onBlur={field.handleBlur}
@@ -209,14 +217,28 @@ export function GeneralCard({
 									}
 								/>
 								<FieldError errors={toFieldErrors(field.state.meta.errors)} />
-								<FieldDescription>
-									Your organization lives at{" "}
-									<span className="font-medium text-app-text">
-										/{field.state.value || "your-slug"}
+								<FieldMeta
+									counter={{
+										current: field.state.value.length,
+										max: ORG_SLUG_MAX,
+									}}
+								>
+									<span>
+										Your organization lives at{" "}
+										<span className="font-medium text-app-text">
+											/{field.state.value || "your-slug"}
+										</span>
+										.
 									</span>
-									. Changing it breaks links people already have, so tell your
-									team after saving.
-								</FieldDescription>
+									<span>
+										Lowercase letters, numbers and single hyphens. At least{" "}
+										{ORG_SLUG_MIN} characters.
+									</span>
+									<span>
+										Changing it breaks links people already have, so tell your
+										team after saving.
+									</span>
+								</FieldMeta>
 							</Field>
 						)}
 					</form.Field>

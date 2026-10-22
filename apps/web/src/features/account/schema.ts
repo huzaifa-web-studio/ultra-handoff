@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 
+import { USER_NAME_MAX } from "#/lib/limits";
 import { passwordRule, passwordRuleMessage } from "#/lib/password";
 
 export const profileSchema = z.object({
@@ -17,7 +18,7 @@ export const profileSchema = z.object({
 		.string()
 		.trim()
 		.min(1, "Name is required")
-		.max(64, "Name must be 64 characters or fewer"),
+		.max(USER_NAME_MAX, `Name must be ${USER_NAME_MAX} characters or fewer`),
 });
 
 export const changePasswordSchema = z.object({

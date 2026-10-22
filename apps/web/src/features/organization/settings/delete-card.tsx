@@ -39,6 +39,7 @@ import { useSwitchOrganization } from "../switch";
 import { openSwitchBlockedDialog } from "../switch-blocked-store";
 import { getBlockingOperation } from "../switch-guard";
 import { type DeleteOrganizationResult, useDeleteOrganization } from "./hooks";
+import { ORG_NAME_MAX } from "./schema";
 
 type DeleteOrganizationCardProps = {
 	organization: {
@@ -191,6 +192,7 @@ export function DeleteOrganizationCard({
 							type="text"
 							autoComplete="off"
 							spellCheck={false}
+							maxLength={ORG_NAME_MAX}
 							value={confirmName}
 							onChange={(event) => setConfirmName(event.target.value)}
 							placeholder={organization.name}

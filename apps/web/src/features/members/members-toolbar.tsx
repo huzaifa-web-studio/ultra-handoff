@@ -18,6 +18,7 @@ import {
 
 import { BulkActionBar } from "#/components/data-table/bulk-action-bar";
 import type { OrgRole } from "#/features/organization/permissions";
+import { BULK_SELECTION_MAX } from "#/lib/limits";
 
 /**
  * Members search, role filter and bulk action bar.
@@ -182,7 +183,11 @@ export function MembersToolbar({
 			</div>
 
 			{canManage && selectedCount > 0 && (
-				<BulkActionBar count={selectedCount} onClear={onClearSelection}>
+				<BulkActionBar
+					count={selectedCount}
+					max={BULK_SELECTION_MAX}
+					onClear={onClearSelection}
+				>
 					<Button
 						size="sm"
 						variant="outline"
