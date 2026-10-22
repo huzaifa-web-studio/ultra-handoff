@@ -15,6 +15,7 @@ import { Input } from "@org/ui/components/input";
 import { Separator } from "@org/ui/components/separator";
 import { Skeleton } from "@org/ui/components/skeleton";
 import { useState } from "react";
+import { toast } from "sonner";
 import { broadcastAuth } from "#/features/auth/sync";
 import { EMAIL_MAX } from "#/lib/limits";
 import { useAccountDeletionCheck, useDeleteAccount } from "./hooks";
@@ -28,11 +29,39 @@ export function DeleteAccountContent({ email }: DeleteAccountContentProps) {
 	const deleteAccount = useDeleteAccount();
 	const [confirmEmail, setConfirmEmail] = useState("");
 	const [notice, setNotice] = useState<string | null>(null);
+	/** Result of a manual recheck while the account is still blocked. */
+	const [recheckNotice, setRecheckNotice] = useState<string | null>(null);
 
 	const emailMatches =
 		confirmEmail.trim().toLowerCase() === email.trim().toLowerCase();
 	const allowed = deletionCheck.data?.allowed === true;
 	const canDelete = emailMatches && allowed;
+
+	/**
+	 * Re-run the deletion preflight and say what happened.
+	 *
+	 * Why the explicit result: a second identical response leaves the panel
+	 * unchanged, so without this the button looks like it did nothing. A now
+	 * allowed account gets the form and a toast; a still blocked account keeps
+	 * the reason on screen and gets a short status line.
+	 */
+	async function handleRecheck() {
+		setRecheckNotice(null);
+
+		const result = await deletionCheck.refetch();
+
+		if (result.error) {
+			// The query error paragraph above the panel explains the failure.
+			return;
+		}
+
+		if (result.data?.allowed) {
+			toast.success("Checked again. You can delete your account now.");
+			return;
+		}
+
+		setRecheckNotice("Checked again. Still blocked.");
+	}
 
 	async function handleDelete() {
 		if (!canDelete) return;
@@ -83,20 +112,30 @@ export function DeleteAccountContent({ email }: DeleteAccountContentProps) {
 
 			{deletionCheck.data && !deletionCheck.data.allowed && (
 				<div className="flex flex-col gap-3 border border-danger bg-danger-bg p-3">
-					<p className="text-sm text-danger">{deletionCheck.data.reason}</p>
+					<div className="flex flex-col gap-1">
+						<p className="text-xs font-semibold tracking-wide text-danger uppercase">
+							Why this is blocked
+						</p>
+						<p className="text-sm text-danger">{deletionCheck.data.reason}</p>
+					</div>
 					<p className="text-xs text-danger">
 						Open your organization settings, transfer ownership to another
 						member, then recheck.
 					</p>
-					<div>
+					<div className="flex flex-wrap items-center gap-3">
 						<Button
 							variant="surface"
 							size="sm"
 							loading={deletionCheck.isRefetching}
-							onPress={() => deletionCheck.refetch()}
+							onPress={handleRecheck}
 						>
 							Recheck
 						</Button>
+						{recheckNotice && (
+							<output className="text-xs font-medium text-danger">
+								{recheckNotice}
+							</output>
+						)}
 					</div>
 				</div>
 			)}
