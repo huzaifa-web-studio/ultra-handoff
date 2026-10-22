@@ -49,6 +49,7 @@ export type TenantTx = PgTransaction<
 >;
 
 let tenantDbInstance: TenantDatabase | null = null;
+let tenantClientInstance: ReturnType<typeof postgres> | null = null;
 
 /**
  * Lazily build the tenant client so the process can boot (and run migrations
@@ -66,6 +67,7 @@ export function getTenantDb(): TenantDatabase {
 	}
 
 	const client = postgres(url, { max: databaseEnv.poolMax });
+	tenantClientInstance = client;
 	tenantDbInstance = drizzle(client, { schema: dbSchema });
 	return tenantDbInstance;
 }
@@ -82,6 +84,24 @@ function assertScopeValue(value: string, label: string): void {
 	if (value.length > 255) {
 		throw new Error(`Tenant scope ${label} is too long`);
 	}
+}
+
+/**
+ * Close the tenant client.
+ *
+ * Why: an idle postgres-js pool keeps the process alive. One shot scripts that
+ * use `withTenant` must call this before exiting, otherwise `bun run` hangs
+ * after the work is done.
+ */
+export async function closeTenantDb(): Promise<void> {
+	const client = tenantClientInstance;
+
+	tenantDbInstance = null;
+	tenantClientInstance = null;
+
+	if (!client) return;
+
+	await client.end({ timeout: 5 });
 }
 
 /**

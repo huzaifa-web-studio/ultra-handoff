@@ -31,7 +31,7 @@ import { databaseEnv } from "../src/lib/env";
  *
  * Add each new business table (with an RLS policy) to this list.
  */
-const TENANT_TABLES: readonly string[] = [];
+const TENANT_TABLES: readonly string[] = ["project", "project_member"];
 
 /** Identifiers cannot be bind parameters, so validate before quoting. */
 function quoteIdent(identifier: string): string {
@@ -124,19 +124,44 @@ async function main(): Promise<void> {
 		);
 
 		if (TENANT_TABLES.length > 0) {
-			const tableList = TENANT_TABLES.map(quoteIdent).join(", ");
-			await admin.unsafe(
-				`grant select, insert, update, delete on table ${tableList} to ${quotedRole}`,
-			);
-			await admin.unsafe(
-				`grant usage, select on all sequences in schema public to ${quotedRole}`,
-			);
-			process.stdout.write(
-				`[bootstrap] granted tenant access to ${TENANT_TABLES.join(", ")}\n`,
-			);
+			/**
+			 * A fresh database runs bootstrap before migrations, so a listed
+			 * table may not exist yet. Granting it would fail the whole migrate
+			 * job. Grant only what exists now; db:setup runs bootstrap once
+			 * more after migrate, which picks up the new tables.
+			 */
+			const existingRows = await admin<{ tablename: string }[]>`
+				select tablename from pg_tables where schemaname = 'public'
+			`;
+			const existing = new Set(existingRows.map((row) => row.tablename));
+			const grantable = TENANT_TABLES.filter((name) => existing.has(name));
+			const pending = TENANT_TABLES.filter((name) => !existing.has(name));
+
+			if (grantable.length > 0) {
+				const tableList = grantable.map(quoteIdent).join(", ");
+				await admin.unsafe(
+					`grant select, insert, update, delete on table ${tableList} to ${quotedRole}`,
+				);
+				await admin.unsafe(
+					`grant usage, select on all sequences in schema public to ${quotedRole}`,
+				);
+				process.stdout.write(
+					`[bootstrap] granted tenant access to ${grantable.join(", ")}\n`,
+				);
+			} else {
+				process.stdout.write(
+					"[bootstrap] no tenant tables exist yet, nothing granted\n",
+				);
+			}
+
+			if (pending.length > 0) {
+				process.stdout.write(
+					`[bootstrap] waiting for migrations to create ${pending.join(", ")}\n`,
+				);
+			}
 		} else {
 			process.stdout.write(
-				"[bootstrap] no business tables yet, tenant role has no table access\n",
+				"[bootstrap] no business tables listed, tenant role has no table access\n",
 			);
 		}
 

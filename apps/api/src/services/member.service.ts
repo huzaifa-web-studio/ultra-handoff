@@ -15,6 +15,7 @@ import { adminDb } from "../db";
 import { user } from "../db/auth-schema";
 import { authErrorMessage, readAuthErrorCode } from "../lib/auth-error";
 import type { TenantContext } from "../middleware/tenant";
+import { syncOrganizationOwnerToProjects } from "./project.service";
 
 /**
  * Member reads and writes for the Members page.
@@ -291,6 +292,19 @@ export async function updateMemberRole(
 		},
 		headers,
 	});
+
+	/**
+	 * Organization owners own every project. Materialize that rule the moment
+	 * the promotion succeeds, so the project member list is complete without
+	 * waiting for the next project write. The sync is best effort and never
+	 * throws: project permissions treat organization owners as owners anyway.
+	 */
+	if (role === "owner") {
+		await syncOrganizationOwnerToProjects(tenant, {
+			userId: member.userId,
+			memberId: member.id,
+		});
+	}
 
 	return { id: updated.id, role: updated.role };
 }

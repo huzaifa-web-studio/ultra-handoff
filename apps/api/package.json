@@ -11,7 +11,7 @@
     "check": "biome check .",
     "db:generate": "drizzle-kit generate",
     "db:bootstrap": "bun run scripts/bootstrap-db.ts",
-    "db:setup": "bun run db:bootstrap && bun run db:migrate",
+    "db:setup": "bun run db:bootstrap && bun run db:migrate && bun run db:bootstrap",
     "db:verify-rls": "bun run scripts/verify-rls.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

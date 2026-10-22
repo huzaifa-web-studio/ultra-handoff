@@ -18,6 +18,7 @@ import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as AppOrgSlugIndexRouteImport } from './routes/_app/$orgSlug.index'
+import { Route as AppOrgSlugProjectsRouteImport } from './routes/_app/$orgSlug.projects'
 import { Route as AppOrgSlugSettingsRouteImport } from './routes/_app/$orgSlug.settings'
 import { Route as AppOrgSlugSettingsIndexRouteImport } from './routes/_app/$orgSlug.settings.index'
 import { Route as AppOrgSlugSettingsInvitationsRouteImport } from './routes/_app/$orgSlug.settings.invitations'
@@ -67,6 +68,11 @@ const AppOrgSlugIndexRoute = AppOrgSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppOrgSlugRoute,
 } as any)
+const AppOrgSlugProjectsRoute = AppOrgSlugProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AppOrgSlugRoute,
+} as any)
 const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/$orgSlug/projects': typeof AppOrgSlugProjectsRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/$orgSlug/': typeof AppOrgSlugIndexRoute
   '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/$orgSlug/projects': typeof AppOrgSlugProjectsRoute
   '/$orgSlug': typeof AppOrgSlugIndexRoute
   '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
   '/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
@@ -126,6 +134,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/_app/$orgSlug/projects': typeof AppOrgSlugProjectsRoute
   '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/_app/$orgSlug/': typeof AppOrgSlugIndexRoute
   '/_app/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
@@ -142,6 +151,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/auth/error'
     | '/invite/$invitationId'
+    | '/$orgSlug/projects'
     | '/$orgSlug/settings'
     | '/$orgSlug/'
     | '/$orgSlug/settings/invitations'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/auth/error'
     | '/invite/$invitationId'
+    | '/$orgSlug/projects'
     | '/$orgSlug'
     | '/$orgSlug/settings/invitations'
     | '/$orgSlug/settings/members'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/auth/error'
     | '/invite/$invitationId'
+    | '/_app/$orgSlug/projects'
     | '/_app/$orgSlug/settings'
     | '/_app/$orgSlug/'
     | '/_app/$orgSlug/settings/invitations'
@@ -250,6 +262,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSlugIndexRouteImport
       parentRoute: typeof AppOrgSlugRoute
     }
+    '/_app/$orgSlug/projects': {
+      id: '/_app/$orgSlug/projects'
+      path: '/projects'
+      fullPath: '/$orgSlug/projects'
+      preLoaderRoute: typeof AppOrgSlugProjectsRouteImport
+      parentRoute: typeof AppOrgSlugRoute
+    }
     '/_app/$orgSlug/settings': {
       id: '/_app/$orgSlug/settings'
       path: '/settings'
@@ -297,11 +316,13 @@ const AppOrgSlugSettingsRouteWithChildren =
   AppOrgSlugSettingsRoute._addFileChildren(AppOrgSlugSettingsRouteChildren)
 
 interface AppOrgSlugRouteChildren {
+  AppOrgSlugProjectsRoute: typeof AppOrgSlugProjectsRoute
   AppOrgSlugSettingsRoute: typeof AppOrgSlugSettingsRouteWithChildren
   AppOrgSlugIndexRoute: typeof AppOrgSlugIndexRoute
 }
 
 const AppOrgSlugRouteChildren: AppOrgSlugRouteChildren = {
+  AppOrgSlugProjectsRoute: AppOrgSlugProjectsRoute,
   AppOrgSlugSettingsRoute: AppOrgSlugSettingsRouteWithChildren,
   AppOrgSlugIndexRoute: AppOrgSlugIndexRoute,
 }

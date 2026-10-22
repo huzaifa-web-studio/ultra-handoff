@@ -10,6 +10,7 @@ import { fileRoutes } from "./routes/files";
 import { publicInvitationRoutes } from "./routes/invitations";
 import { memberRoutes } from "./routes/members";
 import { organizationRoutes } from "./routes/organization";
+import { projectRoutes } from "./routes/projects";
 import { uploadRoutes } from "./routes/uploads";
 import { startWorkers } from "./workers";
 
@@ -39,6 +40,8 @@ async function buildApp() {
 		.use(organizationRoutes)
 		// Workspace member and invitation management (tenant scoped).
 		.use(memberRoutes)
+		// Project list, lifecycle and project membership (tenant scoped).
+		.use(projectRoutes)
 		// Invitation preview and magic link request for the public accept page.
 		.use(publicInvitationRoutes)
 		.get("/", () => "Hello Huzaifa")

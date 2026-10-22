@@ -19,6 +19,7 @@
 
 import { and, asc, eq, isNull, ne, or } from "drizzle-orm";
 
+import { parseRoleList } from "../auth/permissions";
 import { adminDb } from "../db";
 import { member, organization, user } from "../db/auth-schema";
 
@@ -92,6 +93,82 @@ export async function getOrganizationRole(
 		.limit(1);
 
 	return record?.role ?? null;
+}
+
+/**
+ * One organization membership with the person attached.
+ *
+ * Returned by the project service so it can add organization owners to a
+ * project without importing auth tables into a tenant query.
+ */
+export type OrganizationMemberRecord = {
+	memberId: string;
+	userId: string;
+	role: string;
+	name: string;
+	email: string;
+	image: string | null;
+};
+
+/**
+ * Read one membership of an organization by user id.
+ *
+ * Used by: the project service before it adds someone as a project member, to
+ * prove the person is still in the workspace and to capture the membership id
+ * the cascade foreign key needs.
+ */
+export async function getOrganizationMember(
+	organizationId: string,
+	userId: string,
+): Promise<OrganizationMemberRecord | null> {
+	const [record] = await adminDb
+		.select({
+			memberId: member.id,
+			userId: member.userId,
+			role: member.role,
+			name: user.name,
+			email: user.email,
+			image: user.image,
+		})
+		.from(member)
+		.innerJoin(user, eq(member.userId, user.id))
+		.where(
+			and(eq(member.organizationId, organizationId), eq(member.userId, userId)),
+		)
+		.limit(1);
+
+	return record ?? null;
+}
+
+/**
+ * Every owner of an organization.
+ *
+ * Why: organization owners are automatically owners of every project. The
+ * project service materializes that rule on create and on promotion, and uses
+ * this list as the source of truth so a missed sync can be repaired.
+ *
+ * Read on the privileged client because these are Better Auth tables. It is a
+ * read only lookup, the same pattern as getOrganizationRole.
+ */
+export async function listOrganizationOwners(
+	organizationId: string,
+): Promise<OrganizationMemberRecord[]> {
+	const rows = await adminDb
+		.select({
+			memberId: member.id,
+			userId: member.userId,
+			role: member.role,
+			name: user.name,
+			email: user.email,
+			image: user.image,
+		})
+		.from(member)
+		.innerJoin(user, eq(member.userId, user.id))
+		.where(eq(member.organizationId, organizationId));
+
+	// Better Auth stores multiple roles as a comma separated string, so a
+	// plain `role = 'owner'` would miss `owner,admin`.
+	return rows.filter((row) => parseRoleList(row.role).includes("owner"));
 }
 
 /**

@@ -61,7 +61,10 @@ export const uploadRoutes = new Elysia()
 			// touched. The check lives here rather than in the service because
 			// it is an HTTP permission decision, and the same check runs again
 			// on completion in case the role changed in between.
-			if (body.purpose === "organization-logo") {
+			if (
+				body.purpose === "organization-logo" ||
+				body.purpose === "project-logo"
+			) {
 				if (!organizationId) {
 					return status(400, {
 						message: "An organization is required for this upload",
@@ -69,7 +72,20 @@ export const uploadRoutes = new Elysia()
 				}
 
 				const role = await getOrganizationRole(user.id, organizationId);
-				if (!role || !canEditOrganization(role)) {
+				if (!role) {
+					return status(403, {
+						message:
+							"You do not have permission to upload for this organization",
+					});
+				}
+
+				// A logo is a settings change. A project image is not: any
+				// workspace member may upload one, and attaching it still
+				// requires project edit permission on the project route.
+				if (
+					body.purpose === "organization-logo" &&
+					!canEditOrganization(role)
+				) {
 					return status(403, {
 						message: "You do not have permission to update this organization",
 					});
@@ -128,6 +144,28 @@ export const uploadRoutes = new Elysia()
 
 			if (latest.status !== "verified") {
 				return status(202, { status: "pending" as const });
+			}
+
+			// The upload was authorized when it was created. Membership may have
+			// changed since then, so project images are re-checked here. The URL
+			// itself grants nothing: attaching it to a project still requires a
+			// project owner or admin on the project route.
+			if (latest.purpose === "project-logo") {
+				const organizationId = latest.organizationId;
+
+				if (!organizationId) {
+					return status(400, {
+						message: "The upload is not linked to an organization",
+					});
+				}
+
+				const role = await getOrganizationRole(user.id, organizationId);
+				if (!role) {
+					return status(403, {
+						message:
+							"You do not have permission to upload for this organization",
+					});
+				}
 			}
 
 			const image = objectUrl(latest.key);

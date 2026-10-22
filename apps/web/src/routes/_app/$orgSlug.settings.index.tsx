@@ -11,7 +11,7 @@
 
 import { Skeleton } from "@org/ui/components/skeleton";
 import { createFileRoute } from "@tanstack/react-router";
-
+import { RoleChip } from "#/components/role-chip";
 import { authClient } from "#/features/auth/client";
 import {
 	isOrganizationEditor,
@@ -20,7 +20,6 @@ import {
 import { DeleteOrganizationCard } from "#/features/organization/settings/delete-card";
 import { GeneralCard } from "#/features/organization/settings/general-card";
 import { LeaveCard } from "#/features/organization/settings/leave-card";
-import { RoleChip } from "#/components/role-chip";
 
 export const Route = createFileRoute("/_app/$orgSlug/settings/")({
 	component: SettingsPage,

@@ -143,7 +143,9 @@ function DialogTitle({
 			slot="title"
 			data-slot="dialog-title"
 			className={cn(
-				"text-lg leading-none font-semibold tracking-wider uppercase",
+				// Titles are real text. Keep them selectable so a user can copy
+				// an error or a project name straight out of the dialog.
+				"text-lg leading-none font-semibold tracking-wider uppercase select-text",
 				className,
 			)}
 			{...props}

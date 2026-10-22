@@ -27,6 +27,15 @@ import type { TenantScope } from "../db/tenant";
 export type TenantContext = TenantScope & {
 	slug: string;
 	role: string;
+	/**
+	 * The caller's Better Auth membership row id.
+	 *
+	 * Why: business tables that reference a membership (project members) need
+	 * this id to write the cascade foreign key and to answer "is this row me"
+	 * without a second lookup. It comes from the membership check below, so it
+	 * is as trustworthy as the organization id.
+	 */
+	memberId: string;
 };
 
 export type TenantResolution =
@@ -52,6 +61,7 @@ export async function resolveTenantScope(
 			organizationId: organization.id,
 			slug: organization.slug,
 			role: member.role,
+			memberId: member.id,
 		})
 		.from(member)
 		.innerJoin(organization, eq(member.organizationId, organization.id))
@@ -67,6 +77,7 @@ export async function resolveTenantScope(
 		tenant: {
 			organizationId: row.organizationId,
 			userId: session.user.id,
+			memberId: row.memberId,
 			slug: row.slug,
 			role: row.role,
 		},

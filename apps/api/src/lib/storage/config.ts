@@ -16,13 +16,20 @@ export const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 /** Organization logos share the image rules and the 5 MB ceiling. */
 export const MAX_ORGANIZATION_LOGO_BYTES = 5 * 1024 * 1024;
 
+/** Project logos use the same image rules and ceiling as organization logos. */
+export const MAX_PROJECT_LOGO_BYTES = 5 * 1024 * 1024;
+
 /**
  * The set of purposes the API currently accepts.
  *
  * A purpose is not a free form string. It decides the validation rules, the
  * object key prefix and which post verification action runs.
  */
-export const UPLOAD_PURPOSES = ["avatar", "organization-logo"] as const;
+export const UPLOAD_PURPOSES = [
+	"avatar",
+	"organization-logo",
+	"project-logo",
+] as const;
 
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
 
@@ -87,6 +94,15 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 		allowedMime: ["image/png", "image/jpeg"],
 		scopedTo: "organization",
 		prefix: organizationScopePrefix,
+		label: "PNG or JPG up to 5 MB",
+	},
+	"project-logo": {
+		maxBytes: MAX_PROJECT_LOGO_BYTES,
+		allowedMime: ["image/png", "image/jpeg"],
+		scopedTo: "organization",
+		// Separate from the organization logo so project images can be found
+		// and cleaned up without touching the logo object.
+		prefix: (scope) => `${organizationScopePrefix(scope)}/projects`,
 		label: "PNG or JPG up to 5 MB",
 	},
 };

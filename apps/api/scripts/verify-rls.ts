@@ -1,26 +1,27 @@
 /**
- * Row level security checks.
+ * Row level security checks against the real business tables.
  *
  * Why: RLS is invisible when it works and catastrophic when it silently does
- * not (for example if the tenant client ever fell back to the superuser).
+ * not (for example if the tenant client ever fell back to the superuser). The
+ * earlier version of this script used a throwaway probe table because no
+ * business table existed. Now it exercises `project` and `project_member`
+ * directly, including the cascade that removes project data with an
+ * organization.
  *
- * There are no business tables yet, so this script builds a throwaway probe
- * table with the same policy shape as src/db/rls.ts, proves the boundary with
- * it, and drops it again. Once real business tables exist, point the checks at
- * one of them instead.
+ * The script seeds its own organization, user, member and project rows on the
+ * privileged client, proves the tenant boundary, then removes everything it
+ * created. Run against a development database only.
  *
- * Run against a development database only. Requires `bun run db:bootstrap`.
+ * Requires: `bun run db:bootstrap` and `bun run db:migrate`.
  * Used by: `bun run db:verify-rls`.
  */
 
 import { sql } from "drizzle-orm";
 import { adminClient, adminDb } from "../src/db";
-import { getTenantDb, withTenant } from "../src/db/tenant";
+import { closeTenantDb, getTenantDb, withTenant } from "../src/db/tenant";
 
 /** Postgres SQLSTATE for permission denied and RLS violations. */
 const INSUFFICIENT_PRIVILEGE = "42501";
-
-const PROBE_TABLE = "rls_probe_test";
 const APP_ROLE = "app_tenant";
 
 type CheckResult = {
@@ -30,6 +31,18 @@ type CheckResult = {
 };
 
 const results: CheckResult[] = [];
+const suffix = Date.now().toString(36);
+
+const orgA = `rls-org-a-${suffix}`;
+const orgB = `rls-org-b-${suffix}`;
+const userA = `rls-user-a-${suffix}`;
+const userB = `rls-user-b-${suffix}`;
+const memberA = `rls-member-a-${suffix}`;
+const memberB = `rls-member-b-${suffix}`;
+const projectA = `rls-project-a-${suffix}`;
+const projectB = `rls-project-b-${suffix}`;
+
+const scopeA = { organizationId: orgA, userId: userA };
 
 function describeError(error: unknown): string {
 	if (error instanceof Error) return error.message;
@@ -37,10 +50,19 @@ function describeError(error: unknown): string {
 }
 
 function pgErrorCode(error: unknown): string | undefined {
-	if (typeof error === "object" && error !== null && "code" in error) {
-		const { code } = error as { code?: unknown };
-		return typeof code === "string" ? code : undefined;
+	// Drizzle wraps driver failures in a DrizzleQueryError, so the Postgres
+	// SQLSTATE sits on the cause chain rather than on the top level error.
+	let current: unknown = error;
+
+	for (let depth = 0; depth < 5; depth += 1) {
+		if (typeof current !== "object" || current === null) return undefined;
+
+		const code = (current as { code?: unknown }).code;
+		if (typeof code === "string") return code;
+
+		current = (current as { cause?: unknown }).cause;
 	}
+
 	return undefined;
 }
 
@@ -97,54 +119,72 @@ async function assertRoleExists(): Promise<void> {
 }
 
 /**
- * Build the probe table with the exact policy shape tenantIsolation() emits.
- * Kept inline because this is the test harness, not schema.
+ * Seed two workspaces with one project each.
+ *
+ * Everything is created on the privileged client because these are auth tables
+ * and the tenant role has no access to them. `created_by` is left null, which
+ * is the same state a project reaches after its creator deletes their account.
  */
-async function createProbe(): Promise<void> {
-	const table = sql.identifier(PROBE_TABLE);
-	const role = sql.identifier(APP_ROLE);
+async function seed(): Promise<void> {
+	// Raw SQL through postgres-js expects a string here, not a Date. The
+	// timestamp column accepts an ISO string and casts it.
+	const now = new Date().toISOString();
 
-	await adminDb.execute(sql`drop table if exists ${table}`);
-	await adminDb.execute(
-		sql`create table ${table} (id text primary key, organization_id text not null)`,
-	);
-	await adminDb.execute(sql`alter table ${table} enable row level security`);
-	await adminDb.execute(
-		sql`create policy "tenant_isolation" on ${table}
-			as permissive for all to ${role}
-			using (organization_id = current_setting('app.current_org_id', true))
-			with check (organization_id = current_setting('app.current_org_id', true))`,
-	);
-	await adminDb.execute(
-		sql`grant select, insert, update, delete on ${table} to ${role}`,
-	);
+	await adminDb.execute(sql`
+		insert into "organization" (id, name, slug, created_at)
+		values
+			(${orgA}, ${"RLS Org A"}, ${`rls-a-${suffix}`}, ${now}),
+			(${orgB}, ${"RLS Org B"}, ${`rls-b-${suffix}`}, ${now})
+	`);
+	await adminDb.execute(sql`
+		insert into "user" (id, name, email, email_verified, created_at, updated_at)
+		values
+			(${userA}, ${"RLS User A"}, ${`rls-a-${suffix}@example.test`}, false, ${now}, ${now}),
+			(${userB}, ${"RLS User B"}, ${`rls-b-${suffix}@example.test`}, false, ${now}, ${now})
+	`);
+	await adminDb.execute(sql`
+		insert into "member" (id, organization_id, user_id, role, created_at)
+		values
+			(${memberA}, ${orgA}, ${userA}, 'owner', ${now}),
+			(${memberB}, ${orgB}, ${userB}, 'owner', ${now})
+	`);
+	await adminDb.execute(sql`
+		insert into "project" (id, organization_id, name, slug)
+		values
+			(${projectA}, ${orgA}, ${"RLS Project A"}, ${`rls-project-a-${suffix}`}),
+			(${projectB}, ${orgB}, ${"RLS Project B"}, ${`rls-project-b-${suffix}`})
+	`);
+	await adminDb.execute(sql`
+		insert into "project_member" (id, organization_id, project_id, member_id, user_id, role)
+		values
+			(${`rls-pm-a-${suffix}`}, ${orgA}, ${projectA}, ${memberA}, ${userA}, 'owner'),
+			(${`rls-pm-b-${suffix}`}, ${orgB}, ${projectB}, ${memberB}, ${userB}, 'owner')
+	`);
 }
 
-async function dropProbe(): Promise<void> {
-	await adminDb.execute(sql`drop table if exists ${sql.identifier(PROBE_TABLE)}`);
+/** Remove every seeded row. Organization deletion cascades to projects. */
+async function cleanup(): Promise<void> {
+	try {
+		await adminDb.execute(
+			sql`delete from "organization" where id in (${orgA}, ${orgB})`,
+		);
+		await adminDb.execute(
+			sql`delete from "user" where id in (${userA}, ${userB})`,
+		);
+	} catch (error) {
+		process.stdout.write(`[cleanup] ${describeError(error)}\n`);
+	}
 }
 
 async function main(): Promise<void> {
 	await assertRoleExists();
-	await createProbe();
-
-	const orgA = "rls-org-a";
-	const orgB = "rls-org-b";
-	const rowA = "rls-row-a";
-	const rowB = "rls-row-b";
-	const scopeA = { organizationId: orgA, userId: "rls-test-user" };
-
-	// Seed with the privileged client. This is setup, not a tenant query.
-	await adminDb.execute(
-		sql`insert into ${sql.identifier(PROBE_TABLE)} (id, organization_id)
-			values (${rowA}, ${orgA}), (${rowB}, ${orgB})`,
-	);
+	await seed();
 
 	try {
 		// 1. Without a scope the tenant role learns nothing.
-		await check("unscoped read returns no rows", async () => {
+		await check("unscoped project read returns no rows", async () => {
 			const rows = await getTenantDb().execute<{ id: string }>(
-				sql`select id from ${sql.identifier(PROBE_TABLE)}`,
+				sql`select id from "project"`,
 			);
 			if (rows.length !== 0) {
 				throw new Error(`expected 0 rows, got ${rows.length}`);
@@ -153,10 +193,10 @@ async function main(): Promise<void> {
 		});
 
 		// 2. With a scope, only that tenant is visible.
-		await check("scoped read only sees its own tenant", async () => {
+		await check("scoped project read only sees its own tenant", async () => {
 			const rows = await withTenant(scopeA, async (tx) =>
 				tx.execute<{ id: string; organization_id: string }>(
-					sql`select id, organization_id from ${sql.identifier(PROBE_TABLE)}`,
+					sql`select id, organization_id from "project"`,
 				),
 			);
 			if (rows.length !== 1) {
@@ -171,8 +211,7 @@ async function main(): Promise<void> {
 		await check("explicit read of the other tenant is empty", async () => {
 			const rows = await withTenant(scopeA, async (tx) =>
 				tx.execute<{ id: string }>(
-					sql`select id from ${sql.identifier(PROBE_TABLE)}
-						where organization_id = ${orgB}`,
+					sql`select id from "project" where organization_id = ${orgB}`,
 				),
 			);
 			if (rows.length !== 0) {
@@ -188,17 +227,17 @@ async function main(): Promise<void> {
 			async () =>
 				withTenant(scopeA, async (tx) =>
 					tx.execute(
-						sql`insert into ${sql.identifier(PROBE_TABLE)} (id, organization_id)
-							values (${"rls-intruder"}, ${orgB})`,
+						sql`insert into "project" (id, organization_id, name, slug)
+							values (${`rls-intruder-${suffix}`}, ${orgB}, ${"Intruder"}, ${`intruder-${suffix}`})`,
 					),
 				),
 		);
 
-		await check("update of a foreign row affects nothing", async () => {
+		await check("update of a foreign project affects nothing", async () => {
 			const rows = await withTenant(scopeA, async (tx) =>
 				tx.execute<{ id: string }>(
-					sql`update ${sql.identifier(PROBE_TABLE)} set organization_id = ${orgA}
-						where id = ${rowB} returning id`,
+					sql`update "project" set name = ${"Hijacked"}
+						where id = ${projectB} returning id`,
 				),
 			);
 			if (rows.length !== 0) {
@@ -207,11 +246,10 @@ async function main(): Promise<void> {
 			return "0 rows updated";
 		});
 
-		await check("delete of a foreign row affects nothing", async () => {
+		await check("delete of a foreign project affects nothing", async () => {
 			const rows = await withTenant(scopeA, async (tx) =>
 				tx.execute<{ id: string }>(
-					sql`delete from ${sql.identifier(PROBE_TABLE)}
-						where id = ${rowB} returning id`,
+					sql`delete from "project" where id = ${projectB} returning id`,
 				),
 			);
 			if (rows.length !== 0) {
@@ -220,26 +258,88 @@ async function main(): Promise<void> {
 			return "0 rows deleted";
 		});
 
-		// 4. Better Auth tables are not granted at all.
+		// 4. The membership table follows the same rules.
+		await check("project members are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "project_member"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a membership from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await expectFailure(
+			"project member insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "project_member"
+							(id, organization_id, project_id, member_id, user_id, role)
+							values (${`rls-pm-intruder-${suffix}`}, ${orgB}, ${projectB}, ${memberB}, ${userB}, ${"member"})`,
+					),
+				),
+		);
+
+		// 5. Better Auth tables are not granted at all.
 		await expectFailure(
 			"Better Auth user table is not readable",
 			INSUFFICIENT_PRIVILEGE,
 			async () => getTenantDb().execute(sql`select count(*) from "user"`),
 		);
 
-		// 5. Sanity: the privileged client is unaffected, so the auth API and
+		// 6. Sanity: the privileged client is unaffected, so the auth API and
 		//    migrations keep working.
-		await check("privileged client still sees every row", async () => {
+		await check("privileged client still sees every project", async () => {
 			const rows = await adminDb.execute<{ id: string }>(
-				sql`select id from ${sql.identifier(PROBE_TABLE)}`,
+				sql`select id from "project" where id in (${projectA}, ${projectB})`,
 			);
 			if (rows.length !== 2) {
 				throw new Error(`expected 2 rows, got ${rows.length}`);
 			}
 			return "2 rows, RLS bypassed as designed";
 		});
+
+		// 7. The slug is unique per workspace, not globally.
+		await check("the same slug is allowed in another workspace", async () => {
+			const slug = `shared-${suffix}`;
+			await adminDb.execute(sql`
+				insert into "project" (id, organization_id, name, slug)
+				values
+					(${`rls-shared-a-${suffix}`}, ${orgA}, ${"Shared A"}, ${slug}),
+					(${`rls-shared-b-${suffix}`}, ${orgB}, ${"Shared B"}, ${slug})
+			`);
+			return "2 rows inserted";
+		});
+
+		// 8. Deleting the organization cascades to its projects and members.
+		await check("organization deletion cascades to project data", async () => {
+			await adminDb.execute(sql`delete from "organization" where id = ${orgA}`);
+
+			const projects = await adminDb.execute<{ id: string }>(
+				sql`select id from "project" where organization_id = ${orgA}`,
+			);
+			const memberships = await adminDb.execute<{ id: string }>(
+				sql`select id from "project_member" where organization_id = ${orgA}`,
+			);
+
+			if (projects.length !== 0 || memberships.length !== 0) {
+				throw new Error(
+					`expected 0 rows, got ${projects.length} projects and ${memberships.length} memberships`,
+				);
+			}
+
+			return "projects and memberships removed";
+		});
 	} finally {
-		await dropProbe();
+		await cleanup();
+		await closeTenantDb();
 		await adminClient.end({ timeout: 5 });
 	}
 

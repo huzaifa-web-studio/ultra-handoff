@@ -6,7 +6,7 @@ import {
 	SidebarRail,
 } from "@org/ui/components/sidebar";
 
-import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
+import { FolderIcon, LayoutDashboardIcon, Settings2Icon } from "lucide-react";
 import type * as React from "react";
 import { authClient } from "#/features/auth/client";
 import { canManageMembers } from "#/features/organization/permissions";
@@ -51,6 +51,13 @@ export function AppSidebar({
 								title: "Dashboard",
 								url: `/${orgSlug}`,
 								icon: <LayoutDashboardIcon />,
+							},
+							{
+								// Every member lands here. The page itself only lists
+								// the projects the caller belongs to.
+								title: "Projects",
+								url: `/${orgSlug}/projects`,
+								icon: <FolderIcon />,
 							},
 							{
 								title: "Settings",

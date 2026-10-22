@@ -228,6 +228,33 @@ export async function deletePreviousOrgLogo(
 	const key = keyFromFileUrl(previousLogo);
 	if (!key || key.includes("..") || key.includes("//")) return;
 	if (!key.startsWith(`organizations/${organizationId}/`)) return;
+	// Project logos live under the same organization prefix. Never let an
+	// organization logo cleanup delete one of them.
+	if (key.startsWith(`organizations/${organizationId}/projects/`)) return;
+
+	try {
+		await deleteObject(key);
+	} catch {
+		// Cleanup is not part of the success path.
+	}
+}
+
+/**
+ * Delete the project logo a project update or delete just replaced.
+ *
+ * Same best effort contract as the other cleanups. The prefix check scopes the
+ * delete to this workspace's project images, so an external URL or another
+ * organization's object is never touched.
+ */
+export async function deletePreviousProjectLogo(
+	organizationId: string,
+	previousLogo: string | null | undefined,
+): Promise<void> {
+	if (!previousLogo) return;
+
+	const key = keyFromFileUrl(previousLogo);
+	if (!key || key.includes("..") || key.includes("//")) return;
+	if (!key.startsWith(`organizations/${organizationId}/projects/`)) return;
 
 	try {
 		await deleteObject(key);
