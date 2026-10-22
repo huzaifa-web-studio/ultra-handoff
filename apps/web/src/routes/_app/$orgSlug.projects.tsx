@@ -165,7 +165,7 @@ function ProjectsPage() {
 						: "Could not load the projects."}
 				</p>
 				<Button
-					variant="outline"
+					variant="surface"
 					onPress={() => {
 						void projectsQuery.refetch();
 					}}

@@ -25,6 +25,7 @@
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
 	--color-border: var(--border);
 	--color-input: var(--input);
 	--color-ring: var(--ring);
@@ -154,6 +155,11 @@
 	--accent: var(--app-selected);
 	--accent-foreground: var(--app-text);
 	--destructive: var(--status-danger);
+	/*
+	 * Text on a solid danger fill. White passes AA on the light red; the dark
+	 * theme inverts the fill to a light red, so it needs dark text instead.
+	 */
+	--destructive-foreground: #ffffff;
 	--border: var(--app-border);
 	--input: var(--app-border);
 	--ring: var(--app-focus);
@@ -175,6 +181,7 @@
 	--accent: #315345;
 	--accent-foreground: #f5f2e9;
 	--destructive: #ffb4ab;
+	--destructive-foreground: #19382d;
 	--border: #536c5d;
 	--input: #536c5d;
 	--ring: #b18a32;

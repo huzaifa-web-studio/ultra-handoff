@@ -320,7 +320,7 @@ function InvitationsPage() {
 						: "Could not load the invitations."}
 				</p>
 				<Button
-					variant="outline"
+					variant="surface"
 					onPress={() => {
 						void invitationsQuery.refetch();
 					}}

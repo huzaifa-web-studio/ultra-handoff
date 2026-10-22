@@ -203,7 +203,7 @@ function MembersPage() {
 						: "Could not load the members."}
 				</p>
 				<Button
-					variant="outline"
+					variant="surface"
 					onPress={() => {
 						void membersQuery.refetch();
 					}}

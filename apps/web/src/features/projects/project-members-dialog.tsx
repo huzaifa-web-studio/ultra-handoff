@@ -306,7 +306,7 @@ export function ProjectMembersDialog({
 							: "Could not load the project members."}
 					</p>
 					<Button
-						variant="outline"
+						variant="surface"
 						onPress={() => {
 							void detail.refetch();
 						}}
@@ -583,7 +583,7 @@ export function ProjectMembersDialog({
 							</div>
 							<div className="flex items-center gap-2">
 								<Button
-									variant="outline"
+									variant="surface"
 									size="sm"
 									onPress={() => setRemoveTargets([])}
 									isDisabled={removeMembers.isPending}
@@ -591,9 +591,8 @@ export function ProjectMembersDialog({
 									Cancel
 								</Button>
 								<Button
-									variant="outline"
+									variant="destructive-solid"
 									size="sm"
-									className="text-danger hover:bg-danger-bg hover:text-danger"
 									loading={removeMembers.isPending}
 									onPress={handleRemove}
 								>

@@ -90,7 +90,7 @@ export function DeleteAccountContent({ email }: DeleteAccountContentProps) {
 					</p>
 					<div>
 						<Button
-							variant="outline"
+							variant="surface"
 							size="sm"
 							loading={deletionCheck.isRefetching}
 							onPress={() => deletionCheck.refetch()}

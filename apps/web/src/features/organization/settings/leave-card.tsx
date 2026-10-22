@@ -136,7 +136,7 @@ export function LeaveCard({ organization, role }: LeaveCardProps) {
 							Promote another member to owner before you can leave.
 						</p>
 						<Button
-							variant="outline"
+							variant="surface"
 							size="sm"
 							className="self-start"
 							onPress={() =>
