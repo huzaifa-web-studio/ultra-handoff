@@ -8,7 +8,7 @@
  * two fields are independent, so a long name never overwrites a slug someone
  * chose deliberately.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx and the project page.
  */
 
 import { Button } from "@org/ui/components/button";
@@ -29,7 +29,7 @@ import { toast } from "sonner";
 import { FieldMeta } from "#/components/field-meta";
 import { toFieldErrors } from "#/lib/form-errors";
 import { slugify } from "#/lib/slug";
-import type { ProjectRow } from "./api";
+import type { ProjectDetailResponse, ProjectRow } from "./api";
 import { useCreateProject, useUpdateProject } from "./hooks";
 import { ProjectLogoUploader } from "./project-logo-uploader";
 import {
@@ -50,6 +50,11 @@ type ProjectDialogProps = {
 	onOpenChange: (open: boolean) => void;
 	/** Called after a successful create, so the list can reveal the new row. */
 	onCreated?: () => void;
+	/**
+	 * Called after a successful edit with the saved project. The project page
+	 * uses it to follow a slug change, because the URL is the slug.
+	 */
+	onUpdated?: (project: ProjectDetailResponse) => void;
 };
 
 export function ProjectDialog({
@@ -60,6 +65,7 @@ export function ProjectDialog({
 	isOpen,
 	onOpenChange,
 	onCreated,
+	onUpdated,
 }: ProjectDialogProps) {
 	const createProject = useCreateProject(orgSlug);
 	const updateProject = useUpdateProject(orgSlug);
@@ -96,7 +102,7 @@ export function ProjectDialog({
 					toast.success(`${name} was created.`);
 					onCreated?.();
 				} else if (project) {
-					await updateProject.mutateAsync({
+					const updated = await updateProject.mutateAsync({
 						projectId: project.id,
 						name,
 						slug,
@@ -106,6 +112,7 @@ export function ProjectDialog({
 						logo,
 					});
 					toast.success(`${name} was updated.`);
+					onUpdated?.(updated);
 				}
 
 				onOpenChange(false);

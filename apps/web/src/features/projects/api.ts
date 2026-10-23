@@ -84,6 +84,89 @@ export type ProjectDetailResponse = Awaited<ReturnType<typeof fetchProject>>;
 export type ProjectMemberRow = ProjectDetailResponse["members"][number];
 export type ProjectViewer = ProjectDetailResponse["viewer"];
 
+/**
+ * Load a project by its readable slug for the project page.
+ *
+ * The URL uses the slug, but every mutation still uses the immutable id from
+ * this response, so a rename never moves the target of an in-flight action.
+ */
+export async function fetchProjectBySlug(orgSlug: string, projectSlug: string) {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects["by-slug"]({ projectSlug })
+		.get();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load the project."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load the project.", 0);
+	}
+
+	return response.data;
+}
+
+export type ProjectBySlugResponse = Awaited<
+	ReturnType<typeof fetchProjectBySlug>
+>;
+
+/**
+ * The lightweight project shape the sidebar renders.
+ *
+ * Derived from the sidebar response so it stays in sync with the API without a
+ * shared types package.
+ */
+export type ProjectSummary = Awaited<
+	ReturnType<typeof fetchSidebarProjects>
+>["pinned"][number];
+
+/** The caller's pinned projects for the sidebar. */
+export async function fetchSidebarProjects(orgSlug: string) {
+	const response = await api.orgs({ orgSlug }).projects.sidebar.get();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load your projects."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load your projects.", 0);
+	}
+
+	return response.data;
+}
+
+/** Pin or unpin a project in the caller's own sidebar. Idempotent. */
+export async function setProjectPinned(
+	orgSlug: string,
+	projectId: string,
+	pinned: boolean,
+): Promise<{ pinned: boolean; pinnedAt: string | null }> {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.pin.patch({ pinned });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not update the pin."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not update the pin.", 0);
+	}
+
+	return response.data;
+}
+
 /** Create a project. Organization owners and admins only. */
 export async function createProject(
 	orgSlug: string,

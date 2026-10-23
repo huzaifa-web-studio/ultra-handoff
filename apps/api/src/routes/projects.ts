@@ -23,11 +23,14 @@ import {
 	createProject,
 	deleteProject,
 	getProjectDetail,
+	getProjectDetailBySlug,
+	getSidebarProjects,
 	listProjects,
 	type ProjectListQuery,
 	type ProjectSort,
 	removeProjectMember,
 	setProjectArchived,
+	setProjectPinned,
 	updateProject,
 	updateProjectMemberRole,
 } from "../services/project.service";
@@ -40,6 +43,15 @@ import {
 const projectParams = t.Object({
 	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
 	projectId: t.String({ minLength: 1, maxLength: 64 }),
+});
+
+/**
+ * A slug is the readable public identifier, so it lives in the URL.
+ * The length matches the create and update validation.
+ */
+const projectSlugParams = t.Object({
+	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
+	projectSlug: t.String({ minLength: 1, maxLength: 100 }),
 });
 
 const projectMemberParams = t.Object({
@@ -122,6 +134,26 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		},
 		{ tenant: true, query: projectQuery },
 	)
+	/**
+	 * Sidebar payload: the caller's pinned projects.
+	 *
+	 * Registered before the `:projectId` detail route on purpose, so "sidebar"
+	 * is never mistaken for an id. Elysia prefers static segments anyway, but
+	 * the order makes the intent explicit.
+	 */
+	.get(
+		"/orgs/:orgSlug/projects/sidebar",
+		async ({ tenant, status }) => {
+			try {
+				return await getSidebarProjects(tenant);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not load your projects."),
+				});
+			}
+		},
+		{ tenant: true },
+	)
 	/** Create a project. Organization owners and admins only. */
 	.post(
 		"/orgs/:orgSlug/projects",
@@ -143,6 +175,26 @@ export const projectRoutes = new Elysia({ name: "projects" })
 				logo: t.Optional(t.String({ maxLength: 500 })),
 			}),
 		},
+	)
+	/**
+	 * The readable project page lookup.
+	 *
+	 * Why a separate path: the URL uses the slug, while every mutation and the
+	 * dialogs keep using the immutable id. `by-slug` is a static segment, so
+	 * the router takes that branch and never mistakes it for an id.
+	 */
+	.get(
+		"/orgs/:orgSlug/projects/by-slug/:projectSlug",
+		async ({ tenant, status, params }) => {
+			try {
+				return await getProjectDetailBySlug(tenant, params.projectSlug);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not load the project."),
+				});
+			}
+		},
+		{ tenant: true, params: projectSlugParams },
 	)
 	/** Project, members and viewer capabilities for the edit dialogs. */
 	.get(
@@ -181,6 +233,29 @@ export const projectRoutes = new Elysia({ name: "projects" })
 				// An empty string clears the logo, undefined leaves it untouched.
 				logo: t.Optional(t.String({ maxLength: 500 })),
 			}),
+		},
+	)
+	/**
+	 * Pin or unpin a project in the caller's sidebar.
+	 *
+	 * A PATCH with a boolean instead of POST/DELETE because the two directions
+	 * are one idempotent upsert, and the client always knows the target state.
+	 */
+	.patch(
+		"/orgs/:orgSlug/projects/:projectId/pin",
+		async ({ tenant, status, params, body }) => {
+			try {
+				return await setProjectPinned(tenant, params.projectId, body.pinned);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not update the pin."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: projectParams,
+			body: t.Object({ pinned: t.Boolean() }),
 		},
 	)
 	/** Archive. Idempotent. */

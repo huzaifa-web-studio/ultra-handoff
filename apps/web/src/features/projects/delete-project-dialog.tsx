@@ -5,7 +5,7 @@
  * membership and the logo, and neither archive nor any other screen can bring
  * it back. Typing the name is a deliberate speed bump, not a formality.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx.
  */
 
 import { Button } from "@org/ui/components/button";

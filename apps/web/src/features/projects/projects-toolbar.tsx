@@ -8,7 +8,7 @@
  * and show the direction, so a second sort input would duplicate the same
  * state and could disagree with the header indicator.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx.
  */
 
 import { Button } from "@org/ui/components/button";

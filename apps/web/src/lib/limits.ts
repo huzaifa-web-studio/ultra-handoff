@@ -17,3 +17,11 @@ export const USER_NAME_MAX = 64;
 
 /** Largest batch accepted by a bulk action route. */
 export const BULK_SELECTION_MAX = 100;
+
+/**
+ * How many projects the sidebar requests per page.
+ *
+ * The sidebar lists every project the caller can see, so it loads in small
+ * pages as the user scrolls instead of one large payload.
+ */
+export const SIDEBAR_PROJECTS_PAGE_SIZE = 20;

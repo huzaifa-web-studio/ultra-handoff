@@ -133,3 +133,50 @@ export const projectMember = pgTable(
 		tenantIsolation(table.organizationId),
 	],
 ).enableRLS();
+
+/**
+ * A project the user pinned to the top of their sidebar.
+ *
+ * Why a table: a pin is per person and per workspace, and it should follow the
+ * user across devices, so it cannot live in the browser. One row per pinned
+ * project. Unpinning deletes the row.
+ *
+ * `pinned_at` is a timestamp instead of a boolean so the sidebar can keep a
+ * stable order, newest pin first, without a second sort column.
+ *
+ * The unique index makes pin idempotent: a double click updates the same row.
+ */
+export const projectPin = pgTable(
+	"project_pin",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => project.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// The conflict target for the idempotent pin upsert.
+		uniqueIndex("project_pin_project_user_idx").on(
+			table.projectId,
+			table.userId,
+		),
+		// The sidebar reads one person's pins inside one workspace.
+		index("project_pin_organization_user_idx").on(
+			table.organizationId,
+			table.userId,
+		),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();

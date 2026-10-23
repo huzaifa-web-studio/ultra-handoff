@@ -5,7 +5,7 @@
  * of the workspace sees by default, so the consequences should be readable
  * before the click. Restoring uses the same dialog with different copy.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx.
  */
 
 import { Button } from "@org/ui/components/button";

@@ -54,7 +54,7 @@ import {
 } from "../auth/project-permissions";
 import { adminDb } from "../db";
 import { user } from "../db/auth-schema";
-import { project, projectMember } from "../db/schema";
+import { project, projectMember, projectPin } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
@@ -85,6 +85,8 @@ export type ProjectRow = {
 	memberCount: number;
 	canEdit: boolean;
 	canDelete: boolean;
+	/** True when the caller pinned the project in their own sidebar. */
+	pinned: boolean;
 	createdAt: string;
 	updatedAt: string;
 	archivedAt: string | null;
@@ -133,6 +135,26 @@ export type ProjectDetail = {
 	viewer: ProjectViewer;
 };
 
+/**
+ * The lightweight shape the sidebar renders.
+ *
+ * Deliberately smaller than `ProjectRow`: the sidebar needs an identity, a
+ * label and an archived hint, not member counts or capability flags.
+ */
+export type ProjectSummary = {
+	id: string;
+	name: string;
+	slug: string;
+	logo: string | null;
+	status: ProjectStatus;
+	pinned: boolean;
+};
+
+/** Everything the sidebar needs in one request. */
+export type SidebarProjectsResult = {
+	pinned: ProjectSummary[];
+};
+
 /** Normalised list filters, parsed and clamped by the route. */
 export type ProjectListQuery = {
 	search: string;
@@ -172,6 +194,7 @@ type ProjectAccess = {
 		updatedAt: Date;
 		myRole: string | null;
 		memberCount: number;
+		pinned: boolean;
 	};
 	role: ProjectRole;
 };
@@ -233,6 +256,7 @@ function toProjectRow(
 		memberCount: Number(row.memberCount ?? 0),
 		canEdit: canEditProject(tenant.role, row.myRole),
 		canDelete: canDeleteProject(tenant.role, row.myRole),
+		pinned: Boolean(row.pinned),
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 		archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
@@ -251,6 +275,67 @@ function toProjectViewer(
 		canDelete: canDeleteProject(tenant.role, role),
 		canManageMembers: canManageProjectMembers(tenant.role, role),
 		assignableRoles: assignableProjectRoles(role),
+	};
+}
+
+/**
+ * SQL condition that is true for the projects the caller may see.
+ *
+ * Organization owners see every project in the workspace because they are
+ * always project owners. Everyone else needs a membership row. The condition
+ * lives here so the list, the sidebar, pin and visit cannot drift apart on the
+ * one rule that decides visibility.
+ */
+function projectVisibility(tx: TenantTx, tenant: TenantContext): SQL {
+	if (isOrganizationOwner(tenant.role)) return sql`true`;
+
+	return exists(
+		tx
+			.select({ one: sql`1` })
+			.from(projectMember)
+			.where(
+				and(
+					eq(projectMember.projectId, project.id),
+					eq(projectMember.userId, tenant.userId),
+				),
+			),
+	);
+}
+
+/**
+ * True when the caller pinned this project.
+ *
+ * A correlated subquery instead of a join keeps the project queries unchanged
+ * and cannot duplicate rows when more than one activity row exists (it cannot,
+ * the unique index forbids it, but the read stays safe by construction).
+ */
+function pinnedProjectSql(tenant: TenantContext): SQL<boolean> {
+	return sql<boolean>`exists (
+		select 1 from project_pin pp
+		where pp.project_id = "project"."id"
+		and pp.user_id = ${tenant.userId}
+	)`;
+}
+
+/** Map an activity joined row into the sidebar summary shape. */
+function toProjectSummary(
+	row: {
+		id: string;
+		name: string;
+		slug: string;
+		logo: string | null;
+		archivedAt: Date | null;
+		pinned?: boolean;
+	},
+	pinnedOverride?: boolean,
+): ProjectSummary {
+	return {
+		id: row.id,
+		name: row.name,
+		slug: row.slug,
+		logo: row.logo,
+		status: row.archivedAt ? "archived" : "active",
+		pinned: pinnedOverride ?? Boolean(row.pinned),
 	};
 }
 
@@ -286,6 +371,7 @@ async function loadProjectAccess(
 			updatedAt: project.updatedAt,
 			myRole,
 			memberCount,
+			pinned: pinnedProjectSql(tenant),
 		})
 		.from(project)
 		.where(
@@ -353,23 +439,9 @@ export async function listProjects(
 	const result = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const orgOwner = isOrganizationOwner(tenant.role);
-
 			// A project is visible to its members. Organization owners see all
 			// projects in the workspace because they are always project owners.
-			const visibility = orgOwner
-				? sql`true`
-				: exists(
-						tx
-							.select({ one: sql`1` })
-							.from(projectMember)
-							.where(
-								and(
-									eq(projectMember.projectId, project.id),
-									eq(projectMember.userId, tenant.userId),
-								),
-							),
-					);
+			const visibility = projectVisibility(tx, tenant);
 
 			const scope: SQL[] = [
 				eq(project.organizationId, tenant.organizationId),
@@ -447,6 +519,7 @@ export async function listProjects(
 					updatedAt: project.updatedAt,
 					myRole,
 					memberCount,
+					pinned: pinnedProjectSql(tenant),
 				})
 				.from(project)
 				.where(and(...scope, ...(statusFilter ? [statusFilter] : [])))
@@ -480,6 +553,112 @@ export async function listProjects(
 		total: result.total,
 		totalPages: result.totalPages,
 	};
+}
+
+/** Maximum pins returned. A safety ceiling, far above normal use. */
+const SIDEBAR_PIN_LIMIT = 50;
+
+/**
+ * The sidebar payload: the caller's pinned projects.
+ *
+ * Every read is filtered by the same visibility rule as the projects page, so a
+ * leftover pin after losing project membership exposes nothing.
+ */
+export async function getSidebarProjects(
+	tenant: TenantContext,
+): Promise<SidebarProjectsResult> {
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const pinnedRows = await tx
+				.select({
+					id: project.id,
+					name: project.name,
+					slug: project.slug,
+					logo: project.logo,
+					archivedAt: project.archivedAt,
+					pinnedAt: projectPin.pinnedAt,
+				})
+				.from(projectPin)
+				.innerJoin(project, eq(projectPin.projectId, project.id))
+				.where(
+					and(
+						eq(projectPin.organizationId, tenant.organizationId),
+						eq(projectPin.userId, tenant.userId),
+						projectVisibility(tx, tenant),
+					),
+				)
+				.orderBy(desc(projectPin.pinnedAt))
+				.limit(SIDEBAR_PIN_LIMIT);
+
+			return { pinned: pinnedRows.map((row) => toProjectSummary(row, true)) };
+		},
+	);
+}
+
+/**
+ * Pin or unpin one project for the caller.
+ *
+ * Idempotent because it is an upsert on the unique (project, user) index. An
+ * archived project cannot be newly pinned: it is finished work, and the sidebar
+ * is about current attention. An existing pin is untouched by archiving.
+ */
+export async function setProjectPinned(
+	tenant: TenantContext,
+	projectId: string,
+	pinned: boolean,
+): Promise<{ pinned: boolean; pinnedAt: string | null }> {
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await loadProjectAccess(tx, tenant, projectId);
+
+			if (!access) {
+				throw new APIError("NOT_FOUND", {
+					message: "That project no longer exists.",
+				});
+			}
+
+			if (pinned && access.row.archivedAt) {
+				throw new APIError("BAD_REQUEST", {
+					message: "Restore the project before pinning it.",
+				});
+			}
+
+			// Unpin removes the row. A null timestamp cannot represent "not
+			// pinned" because pinned_at is the row's reason to exist.
+			if (!pinned) {
+				await tx
+					.delete(projectPin)
+					.where(
+						and(
+							eq(projectPin.projectId, projectId),
+							eq(projectPin.userId, tenant.userId),
+						),
+					);
+
+				return { pinned: false, pinnedAt: null };
+			}
+
+			const pinnedAt = new Date();
+
+			await tx
+				.insert(projectPin)
+				.values({
+					id: randomUUID(),
+					organizationId: tenant.organizationId,
+					projectId,
+					userId: tenant.userId,
+					pinnedAt,
+				})
+				.onConflictDoUpdate({
+					target: [projectPin.projectId, projectPin.userId],
+					set: { pinnedAt, updatedAt: pinnedAt },
+				});
+
+			return { pinned: true, pinnedAt: pinnedAt.toISOString() };
+		},
+	);
 }
 
 /**
@@ -614,6 +793,47 @@ export async function getProjectDetail(
 		members,
 		viewer: toProjectViewer(tenant, access.role),
 	};
+}
+
+/**
+ * Load a project by its workspace-unique slug.
+ *
+ * The browser URL uses the slug because it is readable and stable for people.
+ * The slug is unique per organization, so the lookup is exact. The visibility
+ * rule is applied before the detail is built, which means a slug the caller
+ * cannot see answers 404 exactly like an id they cannot see. Nothing here
+ * leaks whether the project exists.
+ */
+export async function getProjectDetailBySlug(
+	tenant: TenantContext,
+	slug: string,
+): Promise<ProjectDetail> {
+	const projectId = await withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const [row] = await tx
+				.select({ id: project.id })
+				.from(project)
+				.where(
+					and(
+						eq(project.organizationId, tenant.organizationId),
+						eq(project.slug, slug),
+						projectVisibility(tx, tenant),
+					),
+				)
+				.limit(1);
+
+			return row?.id ?? null;
+		},
+	);
+
+	if (!projectId) {
+		throw new APIError("NOT_FOUND", {
+			message: "That project no longer exists.",
+		});
+	}
+
+	return getProjectDetail(tenant, projectId);
 }
 
 /**

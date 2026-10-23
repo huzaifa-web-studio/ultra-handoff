@@ -6,11 +6,12 @@ import {
 	SidebarRail,
 } from "@org/ui/components/sidebar";
 
-import { FolderIcon, LayoutDashboardIcon, Settings2Icon } from "lucide-react";
+import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
 import type * as React from "react";
 import { authClient } from "#/features/auth/client";
 import { canManageMembers } from "#/features/organization/permissions";
 import { NavMain } from "./nav-main";
+import { NavProjects } from "./nav-projects";
 import { NavUser } from "./nav-user";
 import { OrganizationSwitcher } from "./organization-switcher";
 
@@ -45,39 +46,45 @@ export function AppSidebar({
 				 * empty until an organization is selected.
 				 */}
 				{activeOrg && (
-					<NavMain
-						items={[
-							{
-								title: "Dashboard",
-								url: `/${orgSlug}`,
-								icon: <LayoutDashboardIcon />,
-							},
-							{
-								// Every member lands here. The page itself only lists
-								// the projects the caller belongs to.
-								title: "Projects",
-								url: `/${orgSlug}/projects`,
-								icon: <FolderIcon />,
-							},
-							{
-								title: "Settings",
-								url: `/${orgSlug}/settings`,
-								icon: <Settings2Icon />,
-								items: [
-									{ title: "General", url: `/${orgSlug}/settings` },
-									{ title: "Members", url: `/${orgSlug}/settings/members` },
-									...(showInvitations
-										? [
-												{
-													title: "Invitations",
-													url: `/${orgSlug}/settings/invitations`,
-												},
-											]
-										: []),
-								],
-							},
-						]}
-					/>
+					<>
+						<NavMain
+							items={[
+								{
+									title: "Dashboard",
+									url: `/${orgSlug}`,
+									icon: <LayoutDashboardIcon />,
+								},
+								{
+									title: "Settings",
+									url: `/${orgSlug}/settings`,
+									icon: <Settings2Icon />,
+									items: [
+										{ title: "General", url: `/${orgSlug}/settings` },
+										{
+											title: "Members",
+											url: `/${orgSlug}/settings/members`,
+										},
+										...(showInvitations
+											? [
+													{
+														title: "Invitations",
+														url: `/${orgSlug}/settings/invitations`,
+													},
+												]
+											: []),
+									],
+								},
+							]}
+						/>
+						{/*
+						 * Projects get their own section instead of one link in
+						 * the platform list. The full projects page stays one
+						 * click away through the "All projects" row, so the
+						 * list of opened projects can grow without hiding the
+						 * way to everything else.
+						 */}
+						<NavProjects orgSlug={orgSlug} />
+					</>
 				)}
 			</SidebarContent>
 			<SidebarFooter>

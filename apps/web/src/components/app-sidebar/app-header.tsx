@@ -7,18 +7,27 @@ import {
 } from "@org/ui/components/breadcrumb";
 import { SidebarTrigger } from "@org/ui/components/sidebar";
 import { useMatches, useNavigate } from "@tanstack/react-router";
+import { useStore } from "@tanstack/react-store";
 import { authClient } from "#/features/auth/client";
+import { projectBreadcrumbStore } from "./project-breadcrumb";
 
 export function AppHeader() {
 	const navigate = useNavigate();
 	const matches = useMatches();
 	const { data: activeOrg } = authClient.useActiveOrganization();
+	const projectLabel = useStore(projectBreadcrumbStore).label;
 	const crumbs = matches
 		.map((m) => {
 			const label = (m.staticData as { breadcrumb?: string } | undefined)
 				?.breadcrumb;
+			// The project page publishes its name while it is mounted, so the
+			// last crumb reads the real project instead of "Project".
+			const resolved =
+				label === "Project" && projectLabel ? projectLabel : label;
+
 			return {
-				label: label === "Dashboard" ? (activeOrg?.name ?? label) : label,
+				label:
+					resolved === "Dashboard" ? (activeOrg?.name ?? resolved) : resolved,
 				pathname: m.pathname,
 			};
 		})
@@ -38,7 +47,7 @@ export function AppHeader() {
 					{crumbs.map((crumb, index) => {
 						const isLast = index === crumbs.length - 1;
 						return (
-							<BreadcrumbItem key={crumb.label}>
+							<BreadcrumbItem key={crumb.pathname}>
 								{isLast ? (
 									<BreadcrumbPage className="cursor-pointer">
 										{crumb.label}

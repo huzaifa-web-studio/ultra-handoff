@@ -6,17 +6,20 @@
  * `["organization", orgSlug, "projects"]` prefix, so one invalidation covers
  * the list, the filters and the open detail.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx and the project dialogs.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx, the sidebar and the
+ * project page, plus the project dialogs.
  */
 
 import {
 	keepPreviousData,
+	useInfiniteQuery,
 	useMutation,
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
 
 import { ApiRequestError } from "#/lib/api";
+import { SIDEBAR_PROJECTS_PAGE_SIZE } from "#/lib/limits";
 import {
 	archiveProject,
 	bulkAddProjectMembers,
@@ -27,9 +30,12 @@ import {
 	createProject,
 	deleteProject,
 	fetchProject,
+	fetchProjectBySlug,
 	fetchProjects,
+	fetchSidebarProjects,
 	type ProjectListFilters,
 	type ProjectRoleInput,
+	setProjectPinned,
 	unarchiveProject,
 	updateProject,
 	updateProjectMemberRole,
@@ -38,6 +44,22 @@ import {
 /** Prefix shared by every project query in one workspace. */
 export function projectsKey(orgSlug: string) {
 	return ["organization", orgSlug, "projects"] as const;
+}
+
+/**
+ * A 403 or 404 is a permission or existence answer, not a transient failure.
+ * Retrying only delays the access card, so both the list and the detail stop
+ * after the first such answer.
+ */
+function retryProjectQuery(failureCount: number, error: unknown): boolean {
+	if (
+		error instanceof ApiRequestError &&
+		(error.status === 403 || error.status === 404)
+	) {
+		return false;
+	}
+
+	return failureCount < 2;
 }
 
 /** One page of the projects table. */
@@ -49,18 +71,7 @@ export function useProjects(orgSlug: string, filters: ProjectListFilters) {
 		// flashing an empty table while the next page is in flight.
 		placeholderData: keepPreviousData,
 		staleTime: 15_000,
-		// A 403 or 404 is a permission or existence answer, not a transient
-		// failure. Retrying only delays the access card.
-		retry: (failureCount, error) => {
-			if (
-				error instanceof ApiRequestError &&
-				(error.status === 403 || error.status === 404)
-			) {
-				return false;
-			}
-
-			return failureCount < 2;
-		},
+		retry: retryProjectQuery,
 	});
 }
 
@@ -75,16 +86,24 @@ export function useProjectDetail(
 		queryFn: () => fetchProject(orgSlug, projectId ?? ""),
 		enabled: enabled && Boolean(projectId),
 		staleTime: 10_000,
-		retry: (failureCount, error) => {
-			if (
-				error instanceof ApiRequestError &&
-				(error.status === 403 || error.status === 404)
-			) {
-				return false;
-			}
+		retry: retryProjectQuery,
+	});
+}
 
-			return failureCount < 2;
-		},
+/**
+ * The project page payload, looked up by the slug that appears in the URL.
+ *
+ * Kept separate from `useProjectDetail` because the dialogs address projects by
+ * their immutable id, and the page addresses them by the readable slug. Both
+ * share the same cache prefix, so a mutation invalidates both.
+ */
+export function useProjectDetailBySlug(orgSlug: string, projectSlug: string) {
+	return useQuery({
+		queryKey: [...projectsKey(orgSlug), "detail-by-slug", projectSlug],
+		queryFn: () => fetchProjectBySlug(orgSlug, projectSlug),
+		enabled: Boolean(orgSlug) && Boolean(projectSlug),
+		staleTime: 10_000,
+		retry: retryProjectQuery,
 	});
 }
 
@@ -94,6 +113,70 @@ function useInvalidateProjects(orgSlug: string) {
 
 	return () =>
 		queryClient.invalidateQueries({ queryKey: projectsKey(orgSlug) });
+}
+
+/**
+ * The caller's pinned projects for the sidebar.
+ *
+ * The sidebar is visible on every screen, so this avoids refetching on every
+ * navigation. A pin or a project change invalidates the shared prefix.
+ */
+export function useSidebarProjects(orgSlug: string) {
+	return useQuery({
+		queryKey: [...projectsKey(orgSlug), "sidebar"],
+		queryFn: () => fetchSidebarProjects(orgSlug),
+		enabled: Boolean(orgSlug),
+		staleTime: 60_000,
+		retry: retryProjectQuery,
+	});
+}
+
+/**
+ * The paginated all-projects list for the sidebar.
+ *
+ * Why infinite: the sidebar can hold any number of projects, and loading them
+ * all at once would make the payload and the first paint needlessly heavy. Each
+ * page is small and the list asks for the next one as the user scrolls.
+ *
+ * Active projects only. Archived work stays on the projects page, where the
+ * status filter and restore action live.
+ */
+export function useSidebarAllProjects(orgSlug: string) {
+	return useInfiniteQuery({
+		queryKey: [...projectsKey(orgSlug), "sidebar-all"],
+		queryFn: ({ pageParam }) =>
+			fetchProjects(orgSlug, {
+				search: "",
+				status: "active",
+				// Alphabetical so the list is predictable while browsing.
+				sort: "name",
+				direction: "asc",
+				page: pageParam,
+				pageSize: SIDEBAR_PROJECTS_PAGE_SIZE,
+			}),
+		initialPageParam: 1,
+		getNextPageParam: (lastPage) =>
+			lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
+		enabled: Boolean(orgSlug),
+		staleTime: 60_000,
+		retry: retryProjectQuery,
+	});
+}
+
+/** Pin or unpin a project. Idempotent, so a double click is harmless. */
+export function useSetProjectPinned(orgSlug: string) {
+	const invalidate = useInvalidateProjects(orgSlug);
+
+	return useMutation({
+		mutationFn: ({
+			projectId,
+			pinned,
+		}: {
+			projectId: string;
+			pinned: boolean;
+		}) => setProjectPinned(orgSlug, projectId, pinned),
+		onSuccess: invalidate,
+	});
 }
 
 export function useCreateProject(orgSlug: string) {

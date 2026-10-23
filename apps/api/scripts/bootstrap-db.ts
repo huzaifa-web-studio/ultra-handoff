@@ -31,7 +31,11 @@ import { databaseEnv } from "../src/lib/env";
  *
  * Add each new business table (with an RLS policy) to this list.
  */
-const TENANT_TABLES: readonly string[] = ["project", "project_member"];
+const TENANT_TABLES: readonly string[] = [
+	"project",
+	"project_member",
+	"project_pin",
+];
 
 /** Identifiers cannot be bind parameters, so validate before quoting. */
 function quoteIdent(identifier: string): string {

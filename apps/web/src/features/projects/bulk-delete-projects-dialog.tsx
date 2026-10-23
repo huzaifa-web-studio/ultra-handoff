@@ -6,7 +6,7 @@
  * before the request runs. Blocked rows are pre-sorted here so the confirmation
  * never promises something the API will refuse.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx.
  */
 
 import { Button } from "@org/ui/components/button";

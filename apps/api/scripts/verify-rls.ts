@@ -160,6 +160,11 @@ async function seed(): Promise<void> {
 			(${`rls-pm-a-${suffix}`}, ${orgA}, ${projectA}, ${memberA}, ${userA}, 'owner'),
 			(${`rls-pm-b-${suffix}`}, ${orgB}, ${projectB}, ${memberB}, ${userB}, 'owner')
 	`);
+	await adminDb.execute(sql`
+		insert into "project_pin" (id, organization_id, project_id, user_id, pinned_at)
+		values
+			(${`rls-pa-a-${suffix}`}, ${orgA}, ${projectA}, ${userA}, ${now})
+	`);
 }
 
 /** Remove every seeded row. Organization deletion cascades to projects. */
@@ -287,6 +292,35 @@ async function main(): Promise<void> {
 				),
 		);
 
+		// 4b. Per user project pins follow the same boundary.
+		await check("project pin is scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "project_pin"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a pin from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await expectFailure(
+			"project pin insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "project_pin"
+							(id, organization_id, project_id, user_id)
+							values (${`rls-pa-intruder-${suffix}`}, ${orgB}, ${projectB}, ${userB})`,
+					),
+				),
+		);
+
 		// 5. Better Auth tables are not granted at all.
 		await expectFailure(
 			"Better Auth user table is not readable",
@@ -328,14 +362,21 @@ async function main(): Promise<void> {
 			const memberships = await adminDb.execute<{ id: string }>(
 				sql`select id from "project_member" where organization_id = ${orgA}`,
 			);
+			const pins = await adminDb.execute<{ id: string }>(
+				sql`select id from "project_pin" where organization_id = ${orgA}`,
+			);
 
-			if (projects.length !== 0 || memberships.length !== 0) {
+			if (
+				projects.length !== 0 ||
+				memberships.length !== 0 ||
+				pins.length !== 0
+			) {
 				throw new Error(
-					`expected 0 rows, got ${projects.length} projects and ${memberships.length} memberships`,
+					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships and ${pins.length} pins`,
 				);
 			}
 
-			return "projects and memberships removed";
+			return "projects, memberships and pins removed";
 		});
 	} finally {
 		await cleanup();

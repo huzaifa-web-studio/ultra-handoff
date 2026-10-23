@@ -6,10 +6,9 @@
  * keyboard and screen reader semantics. Sorting is manual because the API sorts
  * and paginates the whole workspace, not just the loaded page.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx.
  */
 
-import { Badge } from "@org/ui/components/badge";
 import { Button } from "@org/ui/components/button";
 import { Checkbox } from "@org/ui/components/checkbox";
 import {
@@ -36,8 +35,11 @@ import {
 import {
 	ArchiveIcon,
 	ArchiveRestoreIcon,
+	ArrowUpRightIcon,
 	MoreHorizontalIcon,
 	PencilIcon,
+	PinIcon,
+	PinOffIcon,
 	Trash2Icon,
 	UsersIcon,
 } from "lucide-react";
@@ -49,6 +51,7 @@ import { formatDate, formatDateTime } from "#/lib/date";
 import { BULK_SELECTION_MAX } from "#/lib/limits";
 import type { ProjectRow } from "./api";
 import { ProjectRoleChip } from "./project-role-chip";
+import { ProjectStatusBadge } from "./project-status-badge";
 
 type ProjectsTableProps = {
 	projects: ProjectRow[];
@@ -62,6 +65,10 @@ type ProjectsTableProps = {
 	onArchive: (project: ProjectRow) => void;
 	onUnarchive: (project: ProjectRow) => void;
 	onDelete: (project: ProjectRow) => void;
+	/** Open the project workspace and add it to the sidebar. */
+	onOpen: (project: ProjectRow) => void;
+	/** Pin or unpin the project in the caller's own sidebar. */
+	onTogglePin: (project: ProjectRow) => void;
 	emptyState: React.ReactNode;
 };
 
@@ -72,18 +79,11 @@ type ProjectsTableProps = {
 const STICKY_HEADER =
 	"sticky top-0 z-10 border-b border-app-border bg-app-panel";
 
-/** Status stamp. Text is always present, never colour alone. */
-function ProjectStatusBadge({ status }: { status: ProjectRow["status"] }) {
-	if (status === "archived") {
-		return <Badge className="bg-neutral-bg text-neutral">Archived</Badge>;
-	}
-
-	return <Badge className="bg-success-bg text-success">Active</Badge>;
-}
-
-/** Row menu. Rendered only when the caller can do something. */
+/** Row menu. Always present, because every row can be opened and pinned. */
 function ProjectActions({
 	project,
+	onOpen,
+	onTogglePin,
 	onEdit,
 	onManageMembers,
 	onArchive,
@@ -91,6 +91,8 @@ function ProjectActions({
 	onDelete,
 }: {
 	project: ProjectRow;
+	onOpen: (project: ProjectRow) => void;
+	onTogglePin: (project: ProjectRow) => void;
 	onEdit: (project: ProjectRow) => void;
 	onManageMembers: (project: ProjectRow) => void;
 	onArchive: (project: ProjectRow) => void;
@@ -99,8 +101,6 @@ function ProjectActions({
 }) {
 	const canEdit = project.canEdit;
 	const canDelete = project.canDelete;
-
-	if (!canEdit && !canDelete) return null;
 
 	return (
 		<div className="flex justify-end">
@@ -113,24 +113,46 @@ function ProjectActions({
 					<MoreHorizontalIcon />
 				</Button>
 				<DropdownMenu>
-					<DropdownMenuItem onAction={() => onEdit(project)}>
-						<PencilIcon aria-hidden />
-						Edit project
+					<DropdownMenuItem onAction={() => onOpen(project)}>
+						<ArrowUpRightIcon aria-hidden />
+						Open project
 					</DropdownMenuItem>
-					<DropdownMenuItem onAction={() => onManageMembers(project)}>
-						<UsersIcon aria-hidden />
-						Manage members
+					<DropdownMenuItem
+						onAction={() => onTogglePin(project)}
+						// An archived project cannot be newly pinned. An existing
+						// pin is still removable, so the user is never stuck.
+						isDisabled={project.status === "archived" && !project.pinned}
+					>
+						{project.pinned ? (
+							<PinOffIcon aria-hidden />
+						) : (
+							<PinIcon aria-hidden />
+						)}
+						{project.pinned ? "Unpin project" : "Pin project"}
 					</DropdownMenuItem>
-					{project.status === "archived" ? (
-						<DropdownMenuItem onAction={() => onUnarchive(project)}>
-							<ArchiveRestoreIcon aria-hidden />
-							Restore project
-						</DropdownMenuItem>
-					) : (
-						<DropdownMenuItem onAction={() => onArchive(project)}>
-							<ArchiveIcon aria-hidden />
-							Archive project
-						</DropdownMenuItem>
+					{(canEdit || canDelete) && <DropdownMenuSeparator />}
+					{canEdit && (
+						<>
+							<DropdownMenuItem onAction={() => onEdit(project)}>
+								<PencilIcon aria-hidden />
+								Edit project
+							</DropdownMenuItem>
+							<DropdownMenuItem onAction={() => onManageMembers(project)}>
+								<UsersIcon aria-hidden />
+								Manage members
+							</DropdownMenuItem>
+							{project.status === "archived" ? (
+								<DropdownMenuItem onAction={() => onUnarchive(project)}>
+									<ArchiveRestoreIcon aria-hidden />
+									Restore project
+								</DropdownMenuItem>
+							) : (
+								<DropdownMenuItem onAction={() => onArchive(project)}>
+									<ArchiveIcon aria-hidden />
+									Archive project
+								</DropdownMenuItem>
+							)}
+						</>
 					)}
 					{canDelete && (
 						<>
@@ -161,6 +183,8 @@ export function ProjectsTable({
 	onArchive,
 	onUnarchive,
 	onDelete,
+	onOpen,
+	onTogglePin,
 	emptyState,
 }: ProjectsTableProps) {
 	const columns = useMemo<ColumnDef<ProjectRow>[]>(
@@ -178,11 +202,22 @@ export function ProjectsTable({
 							src={row.original.logo}
 						/>
 						<div className="flex min-w-0 flex-col">
-							<span
-								className="max-w-56 truncate font-medium text-app-text"
-								title={row.original.name}
-							>
-								{row.original.name}
+							<span className="flex max-w-56 items-center gap-1.5">
+								<span
+									className="min-w-0 truncate font-medium text-app-text"
+									title={row.original.name}
+								>
+									{row.original.name}
+								</span>
+								{row.original.pinned && (
+									<span className="flex shrink-0 items-center" title="Pinned">
+										<PinIcon
+											className="size-3.5 text-app-text-muted"
+											aria-hidden
+										/>
+										<span className="sr-only">Pinned</span>
+									</span>
+								)}
 							</span>
 							<span
 								className="max-w-56 truncate text-xs text-app-text-muted"
@@ -240,6 +275,8 @@ export function ProjectsTable({
 				cell: ({ row }) => (
 					<ProjectActions
 						project={row.original}
+						onOpen={onOpen}
+						onTogglePin={onTogglePin}
 						onEdit={onEdit}
 						onManageMembers={onManageMembers}
 						onArchive={onArchive}
@@ -249,7 +286,15 @@ export function ProjectsTable({
 				),
 			},
 		],
-		[onEdit, onManageMembers, onArchive, onUnarchive, onDelete],
+		[
+			onOpen,
+			onTogglePin,
+			onEdit,
+			onManageMembers,
+			onArchive,
+			onUnarchive,
+			onDelete,
+		],
 	);
 
 	const table = useReactTable({

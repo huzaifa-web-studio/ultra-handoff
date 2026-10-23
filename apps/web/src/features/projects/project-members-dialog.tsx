@@ -11,7 +11,7 @@
  * unconditionally, so offering a role select or a remove button would promise
  * something it cannot do.
  *
- * Used by: routes/_app/$orgSlug.projects.tsx.
+ * Used by: routes/_app/$orgSlug.projects.index.tsx and the project page.
  */
 
 import { Button } from "@org/ui/components/button";
