@@ -129,6 +129,14 @@ export function ProjectMembersPage({
 				</p>
 			</header>
 
+			{project.status === "archived" && (
+				<p className="border border-warning bg-warning-bg p-3 text-sm text-app-text">
+					This project is archived, so its members are read only. Restore the
+					project from General settings or the project header before adding,
+					removing or changing anyone.
+				</p>
+			)}
+
 			<ProjectMembersToolbar
 				search={search}
 				onSearchChange={setSearch}

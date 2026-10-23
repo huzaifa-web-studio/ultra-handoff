@@ -15,6 +15,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+	boolean,
 	check,
 	index,
 	pgTable,
@@ -33,6 +34,11 @@ import { tenantIsolation } from "./rls";
  * `archived_at is null`. Deleting a project is a hard delete; archiving is the
  * reversible option.
  *
+ * `archive_visible_to_client` is the per project exception to the archive rule.
+ * An archived project is hidden from project members and clients by default.
+ * Turning this on keeps it visible to the `client` role only, read only. Project
+ * members never see an archived project, and owners and admins always do.
+ *
  * `created_by` is nullable on purpose: deleting the creator's account must not
  * delete the projects they created, so the foreign key clears instead.
  */
@@ -49,6 +55,16 @@ export const project = pgTable(
 		description: text("description"),
 		logo: text("logo"),
 		archivedAt: timestamp("archived_at"),
+		/**
+		 * Keep an archived project visible to its clients.
+		 *
+		 * Off by default, so archiving removes the project from the client's
+		 * view. Owners and admins are unaffected, and the `member` role never
+		 * sees archived projects.
+		 */
+		archiveVisibleToClient: boolean("archive_visible_to_client")
+			.default(false)
+			.notNull(),
 		createdBy: text("created_by").references(() => user.id, {
 			onDelete: "set null",
 		}),

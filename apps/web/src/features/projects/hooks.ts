@@ -35,6 +35,7 @@ import {
 	fetchSidebarProjects,
 	type ProjectListFilters,
 	type ProjectRoleInput,
+	setProjectArchiveVisibility,
 	setProjectPinned,
 	unarchiveProject,
 	updateProject,
@@ -225,6 +226,26 @@ export function useUnarchiveProject(orgSlug: string) {
 
 	return useMutation({
 		mutationFn: (projectId: string) => unarchiveProject(orgSlug, projectId),
+		onSuccess: invalidate,
+	});
+}
+
+/**
+ * Toggle whether clients keep seeing this project while it is archived.
+ *
+ * Allowed while archived, so the setting stays reachable without a restore.
+ */
+export function useSetProjectArchiveVisibility(orgSlug: string) {
+	const invalidate = useInvalidateProjects(orgSlug);
+
+	return useMutation({
+		mutationFn: ({
+			projectId,
+			visibleToClient,
+		}: {
+			projectId: string;
+			visibleToClient: boolean;
+		}) => setProjectArchiveVisibility(orgSlug, projectId, visibleToClient),
 		onSuccess: invalidate,
 	});
 }

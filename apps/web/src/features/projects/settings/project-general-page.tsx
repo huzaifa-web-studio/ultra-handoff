@@ -16,6 +16,7 @@ import { ProjectArchiveCard } from "./project-archive-card";
 import { ProjectDeleteCard } from "./project-delete-card";
 import { ProjectGeneralCard } from "./project-general-card";
 import { ProjectSettingsSkeleton } from "./project-settings-skeleton";
+import { ProjectVisibilityCard } from "./project-visibility-card";
 
 export function ProjectGeneralPage({
 	orgSlug,
@@ -65,6 +66,7 @@ export function ProjectGeneralPage({
 				organizationId={organizationId}
 				project={project}
 				canEdit={viewer.canEdit}
+				locked={viewer.locked}
 				onSaved={(updated) => {
 					// The URL is the slug, so a rename must keep the settings tab
 					// on the new address instead of falling into a 404.
@@ -77,6 +79,10 @@ export function ProjectGeneralPage({
 					});
 				}}
 			/>
+
+			{viewer.canEditArchiveVisibility && (
+				<ProjectVisibilityCard orgSlug={orgSlug} project={project} />
+			)}
 
 			{viewer.canEdit && (
 				<ProjectArchiveCard orgSlug={orgSlug} project={project} />

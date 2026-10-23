@@ -20,12 +20,15 @@ export function ProjectGeneralCard({
 	organizationId,
 	project,
 	canEdit,
+	locked,
 	onSaved,
 }: {
 	orgSlug: string;
 	organizationId: string;
 	project: ProjectRow;
 	canEdit: boolean;
+	/** True when the project is archived and therefore read only. */
+	locked: boolean;
 	onSaved: (project: ProjectDetailResponse) => void;
 }) {
 	return (
@@ -37,8 +40,15 @@ export function ProjectGeneralCard({
 				</p>
 			</header>
 
-			<div className="p-4">
-				{canEdit ? (
+			<div className="flex flex-col gap-4 p-4">
+				{locked && (
+					<p className="border border-warning bg-warning-bg p-3 text-sm text-app-text">
+						This project is archived, so these details are read only. Restore
+						the project to edit them.
+					</p>
+				)}
+
+				{canEdit && !locked ? (
 					<ProjectGeneralForm
 						orgSlug={orgSlug}
 						organizationId={organizationId}
@@ -48,15 +58,21 @@ export function ProjectGeneralCard({
 						saveLogoImmediately
 					/>
 				) : (
-					<ProjectGeneralSummary project={project} />
+					<ProjectGeneralSummary project={project} canEdit={canEdit} />
 				)}
 			</div>
 		</section>
 	);
 }
 
-/** The read only view for viewers who cannot edit. */
-function ProjectGeneralSummary({ project }: { project: ProjectRow }) {
+/** The read only view for viewers who cannot edit, or for a locked project. */
+function ProjectGeneralSummary({
+	project,
+	canEdit,
+}: {
+	project: ProjectRow;
+	canEdit: boolean;
+}) {
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="flex items-center gap-3">
@@ -81,7 +97,9 @@ function ProjectGeneralSummary({ project }: { project: ProjectRow }) {
 			</p>
 
 			<p className="text-xs text-app-text-muted">
-				Only project owners and admins can change these details.
+				{canEdit
+					? "Restore the project to change these details."
+					: "Only project owners and admins can change these details."}
 			</p>
 		</div>
 	);

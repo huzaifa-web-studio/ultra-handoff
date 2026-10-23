@@ -30,6 +30,7 @@ import {
 	type ProjectSort,
 	removeProjectMember,
 	setProjectArchived,
+	setProjectArchiveVisibility,
 	setProjectPinned,
 	updateProject,
 	updateProjectMemberRole,
@@ -285,6 +286,37 @@ export const projectRoutes = new Elysia({ name: "projects" })
 			}
 		},
 		{ tenant: true, params: projectParams },
+	)
+	/**
+	 * Keep an archived project visible to its clients.
+	 *
+	 * Separate from PATCH /projects/:projectId because that route is locked
+	 * while the project is archived, and this is the one setting that must stay
+	 * editable in both states.
+	 */
+	.patch(
+		"/orgs/:orgSlug/projects/:projectId/archive-visibility",
+		async ({ tenant, status, params, body }) => {
+			try {
+				return await setProjectArchiveVisibility(
+					tenant,
+					params.projectId,
+					body.visibleToClient,
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(
+						error,
+						"Could not change the archive visibility.",
+					),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: projectParams,
+			body: t.Object({ visibleToClient: t.Boolean() }),
+		},
 	)
 	/** Permanent delete. Project owners only. */
 	.delete(

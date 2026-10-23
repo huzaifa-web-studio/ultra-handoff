@@ -285,6 +285,36 @@ export async function unarchiveProject(
 	return response.data;
 }
 
+/**
+ * Keep an archived project visible to its clients.
+ *
+ * Allowed in both states on purpose: the setting controls who can see the
+ * project while it is archived, so it must be reachable after archiving.
+ */
+export async function setProjectArchiveVisibility(
+	orgSlug: string,
+	projectId: string,
+	visibleToClient: boolean,
+): Promise<{ archiveVisibleToClient: boolean }> {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		["archive-visibility"].patch({ visibleToClient });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not change the archive visibility."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not change the archive visibility.", 0);
+	}
+
+	return response.data;
+}
+
 /** Permanent delete. Project owners only. */
 export async function deleteProject(
 	orgSlug: string,

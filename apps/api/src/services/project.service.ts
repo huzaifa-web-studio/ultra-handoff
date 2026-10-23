@@ -30,6 +30,7 @@ import {
 	exists,
 	ilike,
 	inArray,
+	isNull,
 	ne,
 	or,
 	type SQL,
@@ -38,6 +39,7 @@ import {
 
 import { isOrganizationOwner } from "../auth/permissions";
 import {
+	assertProjectActive,
 	assignableProjectRoles,
 	canAssignProjectRole,
 	canCreateProject,
@@ -45,6 +47,7 @@ import {
 	canEditProject,
 	canManageProjectMembers,
 	canManageProjectTarget,
+	canViewArchivedProject,
 	effectiveProjectRole,
 	PROJECT_ROLE_LABELS,
 	type ProjectRole,
@@ -85,6 +88,8 @@ export type ProjectRow = {
 	memberCount: number;
 	canEdit: boolean;
 	canDelete: boolean;
+	/** True when a client keeps seeing this project after it is archived. */
+	archiveVisibleToClient: boolean;
 	/** True when the caller pinned the project in their own sidebar. */
 	pinned: boolean;
 	createdAt: string;
@@ -99,6 +104,12 @@ export type ProjectViewer = {
 	canEdit: boolean;
 	canDelete: boolean;
 	canManageMembers: boolean;
+	/** True when the caller can still see this project while it is archived. */
+	canSeeArchived: boolean;
+	/** True when the caller may change the archive visibility setting. */
+	canEditArchiveVisibility: boolean;
+	/** True when the project is archived and therefore read-only. */
+	locked: boolean;
 	assignableRoles: ProjectRole[];
 };
 
@@ -119,7 +130,12 @@ export type ProjectMemberRow = {
 export type ProjectListResult = {
 	organizationId: string;
 	projects: ProjectRow[];
-	viewer: { organizationRole: string; canCreate: boolean };
+	viewer: {
+		organizationRole: string;
+		canCreate: boolean;
+		/** True when the caller can see at least one archived project. */
+		canSeeArchived: boolean;
+	};
 	counts: { all: number; active: number; archived: number };
 	page: number;
 	pageSize: number;
@@ -190,6 +206,7 @@ type ProjectAccess = {
 		logo: string | null;
 		description: string | null;
 		archivedAt: Date | null;
+		archiveVisibleToClient: boolean;
 		createdAt: Date;
 		updatedAt: Date;
 		myRole: string | null;
@@ -256,6 +273,7 @@ function toProjectRow(
 		memberCount: Number(row.memberCount ?? 0),
 		canEdit: canEditProject(tenant.role, row.myRole),
 		canDelete: canDeleteProject(tenant.role, row.myRole),
+		archiveVisibleToClient: row.archiveVisibleToClient,
 		pinned: Boolean(row.pinned),
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
@@ -263,33 +281,65 @@ function toProjectRow(
 	};
 }
 
-/** Build the viewer capabilities for one project. */
+/**
+ * Build the viewer capabilities for one project.
+ *
+ * `canSeeArchived` is computed from the caller's effective role and the project
+ * flag, so the UI never has to re-implement the archive visibility rule.
+ *
+ * `canManageMembers` is false while the project is archived, because every
+ * member write is rejected in that state. `canEdit` stays role based so the
+ * restore and delete controls remain reachable.
+ */
 function toProjectViewer(
 	tenant: TenantContext,
-	role: ProjectRole,
+	access: ProjectAccess,
 ): ProjectViewer {
+	const { row, role } = access;
+	const archived = row.archivedAt !== null;
+
 	return {
 		organizationRole: tenant.role,
 		projectRole: role,
 		canEdit: canEditProject(tenant.role, role),
 		canDelete: canDeleteProject(tenant.role, role),
-		canManageMembers: canManageProjectMembers(tenant.role, role),
+		canManageMembers: !archived && canManageProjectMembers(tenant.role, role),
+		canSeeArchived:
+			!archived || canViewArchivedProject(role, row.archiveVisibleToClient),
+		canEditArchiveVisibility: canEditProject(tenant.role, role),
+		locked: archived,
 		assignableRoles: assignableProjectRoles(role),
 	};
+}
+
+/**
+ * The caller's project role as a correlated subquery.
+ *
+ * Shared by the visibility rule and the access loader so the two can never
+ * disagree about which role the caller holds on a project.
+ */
+function myProjectRoleSql(tenant: TenantContext): SQL<string | null> {
+	return sql<string | null>`(select pm.role from project_member pm
+		where pm.project_id = "project"."id"
+		and pm.user_id = ${tenant.userId}
+		limit 1)`;
 }
 
 /**
  * SQL condition that is true for the projects the caller may see.
  *
  * Organization owners see every project in the workspace because they are
- * always project owners. Everyone else needs a membership row. The condition
- * lives here so the list, the sidebar, pin and visit cannot drift apart on the
- * one rule that decides visibility.
+ * always project owners. Everyone else needs a membership row.
+ *
+ * Archiving then narrows that rule: an archived project stays visible to project
+ * owners and admins, and to a client only when the project opted in. A plain
+ * member loses it. The condition lives here so the list, the sidebar, pin and
+ * visit cannot drift apart on the two rules that decide visibility.
  */
 function projectVisibility(tx: TenantTx, tenant: TenantContext): SQL {
 	if (isOrganizationOwner(tenant.role)) return sql`true`;
 
-	return exists(
+	const membership = exists(
 		tx
 			.select({ one: sql`1` })
 			.from(projectMember)
@@ -300,6 +350,51 @@ function projectVisibility(tx: TenantTx, tenant: TenantContext): SQL {
 				),
 			),
 	);
+
+	const role = myProjectRoleSql(tenant);
+
+	return sql`${membership} and (
+		${project.archivedAt} is null
+		or ${role} in ('owner', 'admin')
+		or (${role} = 'client' and ${project.archiveVisibleToClient})
+	)`;
+}
+
+/**
+ * True when the caller can see at least one archived project.
+ *
+ * Why a workspace level answer: the projects page decides whether to offer the
+ * Archived filter before it knows which rows exist. An organization owner can
+ * always see archived projects. Everyone else qualifies through a project role
+ * that survives archiving (owner or admin), or as a client on a project that
+ * opted in. A plain member never qualifies.
+ */
+async function canSeeArchivedProjects(
+	tx: TenantTx,
+	tenant: TenantContext,
+): Promise<boolean> {
+	if (isOrganizationOwner(tenant.role)) return true;
+
+	const [row] = await tx
+		.select({ one: sql`1` })
+		.from(projectMember)
+		.innerJoin(project, eq(projectMember.projectId, project.id))
+		.where(
+			and(
+				eq(projectMember.organizationId, tenant.organizationId),
+				eq(projectMember.userId, tenant.userId),
+				or(
+					inArray(projectMember.role, ["owner", "admin"]),
+					and(
+						eq(projectMember.role, "client"),
+						eq(project.archiveVisibleToClient, true),
+					),
+				),
+			),
+		)
+		.limit(1);
+
+	return Boolean(row);
 }
 
 /**
@@ -351,10 +446,7 @@ async function loadProjectAccess(
 	tenant: TenantContext,
 	projectId: string,
 ): Promise<ProjectAccess | null> {
-	const myRole = sql<string | null>`(select pm.role from project_member pm
-		where pm.project_id = "project"."id"
-		and pm.user_id = ${tenant.userId}
-		limit 1)`;
+	const myRole = myProjectRoleSql(tenant);
 
 	const memberCount = sql<number>`(select count(*) from project_member pm
 		where pm.project_id = "project"."id")`.mapWith(Number);
@@ -367,6 +459,7 @@ async function loadProjectAccess(
 			logo: project.logo,
 			description: project.description,
 			archivedAt: project.archivedAt,
+			archiveVisibleToClient: project.archiveVisibleToClient,
 			createdAt: project.createdAt,
 			updatedAt: project.updatedAt,
 			myRole,
@@ -389,6 +482,16 @@ async function loadProjectAccess(
 	// Organization owners always see every project. Everyone else must have a
 	// membership row, which the policy cannot express without recursion.
 	if (!role) return null;
+
+	// An archived project is hidden from anyone who cannot see archived
+	// projects. Answering 404 here means a stale tab or a direct URL never
+	// confirms that a hidden project exists.
+	if (
+		row.archivedAt &&
+		!canViewArchivedProject(role, row.archiveVisibleToClient)
+	) {
+		return null;
+	}
 
 	return { row, role };
 }
@@ -499,10 +602,7 @@ export async function listProjects(
 						? project.updatedAt
 						: project.createdAt;
 
-			const myRole = sql<string | null>`(select pm.role from project_member pm
-				where pm.project_id = "project"."id"
-				and pm.user_id = ${tenant.userId}
-				limit 1)`;
+			const myRole = myProjectRoleSql(tenant);
 
 			const memberCount = sql<number>`(select count(*) from project_member pm
 				where pm.project_id = "project"."id")`.mapWith(Number);
@@ -515,6 +615,7 @@ export async function listProjects(
 					logo: project.logo,
 					description: project.description,
 					archivedAt: project.archivedAt,
+					archiveVisibleToClient: project.archiveVisibleToClient,
 					createdAt: project.createdAt,
 					updatedAt: project.updatedAt,
 					myRole,
@@ -533,6 +634,7 @@ export async function listProjects(
 			return {
 				rows,
 				counts: countValues,
+				canSeeArchived: await canSeeArchivedProjects(tx, tenant),
 				page,
 				total,
 				totalPages,
@@ -546,6 +648,7 @@ export async function listProjects(
 		viewer: {
 			organizationRole: tenant.role,
 			canCreate: canCreateProject(tenant.role),
+			canSeeArchived: result.canSeeArchived,
 		},
 		counts: result.counts,
 		page: result.page,
@@ -829,7 +932,7 @@ export async function getProjectDetail(
 		organizationId: tenant.organizationId,
 		project: { ...projectRow, memberCount: members.length },
 		members,
-		viewer: toProjectViewer(tenant, access.role),
+		viewer: toProjectViewer(tenant, access),
 	};
 }
 
@@ -977,6 +1080,10 @@ export async function updateProject(
 				});
 			}
 
+			// An archived project is read-only. Restoring it is the only way to
+			// make it editable again.
+			assertProjectActive(access.row.archivedAt);
+
 			const patch: {
 				name?: string;
 				slug?: string;
@@ -1060,7 +1167,8 @@ export async function setProjectArchived(
 
 			if (!canEditProject(tenant.role, access.role)) {
 				throw new APIError("FORBIDDEN", {
-					message: "Only project owners and admins can archive a project.",
+					message:
+						"Only project owners and admins can archive or restore a project.",
 				});
 			}
 
@@ -1090,6 +1198,55 @@ export async function setProjectArchived(
 				status: archived ? "archived" : "active",
 				archivedAt: archivedAt ? archivedAt.toISOString() : null,
 			};
+		},
+	);
+}
+
+/**
+ * Choose whether clients keep seeing this project while it is archived.
+ *
+ * Deliberately allowed while the project is archived. Hiding or revealing an
+ * archived project is a visibility decision, not content work, and forcing a
+ * restore first would make the setting unreachable exactly when it matters.
+ *
+ * Owners and admins only. The `member` role is never affected by this flag.
+ */
+export async function setProjectArchiveVisibility(
+	tenant: TenantContext,
+	projectId: string,
+	visibleToClient: boolean,
+): Promise<{ archiveVisibleToClient: boolean }> {
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await loadProjectAccess(tx, tenant, projectId);
+
+			if (!access) {
+				throw new APIError("NOT_FOUND", {
+					message: "That project no longer exists.",
+				});
+			}
+
+			if (!canEditProject(tenant.role, access.role)) {
+				throw new APIError("FORBIDDEN", {
+					message:
+						"Only project owners and admins can change the archive visibility.",
+				});
+			}
+
+			if (access.row.archiveVisibleToClient !== visibleToClient) {
+				await tx
+					.update(project)
+					.set({ archiveVisibleToClient: visibleToClient })
+					.where(
+						and(
+							eq(project.organizationId, tenant.organizationId),
+							eq(project.id, projectId),
+						),
+					);
+			}
+
+			return { archiveVisibleToClient: visibleToClient };
 		},
 	);
 }
@@ -1174,6 +1331,8 @@ async function insertProjectMember(
 					message: "Only project owners and admins can add members.",
 				});
 			}
+
+			assertProjectActive(access.row.archivedAt);
 
 			if (
 				!forcedByOrganization &&
@@ -1461,6 +1620,8 @@ export async function updateProjectMemberRole(
 				});
 			}
 
+			assertProjectActive(access.row.archivedAt);
+
 			const [target] = await tx
 				.select({ role: projectMember.role })
 				.from(projectMember)
@@ -1594,6 +1755,8 @@ export async function removeProjectMember(
 				});
 			}
 
+			assertProjectActive(access.row.archivedAt);
+
 			const [target] = await tx
 				.select({ role: projectMember.role })
 				.from(projectMember)
@@ -1708,12 +1871,22 @@ export async function syncOrganizationOwnerToProjects(
 		await withTenant(
 			{ organizationId: tenant.organizationId, userId: tenant.userId },
 			async (tx) => {
+				// Archived projects are skipped on purpose. They are read-only,
+				// and the organization owner overlay already lets this person
+				// see and restore them without a membership row.
 				const projects = await tx
 					.select({ id: project.id })
 					.from(project)
-					.where(eq(project.organizationId, tenant.organizationId));
+					.where(
+						and(
+							eq(project.organizationId, tenant.organizationId),
+							isNull(project.archivedAt),
+						),
+					);
 
 				if (projects.length === 0) return;
+
+				const projectIds = projects.map((row) => row.id);
 
 				const existing = await tx
 					.select({ projectId: projectMember.projectId })
@@ -1722,6 +1895,7 @@ export async function syncOrganizationOwnerToProjects(
 						and(
 							eq(projectMember.organizationId, tenant.organizationId),
 							eq(projectMember.userId, target.userId),
+							inArray(projectMember.projectId, projectIds),
 						),
 					);
 

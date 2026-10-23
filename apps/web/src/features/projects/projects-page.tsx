@@ -94,6 +94,13 @@ export function ProjectsPage({ orgSlug }: { orgSlug: string }) {
 
 	const projectsQuery = useProjects(orgSlug, filters);
 	const data = projectsQuery.data;
+	const canSeeArchived = data?.viewer.canSeeArchived ?? false;
+
+	// A caller who cannot see archived projects must never sit on an Archived
+	// filter that can only return nothing, for example after a role change.
+	useEffect(() => {
+		if (!canSeeArchived && status === "archived") setStatus("active");
+	}, [canSeeArchived, status]);
 
 	// A filter change always returns to the first page and drops the selection.
 	// Otherwise the user could land on a page that does not exist for the new
@@ -321,7 +328,7 @@ export function ProjectsPage({ orgSlug }: { orgSlug: string }) {
 				</p>
 			</header>
 
-			<ProjectsSummary counts={counts} />
+			<ProjectsSummary counts={counts} canSeeArchived={canSeeArchived} />
 
 			<div className="shrink-0">
 				<ProjectsToolbar
@@ -329,6 +336,7 @@ export function ProjectsPage({ orgSlug }: { orgSlug: string }) {
 					onSearchChange={setSearch}
 					status={status}
 					onStatusChange={setStatus}
+					canSeeArchived={canSeeArchived}
 					visibleCount={data.total}
 					totalCount={counts.all}
 					selectedCount={selectedProjects.length}
@@ -375,7 +383,7 @@ export function ProjectsPage({ orgSlug }: { orgSlug: string }) {
 						emptyState={
 							<ProjectsEmptyState
 								hasProjects={counts.all > 0}
-								hasArchived={counts.archived > 0}
+								hasArchived={canSeeArchived && counts.archived > 0}
 								status={status}
 								canCreate={viewer.canCreate}
 								onCreate={() => setCreateOpen(true)}

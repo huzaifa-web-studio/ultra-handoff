@@ -14,7 +14,11 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 import { setProjectBreadcrumbLabel } from "#/components/app-sidebar/project-breadcrumb";
-import { useProjectDetailBySlug, useSetProjectPinned } from "./hooks";
+import {
+	useProjectDetailBySlug,
+	useSetProjectPinned,
+	useUnarchiveProject,
+} from "./hooks";
 import { ProjectErrorState } from "./project-error-state";
 import { ProjectTabs } from "./project-tabs";
 import { ProjectWorkspaceHeader } from "./project-workspace-header";
@@ -30,6 +34,8 @@ export function ProjectWorkspace({
 	const query = useProjectDetailBySlug(orgSlug, projectSlug);
 	const { mutate: setPinned, isPending: isPinning } =
 		useSetProjectPinned(orgSlug);
+	const { mutate: unarchive, isPending: isRestoring } =
+		useUnarchiveProject(orgSlug);
 
 	const project = query.data?.project;
 
@@ -90,6 +96,23 @@ export function ProjectWorkspace({
 		);
 	}
 
+	function handleRestore() {
+		if (!project) return;
+
+		unarchive(project.id, {
+			onSuccess: () => {
+				toast.success(`${project.name} was restored.`);
+			},
+			onError: (error) => {
+				toast.error(
+					error instanceof Error
+						? error.message
+						: "Could not restore the project.",
+				);
+			},
+		});
+	}
+
 	return (
 		<div className="-mx-8 -mt-8 flex flex-col">
 			<div className="px-8 pt-8 pb-6">
@@ -100,6 +123,9 @@ export function ProjectWorkspace({
 					archived={archived}
 					isPinning={isPinning}
 					onTogglePin={handleTogglePin}
+					canRestore={query.data.viewer.canEdit}
+					isRestoring={isRestoring}
+					onRestore={handleRestore}
 				/>
 			</div>
 			<ProjectTabs orgSlug={orgSlug} projectSlug={projectSlug} />

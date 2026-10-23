@@ -89,8 +89,12 @@ export function ArchiveProjectDialog({
 				</DialogTitle>
 				<DialogDescription>
 					{archiving
-						? `${project?.name ?? "This project"} stays available to its members, but it is hidden from the default projects view. You can restore it at any time.`
-						: `${project?.name ?? "This project"} becomes visible in the default projects view again. Nothing else changes.`}
+						? `${project?.name ?? "This project"} becomes read-only. Its members and clients stop seeing it, and nobody can change it until it is restored. Owners and admins keep access so it can be restored or deleted.${
+								project?.archiveVisibleToClient
+									? " Clients keep seeing it because client visibility is enabled for archived projects."
+									: ""
+							}`
+						: `${project?.name ?? "This project"} becomes active again and editable. Its members and clients see it as before. Nothing else changes.`}
 				</DialogDescription>
 			</DialogHeader>
 

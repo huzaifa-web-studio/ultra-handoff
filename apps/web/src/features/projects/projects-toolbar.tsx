@@ -40,6 +40,11 @@ type ProjectsToolbarProps = {
 	onSearchChange: (value: string) => void;
 	status: ProjectStatusFilter;
 	onStatusChange: (value: ProjectStatusFilter) => void;
+	/**
+	 * False for members and clients who cannot see archived projects. The
+	 * Archived filter is meaningless to them, so it is not offered.
+	 */
+	canSeeArchived: boolean;
 	/** Rows matching the current search and status. */
 	visibleCount: number;
 	/** Every project the caller can see, ignoring status and search. */
@@ -65,6 +70,7 @@ export function ProjectsToolbar({
 	onSearchChange,
 	status,
 	onStatusChange,
+	canSeeArchived,
 	visibleCount,
 	totalCount,
 	selectedCount,
@@ -124,7 +130,7 @@ export function ProjectsToolbar({
 					</SelectTrigger>
 					<SelectContent>
 						<SelectItem id="active">Active</SelectItem>
-						<SelectItem id="archived">Archived</SelectItem>
+						{canSeeArchived && <SelectItem id="archived">Archived</SelectItem>}
 						<SelectItem id="all">All projects</SelectItem>
 					</SelectContent>
 				</Select>

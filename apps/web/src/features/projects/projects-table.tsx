@@ -131,7 +131,7 @@ function ProjectActions({
 						{project.pinned ? "Unpin project" : "Pin project"}
 					</DropdownMenuItem>
 					{(canEdit || canDelete) && <DropdownMenuSeparator />}
-					{canEdit && (
+					{canEdit && project.status !== "archived" && (
 						<>
 							<DropdownMenuItem onAction={() => onEdit(project)}>
 								<PencilIcon aria-hidden />
@@ -141,19 +141,20 @@ function ProjectActions({
 								<UsersIcon aria-hidden />
 								Manage members
 							</DropdownMenuItem>
-							{project.status === "archived" ? (
-								<DropdownMenuItem onAction={() => onUnarchive(project)}>
-									<ArchiveRestoreIcon aria-hidden />
-									Restore project
-								</DropdownMenuItem>
-							) : (
-								<DropdownMenuItem onAction={() => onArchive(project)}>
-									<ArchiveIcon aria-hidden />
-									Archive project
-								</DropdownMenuItem>
-							)}
 						</>
 					)}
+					{canEdit &&
+						(project.status === "archived" ? (
+							<DropdownMenuItem onAction={() => onUnarchive(project)}>
+								<ArchiveRestoreIcon aria-hidden />
+								Restore project
+							</DropdownMenuItem>
+						) : (
+							<DropdownMenuItem onAction={() => onArchive(project)}>
+								<ArchiveIcon aria-hidden />
+								Archive project
+							</DropdownMenuItem>
+						))}
 					{canDelete && (
 						<>
 							<DropdownMenuSeparator />

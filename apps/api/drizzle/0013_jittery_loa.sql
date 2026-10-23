@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "archive_visible_to_client" boolean DEFAULT false NOT NULL;

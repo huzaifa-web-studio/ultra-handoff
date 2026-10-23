@@ -13,7 +13,12 @@
 
 import { Button } from "@org/ui/components/button";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftIcon, PinIcon, PinOffIcon } from "lucide-react";
+import {
+	ArchiveRestoreIcon,
+	ArrowLeftIcon,
+	PinIcon,
+	PinOffIcon,
+} from "lucide-react";
 
 import { UserAvatar } from "#/components/user-avatar";
 import type { ProjectMemberRow, ProjectRow } from "./api";
@@ -28,6 +33,10 @@ type ProjectWorkspaceHeaderProps = {
 	archived: boolean;
 	isPinning: boolean;
 	onTogglePin: () => void;
+	/** Restore is only offered to a caller who may edit the project. */
+	canRestore: boolean;
+	isRestoring: boolean;
+	onRestore: () => void;
 };
 
 export function ProjectWorkspaceHeader({
@@ -37,6 +46,9 @@ export function ProjectWorkspaceHeader({
 	archived,
 	isPinning,
 	onTogglePin,
+	canRestore,
+	isRestoring,
+	onRestore,
 }: ProjectWorkspaceHeaderProps) {
 	return (
 		<>
@@ -92,10 +104,22 @@ export function ProjectWorkspaceHeader({
 				</p>
 
 				{archived && (
-					<p className="text-sm text-app-text-muted">
-						This project is archived. It stays readable, but it cannot be pinned
-						until it is restored from the projects list.
-					</p>
+					<div className="flex flex-wrap items-center justify-between gap-3 border border-warning bg-warning-bg p-3">
+						<p className="text-sm text-app-text">
+							This project is archived and read-only. Restore it to make
+							changes, manage members or edit its settings.
+						</p>
+						{canRestore && (
+							<Button
+								variant="outline"
+								isDisabled={isRestoring}
+								onPress={onRestore}
+							>
+								<ArchiveRestoreIcon aria-hidden />
+								Restore project
+							</Button>
+						)}
+					</div>
 				)}
 			</header>
 		</>

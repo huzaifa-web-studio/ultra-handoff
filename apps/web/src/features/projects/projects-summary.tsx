@@ -12,13 +12,27 @@ import type { ProjectsResponse } from "./api";
 
 export function ProjectsSummary({
 	counts,
+	canSeeArchived,
 }: {
 	counts: ProjectsResponse["counts"];
+	/**
+	 * False for members and clients who cannot see archived projects. The
+	 * archived number is meaningless to them, so it is not shown at all.
+	 */
+	canSeeArchived: boolean;
 }) {
 	return (
-		<div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3">
+		<div
+			className={
+				canSeeArchived
+					? "grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3"
+					: "grid shrink-0 grid-cols-2 gap-3"
+			}
+		>
 			<SummaryStat label="Active" value={String(counts.active)} />
-			<SummaryStat label="Archived" value={String(counts.archived)} />
+			{canSeeArchived && (
+				<SummaryStat label="Archived" value={String(counts.archived)} />
+			)}
 			<SummaryStat label="Total" value={String(counts.all)} />
 		</div>
 	);

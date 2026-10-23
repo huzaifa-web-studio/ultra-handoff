@@ -199,6 +199,46 @@ export function canManageProjectMembers(
 }
 
 /**
+ * True when that project role may still see an archived project.
+ *
+ * Archiving is a lifecycle change, not a permission change, so the rule is:
+ * owners and admins keep the project because they need it to restore or delete
+ * it, a client keeps it only when the project opted in, and a plain member
+ * never sees it. Organization owners are handled by `effectiveProjectRole`
+ * before this runs, so they always arrive here as `owner`.
+ */
+export function canViewArchivedProject(
+	projectRole: ProjectRole,
+	archiveVisibleToClient: boolean,
+): boolean {
+	if (projectRole === "owner" || projectRole === "admin") return true;
+
+	if (projectRole === "client") return archiveVisibleToClient;
+
+	return false;
+}
+
+/** Message shown whenever a write is attempted on an archived project. */
+export const PROJECT_ARCHIVED_MESSAGE =
+	"This project is archived. Restore it before making changes.";
+
+/**
+ * Reject a write on an archived project.
+ *
+ * Why a shared guard: the archive lock is a lifecycle rule, not a per route
+ * rule. Every mutation calls it so a new endpoint cannot accidentally keep an
+ * archived project editable.
+ *
+ * Returns 400 because Better Auth has no CONFLICT status, and the bulk runners
+ * already treat 400 as "skipped", which is the right outcome for a locked row.
+ */
+export function assertProjectActive(archivedAt: Date | null): void {
+	if (!archivedAt) return;
+
+	throw new APIError("BAD_REQUEST", { message: PROJECT_ARCHIVED_MESSAGE });
+}
+
+/**
  * True when the actor may change or remove the target project member.
  *
  * Mirrors the organization rule: a project owner manages everyone, a project
