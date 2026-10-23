@@ -14,6 +14,13 @@
  */
 
 import { Button } from "@org/ui/components/button";
+import {
+	Dialog,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@org/ui/components/dialog";
 import { useMutation } from "@tanstack/react-query";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
@@ -32,6 +39,16 @@ type ProjectLogoUploaderProps = {
 	/** Receives the uploaded URL, or null when the logo is cleared. */
 	onChange: (value: string | null) => void;
 	disabled?: boolean;
+	/**
+	 * True when the parent saves the logo as soon as it changes, so the success
+	 * message must not tell the user to press Save.
+	 */
+	immediate?: boolean;
+	/**
+	 * Ask before removing. Turn this off inside another dialog, where a nested
+	 * modal is awkward and the parent save is already a confirmation step.
+	 */
+	confirmRemove?: boolean;
 };
 
 const policy = FILE_POLICIES["project-logo"];
@@ -43,12 +60,15 @@ export function ProjectLogoUploader({
 	value,
 	onChange,
 	disabled = false,
+	immediate = false,
+	confirmRemove = true,
 }: ProjectLogoUploaderProps) {
 	const inputRef = useRef<HTMLInputElement>(null);
 	const [preview, setPreview] = useState<string | null>(null);
 	const [progress, setProgress] = useState(0);
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
+	const [removeOpen, setRemoveOpen] = useState(false);
 
 	const upload = useMutation({
 		mutationFn: (file: File) => {
@@ -100,7 +120,11 @@ export function ProjectLogoUploader({
 			onSuccess: (uploaded) => {
 				onChange(uploaded.url);
 				setPreview(null);
-				setSuccess("Logo uploaded. Save the project to apply it.");
+				setSuccess(
+					immediate
+						? "Logo updated."
+						: "Logo uploaded. Save the project to apply it.",
+				);
 			},
 			onError: (uploadError) => {
 				setPreview(null);
@@ -151,10 +175,22 @@ export function ProjectLogoUploader({
 							<Button
 								type="button"
 								variant="outline"
+								// Keep the danger colour on hover so the destructive
+								// intent survives the outline variant.
+								className="text-danger hover:bg-danger-bg hover:text-danger"
 								onPress={() => {
-									onChange(null);
-									setPreview(null);
-									setSuccess("Logo will be removed when you save.");
+									if (!confirmRemove) {
+										onChange(null);
+										setPreview(null);
+										setSuccess(
+											immediate
+												? "Logo removed."
+												: "Logo will be removed when you save.",
+										);
+										return;
+									}
+
+									setRemoveOpen(true);
 								}}
 								isDisabled={disabled || upload.isPending}
 							>
@@ -188,6 +224,43 @@ export function ProjectLogoUploader({
 
 			{success && !error && (
 				<output className="text-sm text-success">{success}</output>
+			)}
+
+			{confirmRemove && (
+				<Dialog isOpen={removeOpen} onOpenChange={setRemoveOpen}>
+					<DialogHeader>
+						<DialogTitle>Remove logo</DialogTitle>
+					</DialogHeader>
+					<DialogDescription>
+						The project will fall back to its initials in the sidebar, header
+						and everywhere else the logo appears.
+					</DialogDescription>
+					<DialogFooter>
+						<Button
+							variant="outline"
+							onPress={() => setRemoveOpen(false)}
+							isDisabled={disabled}
+						>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							isDisabled={disabled}
+							onPress={() => {
+								onChange(null);
+								setPreview(null);
+								setSuccess(
+									immediate
+										? "Logo removed."
+										: "Logo will be removed when you save.",
+								);
+								setRemoveOpen(false);
+							}}
+						>
+							Remove logo
+						</Button>
+					</DialogFooter>
+				</Dialog>
 			)}
 		</div>
 	);

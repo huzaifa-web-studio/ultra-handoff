@@ -91,17 +91,21 @@ export function ProjectWorkspace({
 	}
 
 	return (
-		<div className="flex w-full flex-col gap-6">
-			<ProjectWorkspaceHeader
-				orgSlug={orgSlug}
-				project={project}
-				members={members}
-				archived={archived}
-				isPinning={isPinning}
-				onTogglePin={handleTogglePin}
-			/>
+		<div className="-mx-8 -mt-8 flex flex-col">
+			<div className="px-8 pt-8 pb-6">
+				<ProjectWorkspaceHeader
+					orgSlug={orgSlug}
+					project={project}
+					members={members}
+					archived={archived}
+					isPinning={isPinning}
+					onTogglePin={handleTogglePin}
+				/>
+			</div>
 			<ProjectTabs orgSlug={orgSlug} projectSlug={projectSlug} />
-			<Outlet />
+			<div className="px-8 pt-6">
+				<Outlet />
+			</div>
 		</div>
 	);
 }
