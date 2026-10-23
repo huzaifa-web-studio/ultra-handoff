@@ -8,14 +8,16 @@
  * Structure:
  *   - "All projects" is the first row and links to the full page, where search,
  *     filters, create, archive and bulk actions live.
- *   - Pinned projects sit in their own sub section. A pin is per person and per
- *     workspace, persisted on the server, so it follows the user across devices.
+ *   - Pinned projects sit directly above the full list, newest pin first. A pin
+ *     is per person and per workspace, persisted on the server, so it follows
+ *     the user across devices.
  *   - Every other active project follows, alphabetically, in pages. The list
  *     asks for the next page as the sidebar scrolls, so a workspace with many
  *     projects stays fast.
  *
- * Any row can be pinned or unpinned. Pinning moves the row to the Pinned
- * section; unpinning returns it to the list.
+ * Any row can be pinned or unpinned. Pinning moves the row above the list;
+ * unpinning returns it. Five projects can be pinned at once, enough for a
+ * working set without pushing the list out of reach.
  *
  * Used by: components/app-sidebar/app-sidebar.tsx.
  */
@@ -46,6 +48,7 @@ import {
 	useSidebarAllProjects,
 	useSidebarProjects,
 } from "#/features/projects/hooks";
+import { SIDEBAR_PROJECT_PIN_MAX } from "#/lib/limits";
 
 export function NavProjects({ orgSlug }: { orgSlug: string }) {
 	const navigate = useNavigate();
@@ -122,6 +125,15 @@ export function NavProjects({ orgSlug }: { orgSlug: string }) {
 
 	/** Pin or unpin from the sidebar, with one failure message. */
 	function handlePin(projectId: string, pinnedNow: boolean) {
+		// Explain the cap immediately instead of waiting for a round trip. The
+		// API enforces the same limit for every other entry point.
+		if (pinnedNow && pinned.length >= SIDEBAR_PROJECT_PIN_MAX) {
+			toast.error(
+				`You can pin up to ${SIDEBAR_PROJECT_PIN_MAX} projects. Unpin one first.`,
+			);
+			return;
+		}
+
 		pinMutation.mutate(
 			{ projectId, pinned: pinnedNow },
 			{
@@ -173,27 +185,18 @@ export function NavProjects({ orgSlug }: { orgSlug: string }) {
 					</SidebarMenuButton>
 				</SidebarMenuItem>
 
-				{pinned.length > 0 && (
-					<>
-						{/* A sub label rather than a second group, so the section
-						    stays one block in the sidebar. */}
-						<div className="mt-2 px-3 text-xs font-semibold tracking-wider text-sidebar-foreground/70 uppercase group-data-[collapsible=icon]:hidden">
-							Pinned
-						</div>
-						{pinned.map((project) => (
-							<ProjectRowItem
-								key={project.id}
-								project={project}
-								pinned
-								orgSlug={orgSlug}
-								pathname={pathname}
-								isPinning={pinMutation.isPending}
-								onNavigate={handleNavigate}
-								onPin={handlePin}
-							/>
-						))}
-					</>
-				)}
+				{pinned.map((project) => (
+					<ProjectRowItem
+						key={project.id}
+						project={project}
+						pinned
+						orgSlug={orgSlug}
+						pathname={pathname}
+						isPinning={pinMutation.isPending}
+						onNavigate={handleNavigate}
+						onPin={handlePin}
+					/>
+				))}
 
 				{isPending && (
 					<>

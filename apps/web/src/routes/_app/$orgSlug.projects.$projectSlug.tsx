@@ -284,25 +284,31 @@ function ProjectPage() {
 				)}
 			</section>
 
-			<ProjectDialog
-				orgSlug={orgSlug}
-				organizationId={organizationId}
-				mode="edit"
-				project={project}
-				isOpen={editOpen}
-				onOpenChange={setEditOpen}
-				onUpdated={(updated) => {
-					// The URL is the slug, so a rename must move the page with
-					// it. Replacing the entry keeps the back button clean.
-					if (updated.project.slug === projectSlug) return;
+			{/*
+			 * Mounted only while open, like the create dialog. That clears the
+			 * form and the logo uploader's local preview between sessions.
+			 */}
+			{editOpen && (
+				<ProjectDialog
+					orgSlug={orgSlug}
+					organizationId={organizationId}
+					mode="edit"
+					project={project}
+					isOpen={editOpen}
+					onOpenChange={setEditOpen}
+					onUpdated={(updated) => {
+						// The URL is the slug, so a rename must move the page with
+						// it. Replacing the entry keeps the back button clean.
+						if (updated.project.slug === projectSlug) return;
 
-					navigate({
-						to: "/$orgSlug/projects/$projectSlug",
-						params: { orgSlug, projectSlug: updated.project.slug },
-						replace: true,
-					});
-				}}
-			/>
+						navigate({
+							to: "/$orgSlug/projects/$projectSlug",
+							params: { orgSlug, projectSlug: updated.project.slug },
+							replace: true,
+						});
+					}}
+				/>
+			)}
 
 			<ProjectMembersDialog
 				orgSlug={orgSlug}

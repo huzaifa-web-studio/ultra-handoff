@@ -555,8 +555,20 @@ export async function listProjects(
 	};
 }
 
-/** Maximum pins returned. A safety ceiling, far above normal use. */
+/**
+ * Safety ceiling for the pin query. The API cap keeps real workspaces far
+ * below this, but the query still returns old pins from before the cap so they
+ * can be unpinned.
+ */
 const SIDEBAR_PIN_LIMIT = 50;
+
+/**
+ * Most projects one person can pin in one workspace.
+ *
+ * Why a cap: the pinned rows sit above the full list, so an unbounded set
+ * would push the list out of reach. Five is enough for a working set.
+ */
+export const PINNED_PROJECT_LIMIT = 5;
 
 /**
  * The sidebar payload: the caller's pinned projects.
@@ -638,6 +650,32 @@ export async function setProjectPinned(
 					);
 
 				return { pinned: false, pinnedAt: null };
+			}
+
+			// A new pin is capped. Re-pinning a project that is already pinned
+			// is idempotent and must not be blocked by the cap.
+			if (!access.row.pinned) {
+				// Serialize pin changes for this person in this workspace, so
+				// two tabs cannot both see four pins and create a sixth.
+				await tx.execute(
+					sql`select pg_advisory_xact_lock(hashtext(${tenant.organizationId}), hashtext(${tenant.userId}))`,
+				);
+
+				const [countRow] = await tx
+					.select({ count: sql<number>`count(*)`.mapWith(Number) })
+					.from(projectPin)
+					.where(
+						and(
+							eq(projectPin.organizationId, tenant.organizationId),
+							eq(projectPin.userId, tenant.userId),
+						),
+					);
+
+				if ((countRow?.count ?? 0) >= PINNED_PROJECT_LIMIT) {
+					throw new APIError("BAD_REQUEST", {
+						message: `You can pin up to ${PINNED_PROJECT_LIMIT} projects. Unpin one first.`,
+					});
+				}
 			}
 
 			const pinnedAt = new Date();

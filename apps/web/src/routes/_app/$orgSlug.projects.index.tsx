@@ -415,20 +415,28 @@ function ProjectsPage() {
 				)}
 			</section>
 
-			<ProjectDialog
-				orgSlug={orgSlug}
-				organizationId={data.organizationId}
-				mode="create"
-				isOpen={createOpen}
-				onOpenChange={setCreateOpen}
-				onCreated={() => {
-					// Reveal the new project even if the user was searching or
-					// looking at archived projects when they created it.
-					setSearch("");
-					setStatus("active");
-					setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-				}}
-			/>
+			{/*
+			 * Mount the create dialog only while it is open. Otherwise the
+			 * component stays alive with the previous form values, and a new
+			 * project dialog would briefly show the last name's avatar initials
+			 * or the last uploaded logo. The edit dialog already works this way.
+			 */}
+			{createOpen && (
+				<ProjectDialog
+					orgSlug={orgSlug}
+					organizationId={data.organizationId}
+					mode="create"
+					isOpen={createOpen}
+					onOpenChange={setCreateOpen}
+					onCreated={() => {
+						// Reveal the new project even if the user was searching or
+						// looking at archived projects when they created it.
+						setSearch("");
+						setStatus("active");
+						setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+					}}
+				/>
+			)}
 
 			{editTarget && (
 				<ProjectDialog

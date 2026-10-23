@@ -25,3 +25,9 @@ export const BULK_SELECTION_MAX = 100;
  * pages as the user scrolls instead of one large payload.
  */
 export const SIDEBAR_PROJECTS_PAGE_SIZE = 20;
+
+/**
+ * Most projects one person can pin in one workspace. Mirrors the API cap; the
+ * API remains authoritative and rejects anything beyond it.
+ */
+export const SIDEBAR_PROJECT_PIN_MAX = 5;
