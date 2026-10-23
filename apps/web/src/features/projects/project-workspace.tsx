@@ -1,0 +1,107 @@
+/**
+ * Project workspace shell.
+ *
+ * Why this is a feature component: the route file only resolves the two params.
+ * Everything a project tab shares (data, breadcrumb label, pin action, identity
+ * header and tab bar) lives here, and the tab itself renders through the
+ * Outlet.
+ *
+ * Used by: routes/_app/$orgSlug.projects.$projectSlug.tsx.
+ */
+
+import { Outlet } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { toast } from "sonner";
+
+import { setProjectBreadcrumbLabel } from "#/components/app-sidebar/project-breadcrumb";
+import { useProjectDetailBySlug, useSetProjectPinned } from "./hooks";
+import { ProjectErrorState } from "./project-error-state";
+import { ProjectTabs } from "./project-tabs";
+import { ProjectWorkspaceHeader } from "./project-workspace-header";
+import { ProjectWorkspaceSkeleton } from "./project-workspace-skeleton";
+
+export function ProjectWorkspace({
+	orgSlug,
+	projectSlug,
+}: {
+	orgSlug: string;
+	projectSlug: string;
+}) {
+	const query = useProjectDetailBySlug(orgSlug, projectSlug);
+	const { mutate: setPinned, isPending: isPinning } =
+		useSetProjectPinned(orgSlug);
+
+	const project = query.data?.project;
+
+	// The header renders its breadcrumb from static route data, so the real
+	// project name is published here while any tab is mounted.
+	useEffect(() => {
+		setProjectBreadcrumbLabel(project?.name ?? null);
+
+		return () => setProjectBreadcrumbLabel(null);
+	}, [project?.name]);
+
+	if (query.isPending) {
+		return <ProjectWorkspaceSkeleton />;
+	}
+
+	if (query.isError && !query.data) {
+		return (
+			<ProjectErrorState
+				message={
+					query.error instanceof Error
+						? query.error.message
+						: "Could not load the project."
+				}
+				onRetry={() => {
+					void query.refetch();
+				}}
+				orgSlug={orgSlug}
+			/>
+		);
+	}
+
+	if (!query.data || !project) return null;
+
+	const { members } = query.data;
+	const archived = project.status === "archived";
+
+	function handleTogglePin() {
+		if (!project) return;
+
+		setPinned(
+			{ projectId: project.id, pinned: !project.pinned },
+			{
+				onSuccess: () => {
+					toast.success(
+						project.pinned
+							? "Removed from your sidebar."
+							: "Pinned to your sidebar.",
+					);
+				},
+				onError: (error) => {
+					toast.error(
+						error instanceof Error
+							? error.message
+							: "Could not update the pin.",
+					);
+				},
+			},
+		);
+	}
+
+	return (
+		<div className="flex w-full flex-col gap-6">
+			<ProjectWorkspaceHeader
+				orgSlug={orgSlug}
+				project={project}
+				members={members}
+				archived={archived}
+				isPinning={isPinning}
+				onTogglePin={handleTogglePin}
+			/>
+			<ProjectTabs orgSlug={orgSlug} projectSlug={projectSlug} />
+			<Outlet />
+		</div>
+	);
+}
