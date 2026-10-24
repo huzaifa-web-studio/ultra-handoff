@@ -16,6 +16,7 @@ import {
 	SelectValue,
 } from "@org/ui/components/select";
 
+import { milestoneStatusTextClass } from "./milestone-status-style";
 import {
 	MILESTONE_STATUS_LABELS,
 	MILESTONE_STATUSES,
@@ -52,12 +53,24 @@ export function MilestoneStatusSelect({
 			}}
 		>
 			<SelectTrigger size="sm" className="w-full">
-				<SelectValue />
+				<SelectValue>
+					{() => (
+						<span className={milestoneStatusTextClass(status)}>
+							{MILESTONE_STATUS_LABELS[status]}
+						</span>
+					)}
+				</SelectValue>
 			</SelectTrigger>
 			<SelectContent className="min-w-40">
 				{MILESTONE_STATUSES.map((option) => (
-					<SelectItem key={option} id={option}>
-						{MILESTONE_STATUS_LABELS[option]}
+					<SelectItem
+						key={option}
+						id={option}
+						textValue={MILESTONE_STATUS_LABELS[option]}
+					>
+						<span className={milestoneStatusTextClass(option)}>
+							{MILESTONE_STATUS_LABELS[option]}
+						</span>
 					</SelectItem>
 				))}
 			</SelectContent>

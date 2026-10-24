@@ -41,7 +41,7 @@ export function MilestoneListItem({
 			aria-current={selected ? "true" : undefined}
 			onClick={onSelect}
 			className={cn(
-				"flex w-full flex-col gap-2 border-l-2 px-4 py-3 text-left transition-colors",
+				"flex w-full cursor-pointer flex-col gap-2 border-l-2 px-4 py-3 text-left transition-colors",
 				selected
 					? "border-app-focus bg-app-selected"
 					: "border-transparent hover:bg-app-panel-subtle",

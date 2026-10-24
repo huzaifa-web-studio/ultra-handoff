@@ -29,6 +29,7 @@ import type { MilestoneCounts, MilestoneDetail, MilestoneSummary } from "./api";
 import type { AssignableMember } from "./milestone-assignee-field";
 import { MilestoneCreateDialog } from "./milestone-create-dialog";
 import { MilestoneListItem } from "./milestone-list-item";
+import { milestoneStatusTextClass } from "./milestone-status-style";
 import type {
 	MilestoneFilters,
 	MilestoneSort,
@@ -125,6 +126,10 @@ export function MilestoneListPanel({
 
 	const filtered = filters.search.length > 0 || filters.status !== "active";
 	const noMilestonesAtAll = counts !== null && counts.all === 0;
+	const activeFilter =
+		STATUS_FILTER_OPTIONS.find((option) => option.id === filters.status) ??
+		STATUS_FILTER_OPTIONS[0];
+	const activeFilterCount = counts ? countForFilter(counts, filters.status) : 0;
 
 	return (
 		<section
@@ -172,14 +177,28 @@ export function MilestoneListPanel({
 						}}
 					>
 						<SelectTrigger size="sm" className="w-full sm:w-44">
-							<SelectValue />
+							<SelectValue>
+								{() => (
+									<span className={milestoneStatusTextClass(filters.status)}>
+										{`${activeFilter.label} (${activeFilterCount})`}
+									</span>
+								)}
+							</SelectValue>
 						</SelectTrigger>
 						<SelectContent className="min-w-44">
-							{STATUS_FILTER_OPTIONS.map((option) => (
-								<SelectItem key={option.id} id={option.id}>
-									{`${option.label} (${counts ? countForFilter(counts, option.id) : 0})`}
-								</SelectItem>
-							))}
+							{STATUS_FILTER_OPTIONS.map((option) => {
+								const label = `${option.label} (${
+									counts ? countForFilter(counts, option.id) : 0
+								})`;
+
+								return (
+									<SelectItem key={option.id} id={option.id} textValue={label}>
+										<span className={milestoneStatusTextClass(option.id)}>
+											{label}
+										</span>
+									</SelectItem>
+								);
+							})}
 						</SelectContent>
 					</Select>
 

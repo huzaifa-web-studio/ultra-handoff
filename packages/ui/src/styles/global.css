@@ -75,6 +75,25 @@
 	--color-neutral: var(--status-neutral);
 	--color-neutral-bg: var(--status-neutral-bg);
 
+	/*
+	 * Milestone statuses.
+	 *
+	 * Each state owns a text colour and a tinted background so it reads the
+	 * same in the list, the badge, the select and the filter. Kept as their own
+	 * scale rather than reusing success/danger directly, because a status name
+	 * is product vocabulary and may need its own shade later.
+	 */
+	--color-milestone-todo: var(--milestone-todo);
+	--color-milestone-todo-bg: var(--milestone-todo-bg);
+	--color-milestone-in-progress: var(--milestone-in-progress);
+	--color-milestone-in-progress-bg: var(--milestone-in-progress-bg);
+	--color-milestone-blocked: var(--milestone-blocked);
+	--color-milestone-blocked-bg: var(--milestone-blocked-bg);
+	--color-milestone-done: var(--milestone-done);
+	--color-milestone-done-bg: var(--milestone-done-bg);
+	--color-milestone-cancelled: var(--milestone-cancelled);
+	--color-milestone-cancelled-bg: var(--milestone-cancelled-bg);
+
 	--radius-sm: 0px;
 	--radius-md: 0px;
 	--radius-lg: 0px;
@@ -138,6 +157,18 @@
 	--status-info-bg: #e4eff4;
 	--status-neutral: #58645d;
 	--status-neutral-bg: #ebeee8;
+
+	/* Milestone statuses (AA contrast on their own background) */
+	--milestone-todo: #333f38;
+	--milestone-todo-bg: #e4e2d8;
+	--milestone-in-progress: #386b85;
+	--milestone-in-progress-bg: #e4eff4;
+	--milestone-blocked: #b84242;
+	--milestone-blocked-bg: #fbe5e1;
+	--milestone-done: #2f7651;
+	--milestone-done-bg: #e0f0e4;
+	--milestone-cancelled: #5f5470;
+	--milestone-cancelled-bg: #ece8f2;
 
 	/* shadcn compatibility (light) */
 	--background: var(--app-canvas);
