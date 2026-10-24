@@ -61,6 +61,7 @@ import { project, projectMember, projectPin } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
+import { escapeLike } from "../lib/query";
 import { keyFromFileUrl } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
 import {
@@ -198,7 +199,14 @@ export type UpdateProjectInput = {
 	logo?: string;
 };
 
-type ProjectAccess = {
+/**
+ * Project access plus the caller's effective role.
+ *
+ * Exported so the milestone service reuses the exact same visibility rule
+ * instead of re-deriving it. A milestone must never be reachable through a
+ * project the caller cannot see.
+ */
+export type ProjectAccess = {
 	row: {
 		id: string;
 		name: string;
@@ -215,11 +223,6 @@ type ProjectAccess = {
 	};
 	role: ProjectRole;
 };
-
-/** Escape LIKE wildcards so a search for "50%" is not a pattern. */
-function escapeLike(value: string): string {
-	return value.replace(/[\\%_]/g, "\\$&");
-}
 
 /** Reject anything that is not an object this API produced. */
 function normalizeLogo(
@@ -441,7 +444,7 @@ function toProjectSummary(
  * the workspace or the caller is not one of its members. Routes turn that into
  * a 404 so the API never confirms that a hidden project exists.
  */
-async function loadProjectAccess(
+export async function loadProjectAccess(
 	tx: TenantTx,
 	tenant: TenantContext,
 	projectId: string,
@@ -803,12 +806,13 @@ export async function setProjectPinned(
 }
 
 /**
- * Read the user rows for a set of member ids.
+ * Read the user rows for a set of user ids.
  *
  * Privileged on purpose: `user` is a Better Auth table, so it is read through
  * a small lookup instead of being joined into the tenant query. Read only.
+ * Exported so the milestone service labels assignees with the same lookup.
  */
-async function loadUserMap(
+export async function loadUserMap(
 	userIds: string[],
 ): Promise<Map<string, { name: string; email: string; image: string | null }>> {
 	if (userIds.length === 0) return new Map();

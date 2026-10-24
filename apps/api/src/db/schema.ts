@@ -17,7 +17,10 @@ import { sql } from "drizzle-orm";
 import {
 	boolean,
 	check,
+	date,
 	index,
+	integer,
+	jsonb,
 	pgTable,
 	text,
 	timestamp,
@@ -193,6 +196,141 @@ export const projectPin = pgTable(
 			table.organizationId,
 			table.userId,
 		),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();
+
+/**
+ * One agreed piece of work inside a project.
+ *
+ * Why a milestone table and not a task table: a milestone is the unit a client
+ * can reason about ("the homepage is done"), while internal tasks stay in the
+ * agency's own tool. The product is about the client facing agreement, so this
+ * table is deliberately small.
+ *
+ * `description` holds the Plate (Slate) value as JSON. `description_text` is a
+ * plain text mirror written by the service on every save, so search and list
+ * previews never have to walk JSON in SQL. Keeping the mirror also means the
+ * search index stays usable if the editor is ever replaced.
+ *
+ * Dates are Postgres `date`, not timestamps. A milestone is due on a day, not
+ * at an instant, so storing a timezone-less day is what stops a due date from
+ * drifting one day either side depending on the reader's clock.
+ *
+ * `status` is open ended in the check on purpose: the five values are the
+ * product's vocabulary, while `completed_at` is derived state the service
+ * keeps in sync so the database can never hold "done but never completed".
+ *
+ * `updated_by` exists because anyone on the project may edit a milestone.
+ * Without it, "who changed this" has no answer at all.
+ */
+export const milestone = pgTable(
+	"milestone",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => project.id, { onDelete: "cascade" }),
+		title: text("title").notNull(),
+		/** Plate value. Always an array; the service validates before writing. */
+		description: jsonb("description")
+			.$type<unknown[]>()
+			.notNull()
+			.default(sql`'[]'::jsonb`),
+		/** Plain text mirror of `description`, used by search and previews. */
+		descriptionText: text("description_text").notNull().default(""),
+		/** todo | in_progress | blocked | done | cancelled, checked below. */
+		status: text("status").notNull().default("todo"),
+		/** Both nullable: a milestone can exist before it is scheduled. */
+		startDate: date("start_date"),
+		dueDate: date("due_date"),
+		/** Null means "no estimate". Minutes keep totals exact. */
+		estimateMinutes: integer("estimate_minutes"),
+		/** Set when the status becomes done, cleared on every other status. */
+		completedAt: timestamp("completed_at"),
+		createdBy: text("created_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		updatedBy: text("updated_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// Every list is "the milestones of one project", so this is the primary
+		// read path, with status and due date carrying the filter and sort.
+		index("milestone_project_status_due_idx").on(
+			table.projectId,
+			table.status,
+			table.dueDate,
+		),
+		index("milestone_organization_idx").on(table.organizationId),
+		check(
+			"milestone_status_check",
+			sql`${table.status} in ('todo', 'in_progress', 'blocked', 'done', 'cancelled')`,
+		),
+		check(
+			"milestone_estimate_check",
+			sql`${table.estimateMinutes} is null or (${table.estimateMinutes} > 0 and ${table.estimateMinutes} <= 60000)`,
+		),
+		// The API validates the range too. This keeps an inverted range out even
+		// if a future code path forgets to call the validator.
+		check(
+			"milestone_dates_check",
+			sql`${table.startDate} is null or ${table.dueDate} is null or ${table.startDate} <= ${table.dueDate}`,
+		),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();
+
+/**
+ * Who is assigned to a milestone.
+ *
+ * Why a join table: a milestone can have several assignees, and an assignee is
+ * a project member, not a loose user id.
+ *
+ * The foreign key points at `project_member.id`, so leaving the project, being
+ * removed from the organization, or deleting the account removes the
+ * assignment through the existing cascade chain. No cleanup code, and no way
+ * to forget a cleanup path when a new removal flow is added.
+ *
+ * The unique index makes a replace-set write idempotent.
+ */
+export const milestoneAssignee = pgTable(
+	"milestone_assignee",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		milestoneId: text("milestone_id")
+			.notNull()
+			.references(() => milestone.id, { onDelete: "cascade" }),
+		projectMemberId: text("project_member_id")
+			.notNull()
+			.references(() => projectMember.id, { onDelete: "cascade" }),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		uniqueIndex("milestone_assignee_milestone_member_idx").on(
+			table.milestoneId,
+			table.projectMemberId,
+		),
+		index("milestone_assignee_organization_idx").on(table.organizationId),
+		index("milestone_assignee_milestone_idx").on(table.milestoneId),
+		// Supports "my milestones" style reads and the member removal cascade.
+		index("milestone_assignee_member_idx").on(table.projectMemberId),
 		tenantIsolation(table.organizationId),
 	],
 ).enableRLS();

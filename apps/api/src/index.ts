@@ -9,6 +9,7 @@ import { accountRoutes } from "./routes/account";
 import { fileRoutes } from "./routes/files";
 import { publicInvitationRoutes } from "./routes/invitations";
 import { memberRoutes } from "./routes/members";
+import { milestoneRoutes } from "./routes/milestones";
 import { organizationRoutes } from "./routes/organization";
 import { projectRoutes } from "./routes/projects";
 import { uploadRoutes } from "./routes/uploads";
@@ -42,6 +43,8 @@ async function buildApp() {
 		.use(memberRoutes)
 		// Project list, lifecycle and project membership (tenant scoped).
 		.use(projectRoutes)
+		// Milestones inside a project (tenant scoped).
+		.use(milestoneRoutes)
 		// Invitation preview and magic link request for the public accept page.
 		.use(publicInvitationRoutes)
 		.get("/", () => "Hello Huzaifa")

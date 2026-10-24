@@ -9,7 +9,8 @@
  * Used by: routes/_app/$orgSlug.projects.$projectSlug.tsx.
  */
 
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useLocation } from "@tanstack/react-router";
+import { cn } from "cn";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
@@ -36,8 +37,16 @@ export function ProjectWorkspace({
 		useSetProjectPinned(orgSlug);
 	const { mutate: unarchive, isPending: isRestoring } =
 		useUnarchiveProject(orgSlug);
+	const { pathname } = useLocation();
 
 	const project = query.data?.project;
+
+	/*
+	 * The milestones tab is a master detail surface that fills the viewport and
+	 * scrolls its own panes. Every other tab is a normal document that scrolls
+	 * inside this column.
+	 */
+	const fillsViewport = pathname.endsWith("/milestones");
 
 	// The header renders its breadcrumb from static route data, so the real
 	// project name is published here while any tab is mounted.
@@ -114,8 +123,20 @@ export function ProjectWorkspace({
 	}
 
 	return (
-		<div className="-mx-8 -mt-8 flex flex-col">
-			<div className="px-8 pt-8 pb-6">
+		/*
+		 * Fixed height column.
+		 *
+		 * `h-[calc(100%+4rem)]` cancels the shell padding exactly: the parent
+		 * scroll container has `p-8` (2rem on each side), so the content box is
+		 * 4rem shorter than the visible area. Growing by 4rem and pulling up by
+		 * 2rem makes this column fill the viewport, which is what gives the
+		 * milestone split panes a real height to resolve `h-full` against.
+		 *
+		 * `-mx-8` spreads an auto width block to the full width without needing
+		 * a second calc.
+		 */
+		<div className="-mx-8 -mt-8 flex h-[calc(100%+4rem)] min-h-0 flex-col">
+			<div className="shrink-0 px-8 pt-8 pb-6">
 				<ProjectWorkspaceHeader
 					orgSlug={orgSlug}
 					project={project}
@@ -129,7 +150,12 @@ export function ProjectWorkspace({
 				/>
 			</div>
 			<ProjectTabs orgSlug={orgSlug} projectSlug={projectSlug} />
-			<div className="px-8 pt-6">
+			<div
+				className={cn(
+					"flex min-h-0 flex-1 flex-col px-8 pt-6 pb-8",
+					!fillsViewport && "overflow-y-auto",
+				)}
+			>
 				<Outlet />
 			</div>
 		</div>

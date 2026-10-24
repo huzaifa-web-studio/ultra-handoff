@@ -41,6 +41,8 @@ const memberA = `rls-member-a-${suffix}`;
 const memberB = `rls-member-b-${suffix}`;
 const projectA = `rls-project-a-${suffix}`;
 const projectB = `rls-project-b-${suffix}`;
+const milestoneA = `rls-milestone-a-${suffix}`;
+const milestoneB = `rls-milestone-b-${suffix}`;
 
 const scopeA = { organizationId: orgA, userId: userA };
 
@@ -164,6 +166,17 @@ async function seed(): Promise<void> {
 		insert into "project_pin" (id, organization_id, project_id, user_id, pinned_at)
 		values
 			(${`rls-pa-a-${suffix}`}, ${orgA}, ${projectA}, ${userA}, ${now})
+	`);
+	await adminDb.execute(sql`
+		insert into "milestone" (id, organization_id, project_id, title)
+		values
+			(${milestoneA}, ${orgA}, ${projectA}, ${"RLS Milestone A"}),
+			(${milestoneB}, ${orgB}, ${projectB}, ${"RLS Milestone B"})
+	`);
+	await adminDb.execute(sql`
+		insert into "milestone_assignee" (id, organization_id, milestone_id, project_member_id)
+		values
+			(${`rls-ma-a-${suffix}`}, ${orgA}, ${milestoneA}, ${`rls-pm-a-${suffix}`})
 	`);
 }
 
@@ -321,6 +334,62 @@ async function main(): Promise<void> {
 				),
 		);
 
+		// 4c. Milestones and their assignments follow the same boundary.
+		await check("milestones are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "milestone"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a milestone from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await check("milestone assignments are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "milestone_assignee"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned an assignment from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await expectFailure(
+			"milestone insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "milestone" (id, organization_id, project_id, title)
+							values (${`rls-milestone-intruder-${suffix}`}, ${orgB}, ${projectB}, ${"Intruder"})`,
+					),
+				),
+		);
+
+		await expectFailure(
+			"milestone assignment insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "milestone_assignee"
+							(id, organization_id, milestone_id, project_member_id)
+							values (${`rls-ma-intruder-${suffix}`}, ${orgB}, ${milestoneB}, ${`rls-pm-b-${suffix}`})`,
+					),
+				),
+		);
+
 		// 5. Better Auth tables are not granted at all.
 		await expectFailure(
 			"Better Auth user table is not readable",
@@ -365,18 +434,26 @@ async function main(): Promise<void> {
 			const pins = await adminDb.execute<{ id: string }>(
 				sql`select id from "project_pin" where organization_id = ${orgA}`,
 			);
+			const milestones = await adminDb.execute<{ id: string }>(
+				sql`select id from "milestone" where organization_id = ${orgA}`,
+			);
+			const assignments = await adminDb.execute<{ id: string }>(
+				sql`select id from "milestone_assignee" where organization_id = ${orgA}`,
+			);
 
 			if (
 				projects.length !== 0 ||
 				memberships.length !== 0 ||
-				pins.length !== 0
+				pins.length !== 0 ||
+				milestones.length !== 0 ||
+				assignments.length !== 0
 			) {
 				throw new Error(
-					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships and ${pins.length} pins`,
+					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships, ${pins.length} pins, ${milestones.length} milestones and ${assignments.length} assignments`,
 				);
 			}
 
-			return "projects, memberships and pins removed";
+			return "projects, memberships, pins, milestones and assignments removed";
 		});
 	} finally {
 		await cleanup();

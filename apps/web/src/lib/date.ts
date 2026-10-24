@@ -16,17 +16,40 @@ const RELATIVE_FORMAT = new Intl.RelativeTimeFormat(undefined, {
 	numeric: "auto",
 });
 
+/** Shown instead of a formatted value when a stored date cannot be parsed. */
+const UNKNOWN_DATE = "Unknown date";
+
+/**
+ * Build a valid Date, or null.
+ *
+ * Why: a formatting helper should never be able to crash a page. A malformed
+ * value (an empty string, a timestamp fragment, a value from an older API
+ * shape) used to throw `RangeError: Invalid time value` from
+ * `Intl.DateTimeFormat.format`, which unmounted the whole route.
+ */
+function toValidDate(value: string | Date): Date | null {
+	const date = value instanceof Date ? value : new Date(value);
+
+	return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /** Local date, for example "21 Oct 2026". */
 export function formatDate(value: string | Date): string {
-	return DATE_FORMAT.format(new Date(value));
+	const date = toValidDate(value);
+
+	return date ? DATE_FORMAT.format(date) : UNKNOWN_DATE;
 }
 
 /** Full local date and time, used as the title of a relative label. */
 export function formatDateTime(value: string | Date): string {
+	const date = toValidDate(value);
+
+	if (!date) return UNKNOWN_DATE;
+
 	return new Intl.DateTimeFormat(undefined, {
 		dateStyle: "medium",
 		timeStyle: "short",
-	}).format(new Date(value));
+	}).format(date);
 }
 
 /**
@@ -39,8 +62,11 @@ export function formatRelativeTime(
 	value: string | Date,
 	now: Date = new Date(),
 ): string {
-	const target = new Date(value).getTime();
-	const diffSeconds = Math.round((target - now.getTime()) / 1000);
+	const date = toValidDate(value);
+
+	if (!date) return UNKNOWN_DATE;
+
+	const diffSeconds = Math.round((date.getTime() - now.getTime()) / 1000);
 	const abs = Math.abs(diffSeconds);
 
 	if (abs < 60) return RELATIVE_FORMAT.format(0, "second");

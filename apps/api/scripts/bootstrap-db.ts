@@ -35,6 +35,8 @@ const TENANT_TABLES: readonly string[] = [
 	"project",
 	"project_member",
 	"project_pin",
+	"milestone",
+	"milestone_assignee",
 ];
 
 /** Identifiers cannot be bind parameters, so validate before quoting. */

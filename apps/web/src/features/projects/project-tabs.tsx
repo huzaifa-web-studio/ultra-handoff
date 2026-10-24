@@ -5,6 +5,9 @@
  * changes, deep links work and the back button behaves correctly. A nav of
  * links is the accessible pattern for URL driven tabs.
  *
+ * The bar is not sticky because the project workspace itself is a fixed height
+ * column now, so the bar is already outside the scrolling area of each tab.
+ *
  * Used by: project-workspace.tsx.
  */
 
@@ -53,45 +56,32 @@ export function ProjectTabs({
 	const tabs = projectTabs(orgSlug, projectSlug);
 
 	return (
-		/*
-		 * The wrapper cancels the shell padding so the tab bar can span the full
-		 * content width and stick flush under the app header. Each section adds
-		 * its own padding back, which keeps the header spacing without leaving a
-		 * strip above the sticky bar.
-		 */
-		/*
-		 * `-top-8` cancels the page padding for the sticky position only. Without
-		 * it the bar sticks 32px below the scrollport edge, leaving a strip of
-		 * background between the app header and the tabs.
-		 */
-		<div className="sticky -top-8 z-20 bg-background">
-			<nav
-				aria-label="Project sections"
-				className="flex gap-1 overflow-x-auto border-b border-app-border px-8"
-			>
-				{tabs.map((tab) => {
-					const active = tab.exact
-						? pathname === tab.path
-						: pathname === tab.path || pathname.startsWith(`${tab.path}/`);
+		<nav
+			aria-label="Project sections"
+			className="flex shrink-0 gap-1 overflow-x-auto border-b border-app-border px-8"
+		>
+			{tabs.map((tab) => {
+				const active = tab.exact
+					? pathname === tab.path
+					: pathname === tab.path || pathname.startsWith(`${tab.path}/`);
 
-					return (
-						<Link
-							key={tab.label}
-							to={tab.to}
-							params={{ orgSlug, projectSlug }}
-							aria-current={active ? "page" : undefined}
-							className={cn(
-								"shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors",
-								active
-									? "border-app-focus text-app-text"
-									: "border-transparent text-app-text-muted hover:text-app-text",
-							)}
-						>
-							{tab.label}
-						</Link>
-					);
-				})}
-			</nav>
-		</div>
+				return (
+					<Link
+						key={tab.label}
+						to={tab.to}
+						params={{ orgSlug, projectSlug }}
+						aria-current={active ? "page" : undefined}
+						className={cn(
+							"shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+							active
+								? "border-app-focus text-app-text"
+								: "border-transparent text-app-text-muted hover:text-app-text",
+						)}
+					>
+						{tab.label}
+					</Link>
+				);
+			})}
+		</nav>
 	);
 }
