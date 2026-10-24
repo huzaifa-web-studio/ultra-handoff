@@ -5,6 +5,9 @@
  * and a select keeps the detail header compact. The value saves immediately, so
  * there is no separate save button to forget.
  *
+ * The options reuse the badge icon family so the selected value matches what the
+ * list row shows for the same milestone.
+ *
  * Used by: milestone-detail-panel.tsx.
  */
 
@@ -15,8 +18,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@org/ui/components/select";
+import { cn } from "cn";
 
-import { milestoneStatusTextClass } from "./milestone-status-style";
+import {
+	MILESTONE_STATUS_ICONS,
+	milestoneStatusTextClass,
+} from "./milestone-status-style";
 import {
 	MILESTONE_STATUS_LABELS,
 	MILESTONE_STATUSES,
@@ -33,8 +40,11 @@ export function MilestoneStatusSelect({
 	readOnly?: boolean;
 }) {
 	if (readOnly) {
+		const Icon = MILESTONE_STATUS_ICONS[status];
+
 		return (
-			<span className="text-sm text-app-text">
+			<span className="inline-flex items-center gap-2 text-sm text-app-text">
+				<Icon className="size-3.5 shrink-0" aria-hidden />
 				{MILESTONE_STATUS_LABELS[status]}
 			</span>
 		);
@@ -54,25 +64,45 @@ export function MilestoneStatusSelect({
 		>
 			<SelectTrigger size="sm" className="w-full">
 				<SelectValue>
-					{() => (
-						<span className={milestoneStatusTextClass(status)}>
-							{MILESTONE_STATUS_LABELS[status]}
-						</span>
-					)}
+					{() => {
+						const Icon = MILESTONE_STATUS_ICONS[status];
+
+						return (
+							<span
+								className={cn(
+									"inline-flex items-center gap-2",
+									milestoneStatusTextClass(status),
+								)}
+							>
+								<Icon className="size-3.5 shrink-0" aria-hidden />
+								{MILESTONE_STATUS_LABELS[status]}
+							</span>
+						);
+					}}
 				</SelectValue>
 			</SelectTrigger>
 			<SelectContent className="min-w-40">
-				{MILESTONE_STATUSES.map((option) => (
-					<SelectItem
-						key={option}
-						id={option}
-						textValue={MILESTONE_STATUS_LABELS[option]}
-					>
-						<span className={milestoneStatusTextClass(option)}>
-							{MILESTONE_STATUS_LABELS[option]}
-						</span>
-					</SelectItem>
-				))}
+				{MILESTONE_STATUSES.map((option) => {
+					const Icon = MILESTONE_STATUS_ICONS[option];
+
+					return (
+						<SelectItem
+							key={option}
+							id={option}
+							textValue={MILESTONE_STATUS_LABELS[option]}
+						>
+							<span
+								className={cn(
+									"inline-flex items-center gap-2",
+									milestoneStatusTextClass(option),
+								)}
+							>
+								<Icon className="size-3.5 shrink-0" aria-hidden />
+								{MILESTONE_STATUS_LABELS[option]}
+							</span>
+						</SelectItem>
+					);
+				})}
 			</SelectContent>
 		</Select>
 	);

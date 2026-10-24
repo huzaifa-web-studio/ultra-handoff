@@ -11,7 +11,10 @@
 import { Badge } from "@org/ui/components/badge";
 import { cn } from "cn";
 
-import { MILESTONE_STATUS_BADGE_CLASSES } from "./milestone-status-style";
+import {
+	MILESTONE_STATUS_BADGE_CLASSES,
+	MILESTONE_STATUS_ICONS,
+} from "./milestone-status-style";
 import { MILESTONE_STATUS_LABELS, type MilestoneStatus } from "./schema";
 
 export function MilestoneStatusBadge({
@@ -21,6 +24,8 @@ export function MilestoneStatusBadge({
 	status: MilestoneStatus;
 	className?: string;
 }) {
+	const Icon = MILESTONE_STATUS_ICONS[status];
+
 	return (
 		<Badge
 			className={cn(
@@ -29,6 +34,7 @@ export function MilestoneStatusBadge({
 				className,
 			)}
 		>
+			<Icon aria-hidden />
 			{MILESTONE_STATUS_LABELS[status]}
 		</Badge>
 	);

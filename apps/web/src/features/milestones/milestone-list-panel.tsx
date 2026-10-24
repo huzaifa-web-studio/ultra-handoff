@@ -22,14 +22,17 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@org/ui/components/select";
+import { cn } from "cn";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
-
 import type { MilestoneCounts, MilestoneDetail, MilestoneSummary } from "./api";
 import type { AssignableMember } from "./milestone-assignee-field";
 import { MilestoneCreateDialog } from "./milestone-create-dialog";
 import { MilestoneListItem } from "./milestone-list-item";
-import { milestoneStatusTextClass } from "./milestone-status-style";
+import {
+	MILESTONE_STATUS_FILTER_ICONS,
+	milestoneStatusTextClass,
+} from "./milestone-status-style";
 import type {
 	MilestoneFilters,
 	MilestoneSort,
@@ -178,11 +181,21 @@ export function MilestoneListPanel({
 					>
 						<SelectTrigger size="sm" className="w-full sm:w-44">
 							<SelectValue>
-								{() => (
-									<span className={milestoneStatusTextClass(filters.status)}>
-										{`${activeFilter.label} (${activeFilterCount})`}
-									</span>
-								)}
+								{() => {
+									const Icon = MILESTONE_STATUS_FILTER_ICONS[filters.status];
+
+									return (
+										<span
+											className={cn(
+												"inline-flex items-center gap-2",
+												milestoneStatusTextClass(filters.status),
+											)}
+										>
+											<Icon className="size-3.5 shrink-0" aria-hidden />
+											{`${activeFilter.label} (${activeFilterCount})`}
+										</span>
+									);
+								}}
 							</SelectValue>
 						</SelectTrigger>
 						<SelectContent className="min-w-44">
@@ -190,10 +203,17 @@ export function MilestoneListPanel({
 								const label = `${option.label} (${
 									counts ? countForFilter(counts, option.id) : 0
 								})`;
+								const Icon = MILESTONE_STATUS_FILTER_ICONS[option.id];
 
 								return (
 									<SelectItem key={option.id} id={option.id} textValue={label}>
-										<span className={milestoneStatusTextClass(option.id)}>
+										<span
+											className={cn(
+												"inline-flex items-center gap-2",
+												milestoneStatusTextClass(option.id),
+											)}
+										>
+											<Icon className="size-3.5 shrink-0" aria-hidden />
 											{label}
 										</span>
 									</SelectItem>

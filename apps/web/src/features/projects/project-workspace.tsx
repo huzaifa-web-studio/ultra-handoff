@@ -11,7 +11,7 @@
 
 import { Outlet, useLocation } from "@tanstack/react-router";
 import { cn } from "cn";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { setProjectBreadcrumbLabel } from "#/components/app-sidebar/project-breadcrumb";
@@ -24,6 +24,32 @@ import { ProjectErrorState } from "./project-error-state";
 import { ProjectTabs } from "./project-tabs";
 import { ProjectWorkspaceHeader } from "./project-workspace-header";
 import { ProjectWorkspaceSkeleton } from "./project-workspace-skeleton";
+
+/**
+ * localStorage key for the collapsed details preference.
+ *
+ * The tab bar owns the toggle, but the header it hides lives in this layout, so
+ * the preference is stored here and survives both tab navigation and a reload.
+ */
+const DETAILS_COLLAPSED_KEY = "handoff:project-details-collapsed";
+
+/**
+ * Read the stored preference.
+ *
+ * Storage throws when the browser blocks it (private mode, a strict cookie
+ * policy), so a failure simply means the details start expanded.
+ */
+function readDetailsCollapsed(): boolean {
+	// The app renders on the client, but the shell is prerendered at build time,
+	// so guard against a missing window instead of assuming one.
+	if (typeof window === "undefined") return false;
+
+	try {
+		return window.localStorage.getItem(DETAILS_COLLAPSED_KEY) === "true";
+	} catch {
+		return false;
+	}
+}
 
 export function ProjectWorkspace({
 	orgSlug,
@@ -38,8 +64,27 @@ export function ProjectWorkspace({
 	const { mutate: unarchive, isPending: isRestoring } =
 		useUnarchiveProject(orgSlug);
 	const { pathname } = useLocation();
+	const [detailsCollapsed, setDetailsCollapsed] =
+		useState(readDetailsCollapsed);
 
 	const project = query.data?.project;
+
+	// Persist the preference. Writing is best effort for the same reason reading
+	// is: the toggle must keep working even when storage is unavailable.
+	useEffect(() => {
+		try {
+			window.localStorage.setItem(
+				DETAILS_COLLAPSED_KEY,
+				String(detailsCollapsed),
+			);
+		} catch {
+			// The preference is a convenience, not state the page depends on.
+		}
+	}, [detailsCollapsed]);
+
+	function handleToggleDetails() {
+		setDetailsCollapsed((collapsed) => !collapsed);
+	}
 
 	/*
 	 * The milestones tab is a master detail surface that fills the viewport and
@@ -124,32 +169,56 @@ export function ProjectWorkspace({
 
 	return (
 		/*
-		 * Fixed height column.
+		 * Full height column.
 		 *
-		 * `h-[calc(100%+4rem)]` cancels the shell padding exactly: the parent
-		 * scroll container has `p-8` (2rem on each side), so the content box is
-		 * 4rem shorter than the visible area. Growing by 4rem and pulling up by
-		 * 2rem makes this column fill the viewport, which is what gives the
-		 * milestone split panes a real height to resolve `h-full` against.
+		 * The shell content area already carries the page gutter (`p-8`), so
+		 * `h-full` resolves to the visible content box and the column fits it
+		 * exactly. The old `h-[calc(100%+4rem)]` plus `-mt-8` overshot by the
+		 * parent's bottom padding, which made the whole page scrollable by 32px
+		 * even when nothing was hidden below the fold.
 		 *
 		 * `-mx-8` spreads an auto width block to the full width without needing
-		 * a second calc.
+		 * a second calc, and gives the milestone split its full bleed.
 		 */
-		<div className="-mx-8 -mt-8 flex h-[calc(100%+4rem)] min-h-0 flex-col">
-			<div className="shrink-0 px-8 pt-8 pb-6">
-				<ProjectWorkspaceHeader
-					orgSlug={orgSlug}
-					project={project}
-					members={members}
-					archived={archived}
-					isPinning={isPinning}
-					onTogglePin={handleTogglePin}
-					canRestore={query.data.viewer.canEdit}
-					isRestoring={isRestoring}
-					onRestore={handleRestore}
-				/>
+		<div className="-mx-8 flex h-full min-h-0 flex-col">
+			{/*
+			 * Collapsible identity block.
+			 *
+			 * `grid-template-rows: 1fr -> 0fr` animates from the header's real
+			 * height, so a long description or the archived banner collapses
+			 * smoothly and the tab content below gains the space on the same
+			 * frame. `inert` keeps the hidden pin and restore controls out of the
+			 * tab order while the row is closed.
+			 */}
+			<div
+				id="project-details"
+				className={cn(
+					"grid shrink-0 transition-[grid-template-rows] duration-300 ease-out",
+					detailsCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+				)}
+			>
+				<div className="min-h-0 overflow-hidden" inert={detailsCollapsed}>
+					<div className="px-8 pb-6">
+						<ProjectWorkspaceHeader
+							orgSlug={orgSlug}
+							project={project}
+							members={members}
+							archived={archived}
+							isPinning={isPinning}
+							onTogglePin={handleTogglePin}
+							canRestore={query.data.viewer.canEdit}
+							isRestoring={isRestoring}
+							onRestore={handleRestore}
+						/>
+					</div>
+				</div>
 			</div>
-			<ProjectTabs orgSlug={orgSlug} projectSlug={projectSlug} />
+			<ProjectTabs
+				orgSlug={orgSlug}
+				projectSlug={projectSlug}
+				detailsCollapsed={detailsCollapsed}
+				onToggleDetails={handleToggleDetails}
+			/>
 			<div
 				className={cn(
 					"flex min-h-0 flex-1 flex-col px-8 pt-6 pb-8",

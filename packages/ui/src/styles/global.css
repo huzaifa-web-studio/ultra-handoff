@@ -247,6 +247,8 @@
 }
 
 /* Custom thin scrollbars (unlayered for higher priority) */
+/* 2px is the thinnest width Chrome still renders as a crisp line. Firefox only
+ * supports the keyword values, so `thin` is its floor. */
 * {
 	scrollbar-width: thin;
 	scrollbar-color: var(--app-border-strong) transparent;
@@ -259,8 +261,8 @@ body {
 *::-webkit-scrollbar,
 html::-webkit-scrollbar,
 body::-webkit-scrollbar {
-	width: 4px;
-	height: 4px;
+	width: 2px;
+	height: 2px;
 }
 *::-webkit-scrollbar-track,
 html::-webkit-scrollbar-track,

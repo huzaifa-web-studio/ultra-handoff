@@ -14,6 +14,7 @@
 import { Button } from "@org/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import {
+	ArchiveIcon,
 	ArchiveRestoreIcon,
 	ArrowLeftIcon,
 	PinIcon,
@@ -105,10 +106,16 @@ export function ProjectWorkspaceHeader({
 
 				{archived && (
 					<div className="flex flex-wrap items-center justify-between gap-3 border border-warning bg-warning-bg p-3">
-						<p className="text-sm text-app-text">
-							This project is archived and read-only. Restore it to make
-							changes, manage members or edit its settings.
-						</p>
+						<div className="flex min-w-0 items-center gap-2">
+							<ArchiveIcon
+								className="size-4 shrink-0 text-warning"
+								aria-hidden
+							/>
+							<p className="text-sm text-app-text">
+								This project is archived and read-only. Restore it to make
+								changes, manage members or edit its settings.
+							</p>
+						</div>
 						{canRestore && (
 							<Button
 								variant="outline"
