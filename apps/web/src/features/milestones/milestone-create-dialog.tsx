@@ -225,7 +225,7 @@ export function MilestoneCreateDialog({
 						<span className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
 							Details
 						</span>
-						<div className="border border-app-border">
+						<div className="border-y border-app-border">
 							<MilestoneEditor
 								initialValue={[]}
 								onChange={(value) => {

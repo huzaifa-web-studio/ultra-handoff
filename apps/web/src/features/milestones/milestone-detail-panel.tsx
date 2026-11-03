@@ -494,7 +494,7 @@ function MilestoneDetailContent({
 							Details
 						</h3>
 
-						<div className="border border-app-border">
+						<div className="border-y border-app-border">
 							{canWrite ? (
 								<MilestoneEditor
 									key={milestone.id}

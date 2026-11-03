@@ -25,6 +25,7 @@ import {
 	StrikethroughPlugin,
 	UnderlinePlugin,
 } from "@platejs/basic-nodes/react";
+import { DndPlugin } from "@platejs/dnd";
 import { IndentPlugin } from "@platejs/indent/react";
 import { LinkPlugin } from "@platejs/link/react";
 import {
@@ -41,7 +42,10 @@ import {
 	TaskListPlugin,
 } from "@platejs/list-classic/react";
 import { ParagraphPlugin } from "platejs/react";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
 
+import { BlockDraggable } from "./editor-draggable";
 import {
 	BlockquoteElement,
 	BoldLeaf,
@@ -110,6 +114,18 @@ export const milestoneEditorPlugins = [
 	ListItemPlugin.withComponent(ListItemElement),
 	ListItemContentPlugin.withComponent(ListItemContentElement),
 
+	// Drag and drop. The provider must wrap the Slate surface, which is what
+	// `aboveSlate` does. The plugin is edit only, so the static viewer and
+	// clients never see drag handles.
+	DndPlugin.configure({
+		render: {
+			aboveNodes: BlockDraggable,
+			aboveSlate: ({ children }) => (
+				<DndProvider backend={HTML5Backend}>{children}</DndProvider>
+			),
+		},
+	}),
+
 	// Marks
 	BoldPlugin.withComponent(BoldLeaf),
 	ItalicPlugin.withComponent(ItalicLeaf),
@@ -129,3 +145,15 @@ export const milestoneEditorPlugins = [
  * function is the only place that turns it back into something editable.
  */
 export const EMPTY_EDITOR_VALUE = [{ type: "p", children: [{ text: "" }] }];
+
+/**
+ * Plugins for the read-only renderer.
+ *
+ * Drag and drop is edit only. `PlateStatic` still walks `render.aboveNodes`,
+ * but its wrapper needs a Plate provider that the static path does not mount,
+ * so the plugin is removed from this list instead of being conditionally
+ * skipped at render time.
+ */
+export const milestoneStaticEditorPlugins = milestoneEditorPlugins.filter(
+	(plugin) => plugin.key !== "dnd",
+);

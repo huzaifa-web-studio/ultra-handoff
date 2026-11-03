@@ -28,7 +28,11 @@ import type { Value } from "platejs";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { PlateStatic } from "platejs/static";
 import { type KeyboardEvent, useState } from "react";
-import { EMPTY_EDITOR_VALUE, milestoneEditorPlugins } from "./editor-kit";
+import {
+	EMPTY_EDITOR_VALUE,
+	milestoneEditorPlugins,
+	milestoneStaticEditorPlugins,
+} from "./editor-kit";
 import { EditorFloatingToolbar } from "./editor-toolbar";
 import { EditorStaticProvider } from "./editor-view-context";
 
@@ -114,7 +118,7 @@ export function MilestoneEditorStatic({
 }) {
 	const [initialValue] = useState(() => toEditorValue(value));
 	const editor = usePlateEditor({
-		plugins: milestoneEditorPlugins,
+		plugins: milestoneStaticEditorPlugins,
 		value: initialValue,
 	});
 
