@@ -246,6 +246,24 @@ Rules:
 - Add each new business table to `TENANT_TABLES` in `scripts/bootstrap-db.ts` so the role is granted access explicitly.
 - Never set `app.current_org_id` outside `withTenant`, and never take it from a request body. It comes from `resolveTenantScope` after a membership check.
 
+---
+
+## 24. Dates Display as Day Month Year
+
+**Every date shown to a user must be day month year**, for example `3 Nov 2026`. Never month day year (`Nov 3, 2026`) and never an ambiguous numeric date.
+
+This applies to tables, detail panes, list rows, badges, hover titles, date pickers, emails and any new surface.
+
+- Use `formatDate` and `formatDateTime` from `apps/web/src/lib/date.ts`. They are pinned to `en-GB` with `dateStyle: "medium"`, which produces the required order on every browser.
+- Never call `toLocaleDateString`, `toLocaleString` or a local `Intl.DateTimeFormat` for a visible date.
+- Date inputs and calendars must use the same order. Wrap them in `<I18nProvider locale={DATE_LOCALE}>` from `react-aria-components`, using `DATE_LOCALE` from `apps/web/src/lib/date.ts`.
+- API email templates already use `en-GB` with `dateStyle: "medium"`. Keep new templates consistent.
+- Relative labels such as "in 3 days" use `formatRelativeTime`. They are a companion to a date, not a replacement for one.
+
+- ✅ `3 Nov 2026`
+- ❌ `Nov 3, 2026`
+- ❌ `11/3/2026`
+
 ## Enforcement
 
 These rules are enforced by:

@@ -50,6 +50,19 @@ export const MILESTONE_ESTIMATE_MAX = 60_000;
 /** Longest search text the API accepts. */
 export const MILESTONE_SEARCH_MAX = 100;
 
+/**
+ * How far before today a milestone date may be scheduled, in years.
+ *
+ * Why a limit at all: the calendar year dropdown otherwise offers an
+ * effectively unlimited range, which is noise for a project milestone. Ten
+ * years back covers late data entry and long running engagements without
+ * letting a typo land in 1998.
+ */
+export const MILESTONE_DATE_YEARS_BACK = 10;
+
+/** How far after today a milestone date may be scheduled, in years. */
+export const MILESTONE_DATE_YEARS_FORWARD = 10;
+
 /** Rows per list page. */
 export const MILESTONE_PAGE_SIZE = 25;
 

@@ -92,6 +92,12 @@ type CalendarShellProps = {
 	numberOfMonths?: number;
 	showWeekNumber?: boolean;
 	headerFormat?: Intl.DateTimeFormatOptions;
+	/**
+	 * Number of years the year dropdown lists. Defaults to the react-aria
+	 * value of 20. Pass a value that matches the allowed min and max dates so
+	 * the dropdown does not offer years outside them.
+	 */
+	visibleYears?: number;
 	renderCell?: (
 		renderProps: CalendarCellRenderProps & {
 			defaultChildren: React.ReactNode;
@@ -145,6 +151,7 @@ function CalendarInner({
 	numberOfMonths = 1,
 	showWeekNumber = false,
 	headerFormat,
+	visibleYears,
 	renderCell,
 	isRange,
 }: CalendarShellProps & { isRange?: boolean }) {
@@ -175,7 +182,7 @@ function CalendarInner({
 						{captionLayout === "dropdown" ? (
 							<>
 								<MonthDropdown format={headerFormat} />
-								<YearDropdown />
+								<YearDropdown visibleYears={visibleYears} />
 							</>
 						) : (
 							<CalendarHeading
@@ -266,9 +273,9 @@ function MonthDropdown({ format }: { format?: Intl.DateTimeFormatOptions }) {
 }
 
 /** Year selector used when `captionLayout="dropdown"`. */
-function YearDropdown() {
+function YearDropdown({ visibleYears }: { visibleYears?: number }) {
 	return (
-		<CalendarYearPicker>
+		<CalendarYearPicker visibleYears={visibleYears}>
 			{(props) => (
 				<Select {...props} aria-label="Year" className="relative">
 					<SelectTrigger>

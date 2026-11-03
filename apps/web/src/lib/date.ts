@@ -1,18 +1,26 @@
 /**
- * Date formatting shared by the members and invitations pages.
+ * Date formatting shared by every surface that shows a date.
  *
- * Why one module: "Joined", "Sent" and "Expires" all need the same locale
- * aware output, and every one of them shows a full timestamp on hover. Keeping
- * the format rules here means a change applies everywhere at once.
+ * Why one module: dates appear in tables, detail panes, milestone labels and
+ * hover titles. Keeping the format rules here means the whole product always
+ * shows the same order.
  *
- * Used by: features/members and features/invitations.
+ * The format is fixed to day month year, for example `3 Nov 2026`. The locale
+ * is pinned to `en-GB` because component options alone still follow the
+ * browser's order, and a US browser would print `Nov 3, 2026`.
+ *
+ * Used by: features/members, features/invitations, features/projects,
+ * features/milestones and any date shown inside the editor.
  */
 
-const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+/** Locale that guarantees the day month year order. */
+export const DATE_LOCALE = "en-GB";
+
+const DATE_FORMAT = new Intl.DateTimeFormat(DATE_LOCALE, {
 	dateStyle: "medium",
 });
 
-const RELATIVE_FORMAT = new Intl.RelativeTimeFormat(undefined, {
+const RELATIVE_FORMAT = new Intl.RelativeTimeFormat(DATE_LOCALE, {
 	numeric: "auto",
 });
 
@@ -46,7 +54,7 @@ export function formatDateTime(value: string | Date): string {
 
 	if (!date) return UNKNOWN_DATE;
 
-	return new Intl.DateTimeFormat(undefined, {
+	return new Intl.DateTimeFormat(DATE_LOCALE, {
 		dateStyle: "medium",
 		timeStyle: "short",
 	}).format(date);
