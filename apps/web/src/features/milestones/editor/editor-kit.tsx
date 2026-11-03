@@ -8,11 +8,11 @@
  * server sanitizer has to understand. This list is the smallest set that covers
  * writing a usable brief: structure, emphasis, lists and links.
  *
- * What is deliberately absent: media, mentions, code blocks, AI and
- * collaboration. Images use one small custom node instead of the media kit, so
- * there is no caption, resize or second upload surface to maintain. The
- * sanitizer already refuses node types it does not know, so an old document
- * cannot smuggle one in.
+ * What is deliberately absent: audio, video, embeds, mentions, code blocks, AI
+ * and collaboration. Images use the official media plugin with the app's own
+ * renderer, which keeps the node tested without pulling in the whole media
+ * kit. The sanitizer already refuses node types it does not know, so an old
+ * document cannot smuggle one in.
  *
  * Used by: features/milestones/editor/milestone-editor.tsx.
  */
@@ -27,6 +27,7 @@ import {
 	StrikethroughPlugin,
 	UnderlinePlugin,
 } from "@platejs/basic-nodes/react";
+import { CaptionPlugin } from "@platejs/caption/react";
 import { DndPlugin } from "@platejs/dnd";
 import { IndentPlugin } from "@platejs/indent/react";
 import { LinkRules } from "@platejs/link";
@@ -44,13 +45,15 @@ import {
 	NumberedListPlugin,
 	TaskListPlugin,
 } from "@platejs/list-classic/react";
+import { BaseImagePlugin } from "@platejs/media";
+import { ImagePlugin } from "@platejs/media/react";
 import {
 	TableCellHeaderPlugin,
 	TableCellPlugin,
 	TablePlugin,
 	TableRowPlugin,
 } from "@platejs/table/react";
-import { PathApi } from "platejs";
+import { KEYS, PathApi } from "platejs";
 import { createPlatePlugin, ParagraphPlugin } from "platejs/react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
@@ -63,7 +66,6 @@ import {
 	CodeLeaf,
 	H2Element,
 	H3Element,
-	ImageElement,
 	ItalicLeaf,
 	LinkElement,
 	ListItemContentElement,
@@ -74,6 +76,8 @@ import {
 	TaskListElement,
 	UnderlineLeaf,
 } from "./editor-elements";
+import { ImageElement, ImageElementStatic } from "./editor-image";
+import { MediaPreviewDialog } from "./editor-media-preview";
 import {
 	TableCellElement,
 	TableCellHeaderElement,
@@ -142,16 +146,20 @@ const TrailingParagraphPlugin = createPlatePlugin({
 }));
 
 /**
- * An image block.
+ * Images use the official media plugin.
  *
- * A custom node instead of `@platejs/media`: the editor needs one image with a
- * stored URL, not captions, resizing and a captions toolbar. Keeping it custom
- * also means the server sanitizer understands the exact shape it stores.
+ * `disableUploadInsert` is deliberate: the package's built in paste handler
+ * stores a base64 data URL, which the milestone sanitizer refuses. Uploads go
+ * through the plus menu and the presigned pipeline instead. Pasting an image
+ * URL still works, because that is the media package's embed path.
  */
-const ImagePlugin = createPlatePlugin({
-	key: "img",
-	node: { isElement: true, isVoid: true },
-}).withComponent(ImageElement);
+const MilestoneImagePlugin = ImagePlugin.configure({
+	options: { disableUploadInsert: true },
+	render: {
+		afterEditable: MediaPreviewDialog,
+		node: ImageElement,
+	},
+});
 
 /** The plugins passed to `usePlateEditor`. */
 export const milestoneEditorPlugins = [
@@ -160,7 +168,12 @@ export const milestoneEditorPlugins = [
 	H2Plugin.withComponent(H2Element),
 	H3Plugin.withComponent(H3Element),
 	BlockquotePlugin.withComponent(BlockquoteElement),
-	ImagePlugin,
+	MilestoneImagePlugin,
+	// Captions are stored on the image node. The renderer reveals the field
+	// when the image is selected, so no floating caption button is needed.
+	CaptionPlugin.configure({
+		options: { query: { allow: [KEYS.img] } },
+	}),
 
 	// Block indentation. Ordered before the list plugin so the list handler
 	// runs first and can nest a list item, then fall through to indentation.
@@ -262,6 +275,14 @@ export const EMPTY_EDITOR_VALUE = [{ type: "p", children: [{ text: "" }] }];
  * so the plugin is removed from this list instead of being conditionally
  * skipped at render time.
  */
-export const milestoneStaticEditorPlugins = milestoneEditorPlugins.filter(
-	(plugin) => plugin.key !== "dnd",
-);
+export const milestoneStaticEditorPlugins = [
+	...milestoneEditorPlugins.filter(
+		(plugin) =>
+			plugin.key !== "dnd" &&
+			plugin.key !== KEYS.img &&
+			plugin.key !== KEYS.caption,
+	),
+	// The static image node renders the stored width and caption directly.
+	// It never mounts the resize handles or the preview dialog.
+	BaseImagePlugin.withComponent(ImageElementStatic),
+];

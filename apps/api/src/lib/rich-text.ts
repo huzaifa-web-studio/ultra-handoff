@@ -69,6 +69,13 @@ const TABLE_CELL_TYPES = new Set(["td", "th"]);
 /** Longest image alt text stored. A short caption is enough for a screen reader. */
 const MAX_IMAGE_ALT_LENGTH = 200;
 
+/** Longest caption stored on an image. */
+const MAX_IMAGE_CAPTION_LENGTH = 500;
+
+/** Width range the resize handle can produce, in pixels. */
+const MIN_IMAGE_WIDTH = 92;
+const MAX_IMAGE_WIDTH = 4_096;
+
 /** Largest row or column span accepted. */
 const MAX_TABLE_SPAN = 20;
 
@@ -245,9 +252,44 @@ function sanitizeNode(
 			children: [{ text: "" }],
 		};
 
-		if (typeof node.alt === "string") {
-			const alt = node.alt.trim().slice(0, MAX_IMAGE_ALT_LENGTH);
-			if (alt.length > 0) image.alt = alt;
+		const attributes = isRecord(node.attributes) ? node.attributes : null;
+		const rawAlt =
+			typeof node.alt === "string"
+				? node.alt
+				: typeof attributes?.alt === "string"
+					? attributes.alt
+					: "";
+
+		if (rawAlt.trim().length > 0) {
+			image.alt = rawAlt.trim().slice(0, MAX_IMAGE_ALT_LENGTH);
+		}
+
+		// A resized image keeps a single pixel width. The value is bounded so a
+		// crafted request cannot make one image cover an arbitrary grid.
+		if (
+			typeof node.width === "number" &&
+			Number.isInteger(node.width) &&
+			node.width >= MIN_IMAGE_WIDTH &&
+			node.width <= MAX_IMAGE_WIDTH
+		) {
+			image.width = node.width;
+		}
+
+		// Captions are stored as a plain text array on the image node, which is
+		// the shape the caption plugin reads and the static renderer displays.
+		if (Array.isArray(node.caption)) {
+			const caption = node.caption
+				.filter(isRecord)
+				.map((leaf) => (typeof leaf.text === "string" ? leaf.text : ""))
+				.join("")
+				.trim()
+				.slice(0, MAX_IMAGE_CAPTION_LENGTH);
+
+			if (caption.length > 0) {
+				image.caption = [{ text: caption }];
+				// Keep the caption searchable through the plain text mirror.
+				state.text.push(caption);
+			}
 		}
 
 		// Keep a line break in the plain text mirror so a preview does not run
