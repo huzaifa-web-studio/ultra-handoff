@@ -20,7 +20,7 @@ export type EditorFormatAction =
 			mark: "bold" | "italic" | "underline" | "strikethrough" | "code";
 	  }
 	| { type: "block"; block: "p" | "h2" | "h3" | "blockquote" }
-	| { type: "list"; list: "ul" | "ol" }
+	| { type: "list"; list: "ul" | "ol" | "taskList" }
 	| { type: "indent"; reverse: boolean };
 
 /**

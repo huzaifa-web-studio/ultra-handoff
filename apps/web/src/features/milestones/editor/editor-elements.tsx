@@ -15,6 +15,11 @@
  * Used by: features/milestones/editor/editor-kit.tsx.
  */
 
+import { Checkbox } from "@org/ui/components/checkbox";
+import {
+	useTodoListElement,
+	useTodoListElementState,
+} from "@platejs/list-classic/react";
 import { cn } from "cn";
 import {
 	PlateElement,
@@ -22,7 +27,9 @@ import {
 	PlateLeaf,
 	type PlateLeafProps,
 } from "platejs/react";
-import type React from "react";
+import { Children, type ReactNode } from "react";
+
+import { useEditorStatic } from "./editor-view-context";
 
 /** Shared body text style. */
 const BODY = "my-1 text-sm leading-relaxed text-app-text";
@@ -104,8 +111,28 @@ export function NumberedListElement(props: PlateElementProps) {
 	);
 }
 
-/** One list item. */
-export function ListItemElement(props: PlateElementProps) {
+/**
+ * A checklist.
+ *
+ * The task list is still a `ul`, but the browser marker is removed because
+ * every item renders its own checkbox. Keeping it a real list means screen
+ * readers still announce the item count.
+ */
+export function TaskListElement(props: PlateElementProps) {
+	return (
+		<PlateElement
+			{...props}
+			as="ul"
+			className={cn(
+				"my-2 list-none pl-0 text-sm text-app-text",
+				props.className,
+			)}
+		/>
+	);
+}
+
+/** One plain list item. */
+function BaseListItemElement(props: PlateElementProps) {
 	return (
 		<PlateElement
 			{...props}
@@ -113,6 +140,70 @@ export function ListItemElement(props: PlateElementProps) {
 			className={cn("my-0.5 pl-1", props.className)}
 		/>
 	);
+}
+
+/**
+ * One checklist item.
+ *
+ * list-classic stores the state as `checked` on the list item itself, so the
+ * item renderer is what supplies the checkbox. The checkbox is not editable
+ * content, otherwise it would become part of the text selection and be copied
+ * with the body.
+ */
+function TaskListItemElement(props: PlateElementProps) {
+	const state = useTodoListElementState({ element: props.element });
+	const { checkboxProps } = useTodoListElement(state);
+	const isStatic = useEditorStatic();
+
+	// The first child is the editable content. Anything after it is a nested
+	// list, which has to stay outside the checkbox row.
+	const [content, ...nested] = Children.toArray(props.children);
+
+	return (
+		<PlateElement
+			{...props}
+			as="li"
+			className={cn("my-0.5 list-none pl-0", props.className)}
+		>
+			<div className="flex items-start gap-2">
+				<div
+					className="flex select-none items-center pt-[0.2rem]"
+					contentEditable={false}
+				>
+					<Checkbox
+						aria-label={
+							state.checked ? "Mark item as not done" : "Mark item as done"
+						}
+						isDisabled={state.readOnly || isStatic}
+						isSelected={checkboxProps.checked}
+						onChange={(selected) => checkboxProps.onCheckedChange(selected)}
+					/>
+				</div>
+
+				<div
+					className={cn(
+						"min-w-0 flex-1",
+						state.checked && "text-app-text-muted line-through",
+					)}
+				>
+					{content}
+				</div>
+			</div>
+
+			{nested}
+		</PlateElement>
+	);
+}
+
+/** One list item, with or without a checkbox. */
+export function ListItemElement(props: PlateElementProps) {
+	const checked = (props.element as { checked?: unknown }).checked;
+
+	if (typeof checked === "boolean") {
+		return <TaskListItemElement {...props} />;
+	}
+
+	return <BaseListItemElement {...props} />;
 }
 
 /**
@@ -182,7 +273,7 @@ export function CodeLeaf(props: PlateLeafProps) {
 			as="code"
 			className="border border-app-border bg-app-panel-subtle px-1 py-0.5 font-mono text-[0.85em] text-app-text"
 		>
-			{props.children as React.ReactNode}
+			{props.children as ReactNode}
 		</PlateLeaf>
 	);
 }

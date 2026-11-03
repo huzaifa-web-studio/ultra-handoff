@@ -30,6 +30,7 @@ import { PlateStatic } from "platejs/static";
 import { type KeyboardEvent, useState } from "react";
 import { EMPTY_EDITOR_VALUE, milestoneEditorPlugins } from "./editor-kit";
 import { EditorFloatingToolbar } from "./editor-toolbar";
+import { EditorStaticProvider } from "./editor-view-context";
 
 /**
  * Normalise a stored body into something Slate can mount.
@@ -118,12 +119,14 @@ export function MilestoneEditorStatic({
 	});
 
 	return (
-		<PlateStatic
-			editor={editor}
-			aria-label={ariaLabel}
-			// Match the editable surface, so a body with deliberate spacing is
-			// shown exactly as it was written.
-			className="px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text"
-		/>
+		<EditorStaticProvider>
+			<PlateStatic
+				editor={editor}
+				aria-label={ariaLabel}
+				// Match the editable surface, so a body with deliberate spacing is
+				// shown exactly as it was written.
+				className="px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text"
+			/>
+		</EditorStaticProvider>
 	);
 }

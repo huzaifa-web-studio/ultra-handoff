@@ -45,6 +45,7 @@ import {
 	LinkIcon,
 	ListIcon,
 	ListOrderedIcon,
+	ListTodoIcon,
 	StrikethroughIcon,
 	UnderlineIcon,
 } from "lucide-react";
@@ -128,13 +129,13 @@ function MarkButton({
 	);
 }
 
-/** Toggle a bulleted or numbered list. */
+/** Toggle a bulleted, numbered or checklist list. */
 function ListButton({
 	list,
 	label,
 	children,
 }: {
-	list: "ul" | "ol";
+	list: "ul" | "ol" | "taskList";
 	label: string;
 	children: React.ReactNode;
 }) {
@@ -307,6 +308,9 @@ export function EditorFloatingToolbar() {
 							</ListButton>
 							<ListButton list="ol" label="Numbered list">
 								<ListOrderedIcon aria-hidden />
+							</ListButton>
+							<ListButton list="taskList" label="Checklist">
+								<ListTodoIcon aria-hidden />
 							</ListButton>
 
 							<ToolbarSeparator />

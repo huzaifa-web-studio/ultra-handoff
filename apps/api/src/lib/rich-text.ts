@@ -37,6 +37,7 @@ const ALLOWED_BLOCK_TYPES = new Set([
 	"ol",
 	"li",
 	"lic",
+	"taskList",
 	"code_block",
 	"code_line",
 	"hr",
@@ -169,6 +170,13 @@ function sanitizeNode(
 	if (children.length === 0) children.push({ text: "" });
 
 	const element: Record<string, unknown> = { type, children };
+
+	// A checklist item stores its state on the list item itself. It is the only
+	// boolean the editor may write, so it is kept explicitly rather than by
+	// copying arbitrary node props.
+	if (type === "li" && typeof node.checked === "boolean") {
+		element.checked = node.checked;
+	}
 
 	// Indentation is a single bounded integer on supported block types. It
 	// changes only spacing, so an arbitrary number written by a crafted request

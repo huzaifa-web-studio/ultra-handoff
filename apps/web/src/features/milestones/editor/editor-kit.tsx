@@ -27,13 +27,18 @@ import {
 } from "@platejs/basic-nodes/react";
 import { IndentPlugin } from "@platejs/indent/react";
 import { LinkPlugin } from "@platejs/link/react";
-import { BulletedListRules, OrderedListRules } from "@platejs/list-classic";
+import {
+	BulletedListRules,
+	OrderedListRules,
+	TaskListRules,
+} from "@platejs/list-classic";
 import {
 	BulletedListPlugin,
 	ListItemContentPlugin,
 	ListItemPlugin,
 	ListPlugin,
 	NumberedListPlugin,
+	TaskListPlugin,
 } from "@platejs/list-classic/react";
 import { ParagraphPlugin } from "platejs/react";
 
@@ -51,6 +56,7 @@ import {
 	NumberedListElement,
 	ParagraphElement,
 	StrikethroughLeaf,
+	TaskListElement,
 	UnderlineLeaf,
 } from "./editor-elements";
 
@@ -94,10 +100,13 @@ export const milestoneEditorPlugins = [
 			BulletedListRules.markdown({ variant: "*" }),
 			OrderedListRules.markdown({ variant: "." }),
 			OrderedListRules.markdown({ variant: ")" }),
+			TaskListRules.markdown({ checked: false }),
+			TaskListRules.markdown({ checked: true }),
 		],
 	}),
 	BulletedListPlugin.withComponent(BulletedListElement),
 	NumberedListPlugin.withComponent(NumberedListElement),
+	TaskListPlugin.withComponent(TaskListElement),
 	ListItemPlugin.withComponent(ListItemElement),
 	ListItemContentPlugin.withComponent(ListItemContentElement),
 
