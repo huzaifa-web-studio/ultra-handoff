@@ -28,6 +28,7 @@ import type { Value } from "platejs";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { PlateStatic } from "platejs/static";
 import { type KeyboardEvent, useState } from "react";
+import { BlockMenuProvider } from "./editor-draggable";
 import {
 	EMPTY_EDITOR_VALUE,
 	milestoneEditorPlugins,
@@ -78,28 +79,36 @@ export function MilestoneEditor({
 	const editor = usePlateEditor({
 		plugins: milestoneEditorPlugins,
 		value: toEditorValue(initialValue),
+		// Run the table normalizer on mount, so an existing table that ends the
+		// description already has the paragraph the caret needs below it.
+		shouldNormalizeEditor: true,
 	});
 
 	return (
-		<Plate
-			editor={editor}
-			readOnly={readOnly}
-			onChange={({ value }) => onChange(value as unknown[])}
-		>
-			<PlateContent
-				aria-label={ariaLabel}
-				onKeyDown={handleEditorKeyDown}
-				placeholder="Write the details, the expected outcome, or anything the assignee needs."
-				// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`, so
-				// the editor has to restate it. Without it the browser collapses
-				// spaces as they are typed and the text looks trimmed on screen.
-				className="min-h-40 w-full cursor-text px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
-				disableDefaultStyles
-			/>
+		<BlockMenuProvider>
+			<Plate
+				editor={editor}
+				readOnly={readOnly}
+				onChange={({ value }) => onChange(value as unknown[])}
+			>
+				<PlateContent
+					aria-label={ariaLabel}
+					onKeyDown={handleEditorKeyDown}
+					placeholder="Write the details, the expected outcome, or anything the assignee needs."
+					// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`, so
+					// the editor has to restate it. Without it the browser collapses
+					// spaces as they are typed and the text looks trimmed on screen.
+					//
+					// The left padding is the block gutter: 44px holds the insert
+					// button and the drag handle.
+					className="min-h-40 w-full cursor-text pl-11 pr-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
+					disableDefaultStyles
+				/>
 
-			{/* The only formatting surface: it follows the text selection. */}
-			{!readOnly && <EditorFloatingToolbar />}
-		</Plate>
+				{/* The only formatting surface: it follows the text selection. */}
+				{!readOnly && <EditorFloatingToolbar />}
+			</Plate>
+		</BlockMenuProvider>
 	);
 }
 

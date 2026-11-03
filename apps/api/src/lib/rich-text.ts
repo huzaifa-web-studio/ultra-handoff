@@ -38,6 +38,10 @@ const ALLOWED_BLOCK_TYPES = new Set([
 	"li",
 	"lic",
 	"taskList",
+	"table",
+	"tr",
+	"td",
+	"th",
 	"code_block",
 	"code_line",
 	"hr",
@@ -57,6 +61,18 @@ const INDENTABLE_BLOCK_TYPES = new Set(["p", "h2", "h3", "blockquote"]);
 
 /** Highest indent level accepted from a saved document. */
 const MAX_INDENT = 8;
+
+/** Cell types that can carry a row or column span. */
+const TABLE_CELL_TYPES = new Set(["td", "th"]);
+
+/** Largest row or column span accepted. */
+const MAX_TABLE_SPAN = 20;
+
+/** Largest number of column widths stored on a table. */
+const MAX_TABLE_COLUMNS = 20;
+
+/** Widest single column accepted, in pixels. */
+const MAX_TABLE_COLUMN_WIDTH = 2_000;
 
 /** Link protocols that are safe to render as a clickable anchor. */
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
@@ -103,6 +119,26 @@ function safeUrl(url: unknown): string | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+/**
+ * Read a span from a number or a pasted HTML attribute.
+ *
+ * A span of one is the default and is not stored. Anything outside the allowed
+ * range is capped instead of rejected, so a slightly odd table still saves.
+ */
+function readSpan(value: unknown): number | undefined {
+	const numeric = typeof value === "string" ? Number(value) : value;
+
+	if (
+		typeof numeric !== "number" ||
+		!Number.isInteger(numeric) ||
+		numeric < 2
+	) {
+		return undefined;
+	}
+
+	return Math.min(numeric, MAX_TABLE_SPAN);
 }
 
 /**
@@ -184,6 +220,34 @@ function sanitizeNode(
 	if (INDENTABLE_BLOCK_TYPES.has(type) && Number.isInteger(node.indent)) {
 		const indent = node.indent as number;
 		if (indent >= 1 && indent <= MAX_INDENT) element.indent = indent;
+	}
+
+	// A merged table cell keeps its span. The value is bounded so a crafted
+	// request cannot make one cell cover a huge grid. Pasted HTML carries the
+	// span in `attributes`, while the editor stores it on the node.
+	if (TABLE_CELL_TYPES.has(type)) {
+		const attributes = isRecord(node.attributes) ? node.attributes : null;
+		const colSpan = readSpan(node.colSpan) ?? readSpan(attributes?.colspan);
+		const rowSpan = readSpan(node.rowSpan) ?? readSpan(attributes?.rowspan);
+
+		if (colSpan) element.colSpan = colSpan;
+		if (rowSpan) element.rowSpan = rowSpan;
+	}
+
+	// Column widths are optional and only affect layout. Keep a small, finite
+	// list so a resized table reloads with the same proportions.
+	if (type === "table" && Array.isArray(node.colSizes)) {
+		const colSizes = node.colSizes
+			.filter(
+				(size): size is number =>
+					typeof size === "number" &&
+					Number.isFinite(size) &&
+					size > 0 &&
+					size <= MAX_TABLE_COLUMN_WIDTH,
+			)
+			.slice(0, MAX_TABLE_COLUMNS);
+
+		if (colSizes.length > 0) element.colSizes = colSizes;
 	}
 
 	if (type === "a" || rawType === "a") {

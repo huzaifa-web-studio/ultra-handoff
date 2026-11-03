@@ -42,7 +42,14 @@ import {
 	NumberedListPlugin,
 	TaskListPlugin,
 } from "@platejs/list-classic/react";
-import { ParagraphPlugin } from "platejs/react";
+import {
+	TableCellHeaderPlugin,
+	TableCellPlugin,
+	TablePlugin,
+	TableRowPlugin,
+} from "@platejs/table/react";
+import { PathApi } from "platejs";
+import { createPlatePlugin, ParagraphPlugin } from "platejs/react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 
@@ -64,6 +71,12 @@ import {
 	TaskListElement,
 	UnderlineLeaf,
 } from "./editor-elements";
+import {
+	TableCellElement,
+	TableCellHeaderElement,
+	TableElement,
+	TableRowElement,
+} from "./editor-table";
 
 /**
  * Turn a bare domain into an https URL for autolinking.
@@ -88,6 +101,42 @@ function autolinkHref(text: string): string | undefined {
 
 	return `https://${value}`;
 }
+
+/**
+ * Keeps an empty paragraph after a table that ends the document.
+ *
+ * Without it, a table is the final block and clicking in the empty space below
+ * it has nowhere to place the caret. The paragraph gives the writer a normal
+ * line to click or type on, and it is also the line the cursor lands on after
+ * tabbing out of the last cell.
+ */
+const TrailingParagraphPlugin = createPlatePlugin({
+	key: "milestoneTrailingParagraph",
+}).overrideEditor(({ editor, tf: { normalizeNode } }) => ({
+	transforms: {
+		normalizeNode(entry, options) {
+			const [node, path] = entry;
+
+			if (
+				path.length === 1 &&
+				"type" in node &&
+				node.type === editor.getType("table")
+			) {
+				const nextPath = PathApi.next(path);
+
+				if (!editor.api.node(nextPath)) {
+					editor.tf.insertNodes(
+						{ type: "p", children: [{ text: "" }] },
+						{ at: nextPath },
+					);
+					return;
+				}
+			}
+
+			normalizeNode(entry, options);
+		},
+	},
+}));
 
 /** The plugins passed to `usePlateEditor`. */
 export const milestoneEditorPlugins = [
@@ -138,6 +187,14 @@ export const milestoneEditorPlugins = [
 	TaskListPlugin.withComponent(TaskListElement),
 	ListItemPlugin.withComponent(ListItemElement),
 	ListItemContentPlugin.withComponent(ListItemContentElement),
+
+	// Tables. A table is a block like any other, so it can be dragged as a
+	// whole and saved with the rest of the body.
+	TablePlugin.withComponent(TableElement),
+	TableRowPlugin.withComponent(TableRowElement),
+	TableCellPlugin.withComponent(TableCellElement),
+	TableCellHeaderPlugin.withComponent(TableCellHeaderElement),
+	TrailingParagraphPlugin,
 
 	// Drag and drop. The provider must wrap the Slate surface, which is what
 	// `aboveSlate` does. The plugin is edit only, so the static viewer and

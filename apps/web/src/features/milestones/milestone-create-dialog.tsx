@@ -143,11 +143,7 @@ export function MilestoneCreateDialog({
 					</DialogDescription>
 				</DialogHeader>
 
-				{/* The negative margin and matching padding extend the scroll
-				    padding box into the gutter. The block drag handle lives there,
-				    and an overflow container clips anything outside its padding
-				    box, which would hide the handle. */}
-				<div className="-ml-6 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pl-6 pr-1">
+				<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
 					<div className="flex flex-col gap-1">
 						<label
 							htmlFor="new-milestone-title"

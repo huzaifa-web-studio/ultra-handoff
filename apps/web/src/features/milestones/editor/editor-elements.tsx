@@ -76,7 +76,7 @@ export function BlockquoteElement(props: PlateElementProps) {
 			{...props}
 			as="blockquote"
 			className={cn(
-				"my-2 border-l-2 border-app-border-strong pl-3 text-app-text-muted italic",
+				"my-3 border-l-4 border-app-focus bg-app-panel-subtle px-3 py-2 text-app-text italic",
 				props.className,
 			)}
 		/>

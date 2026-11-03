@@ -25,6 +25,7 @@
     "@platejs/indent": "^53.0.0",
     "@platejs/link": "^53.3.5",
     "@platejs/list-classic": "^53.0.0",
+    "@platejs/table": "^53.0.9",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "0.10.13",
     "@tanstack/react-form": "^1.33.5",
