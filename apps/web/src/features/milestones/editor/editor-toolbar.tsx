@@ -1,23 +1,25 @@
 "use client";
 
 /**
- * The milestone editor toolbar.
+ * The floating formatting toolbar shown over a text selection.
  *
- * Why hand built: the ready made Plate toolbars assume Radix and a different
- * token set. This one is a small, curated set of controls built from the app's
- * own Button, Select, Input and Popover, so it looks like every other surface
- * and only exposes the marks and blocks the editor actually supports.
+ * Why it floats instead of sitting in a fixed header: the description is a
+ * short brief, and a permanent toolbar row competes with the text for space.
+ * The bar follows the selection, which is the Medium and Notion behaviour most
+ * people expect from a rich text field.
  *
- * Keyboard and selection detail: every control prevents the default mousedown
- * so clicking it does not steal focus from the contenteditable. Slate keeps the
- * last selection, which is what makes applying a mark to selected text work.
+ * The positioning and open/close rules come from `@platejs/floating`, which
+ * also handles the hard parts: hiding while the mouse is still down, keeping
+ * the bar open while the selection exists, and following the selection on
+ * scroll and resize.
+ *
+ * Every button calls the shared actions in editor-actions.ts, so the context
+ * menu exposes exactly the same commands.
  *
  * Used by: features/milestones/editor/milestone-editor.tsx.
  */
 
 import { Button } from "@org/ui/components/button";
-import { Input } from "@org/ui/components/input";
-import { Popover, PopoverTrigger } from "@org/ui/components/popover";
 import {
 	Select,
 	SelectContent,
@@ -26,12 +28,13 @@ import {
 	SelectValue,
 } from "@org/ui/components/select";
 import { Tooltip, TooltipTrigger } from "@org/ui/components/tooltip";
-import { useIndentButton, useOutdentButton } from "@platejs/indent/react";
-import { upsertLink } from "@platejs/link";
 import {
-	useListToolbarButton,
-	useListToolbarButtonState,
-} from "@platejs/list-classic/react";
+	FloatingPortal,
+	flip,
+	offset,
+	useFloatingToolbar,
+	useFloatingToolbarState,
+} from "@platejs/floating";
 import { cn } from "cn";
 import {
 	BoldIcon,
@@ -42,15 +45,21 @@ import {
 	LinkIcon,
 	ListIcon,
 	ListOrderedIcon,
-	Redo2Icon,
 	StrikethroughIcon,
 	UnderlineIcon,
-	Undo2Icon,
 } from "lucide-react";
-import { useEditorRef, useEditorSelector } from "platejs/react";
+import {
+	useEditorId,
+	useEditorRef,
+	useEditorSelector,
+	useEventEditorValue,
+} from "platejs/react";
 import { useState } from "react";
 
-/** Block types the "style" select offers. */
+import { type EditorFormatAction, runFormatAction } from "./editor-actions";
+import { EditorLinkDialog } from "./editor-link-dialog";
+
+/** Block types the style select offers. */
 const BLOCK_OPTIONS = [
 	{ id: "p", label: "Paragraph" },
 	{ id: "h2", label: "Heading 2" },
@@ -95,7 +104,7 @@ function MarkButton({
 	label,
 	children,
 }: {
-	mark: string;
+	mark: "bold" | "italic" | "underline" | "strikethrough" | "code";
 	label: string;
 	children: React.ReactNode;
 }) {
@@ -112,10 +121,7 @@ function MarkButton({
 		<ToolbarButton
 			label={label}
 			active={active}
-			onPress={() => {
-				editor.tf.toggleMark(mark);
-				editor.tf.focus();
-			}}
+			onPress={() => runFormatAction(editor, { type: "mark", mark })}
 		>
 			{children}
 		</ToolbarButton>
@@ -124,154 +130,56 @@ function MarkButton({
 
 /** Toggle a bulleted or numbered list. */
 function ListButton({
-	nodeType,
+	list,
 	label,
 	children,
 }: {
-	nodeType: "ul" | "ol";
+	list: "ul" | "ol";
 	label: string;
 	children: React.ReactNode;
 }) {
 	const editor = useEditorRef();
-	const state = useListToolbarButtonState({ nodeType });
-	const { props } = useListToolbarButton(state);
+	const active = useEditorSelector(
+		(current) =>
+			current.api.some({
+				match: (node) =>
+					(node as { type?: unknown }).type === current.getType(list),
+			}),
+		[list],
+	);
 
 	return (
 		<ToolbarButton
 			label={label}
-			active={props.pressed}
-			onPress={() => {
-				props.onClick();
-				editor.tf.focus();
-			}}
+			active={active}
+			onPress={() => runFormatAction(editor, { type: "list", list })}
 		>
 			{children}
 		</ToolbarButton>
 	);
 }
 
-/** Indent the current block. */
-function IndentButton() {
-	const { props } = useIndentButton();
+/** Indent or outdent the selected blocks. */
+function IndentButton({ reverse }: { reverse: boolean }) {
 	const editor = useEditorRef();
+	const action: EditorFormatAction = { type: "indent", reverse };
 
 	return (
 		<ToolbarButton
-			label="Indent"
-			onPress={() => {
-				props.onClick();
-				// Keep the contenteditable focused so the user can keep typing.
-				editor.tf.focus();
-			}}
+			label={reverse ? "Outdent" : "Indent"}
+			onPress={() => runFormatAction(editor, action)}
 		>
-			<IndentIncreaseIcon aria-hidden />
+			{reverse ? (
+				<IndentDecreaseIcon aria-hidden />
+			) : (
+				<IndentIncreaseIcon aria-hidden />
+			)}
 		</ToolbarButton>
 	);
 }
 
-/** Outdent the current block. */
-function OutdentButton() {
-	const { props } = useOutdentButton();
-	const editor = useEditorRef();
-
-	return (
-		<ToolbarButton
-			label="Outdent"
-			onPress={() => {
-				props.onClick();
-				editor.tf.focus();
-			}}
-		>
-			<IndentDecreaseIcon aria-hidden />
-		</ToolbarButton>
-	);
-}
-
-/**
- * Insert or update a link.
- *
- * A popover with one field instead of the full floating link toolbar: the
- * milestone body needs links, not link editing affordances at the cursor. If
- * the selection is already inside a link, the existing link is updated rather
- * than nested.
- */
-function LinkButton() {
-	const editor = useEditorRef();
-	const [open, setOpen] = useState(false);
-	const [url, setUrl] = useState("");
-
-	function applyLink(event: React.FormEvent) {
-		event.preventDefault();
-
-		const trimmed = url.trim();
-		if (trimmed.length === 0) return;
-
-		// A bare domain is almost always meant as https. Without this the
-		// anchor would resolve relative to the app and open nothing useful.
-		const href = /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
-			? trimmed
-			: `https://${trimmed}`;
-
-		editor.tf.focus();
-		upsertLink(editor, { url: href });
-		setUrl("");
-		setOpen(false);
-	}
-
-	return (
-		<PopoverTrigger isOpen={open} onOpenChange={setOpen}>
-			<Button
-				type="button"
-				variant="ghost"
-				size="icon-sm"
-				aria-label="Add link"
-				onMouseDown={(event) => event.preventDefault()}
-				// DialogTrigger owns the open state; adding an onPress here would
-				// toggle it twice and appear to do nothing.
-				className={cn(open && "bg-app-selected text-app-text")}
-			>
-				<LinkIcon aria-hidden />
-			</Button>
-			<Popover className="w-72 p-3">
-				<form onSubmit={applyLink} className="flex flex-col gap-2">
-					<Input
-						// The popover only opens on an explicit press, so focusing the
-						// only field is the expected next step.
-						autoFocus
-						aria-label="Link URL"
-						placeholder="https://example.com"
-						value={url}
-						onChange={(event) => setUrl(event.target.value)}
-					/>
-					<div className="flex justify-end gap-2">
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							onPress={() => setOpen(false)}
-						>
-							Cancel
-						</Button>
-						<Button
-							type="submit"
-							size="sm"
-							isDisabled={url.trim().length === 0}
-						>
-							Add
-						</Button>
-					</div>
-				</form>
-			</Popover>
-		</PopoverTrigger>
-	);
-}
-
-/** A thin divider between toolbar groups. */
-function ToolbarSeparator() {
-	return <span aria-hidden className="mx-0.5 h-4 w-px bg-app-border" />;
-}
-
-export function EditorToolbar() {
+/** The block style dropdown, shared with the old header toolbar. */
+function BlockSelect() {
 	const editor = useEditorRef();
 
 	// The nearest block whose type the select offers. Without the ancestor
@@ -294,85 +202,129 @@ export function EditorToolbar() {
 	}, []);
 
 	return (
-		<div
-			role="toolbar"
-			aria-label="Formatting"
-			className="flex flex-wrap items-center gap-1 border-b border-app-border bg-app-panel-subtle px-1 py-1"
+		<Select
+			aria-label="Text style"
+			selectedKey={currentType}
+			onSelectionChange={(key) => {
+				if (typeof key !== "string" || key === currentType) return;
+
+				runFormatAction(editor, {
+					type: "block",
+					block: key as "p" | "h2" | "h3" | "blockquote",
+				});
+			}}
 		>
-			<Select
-				aria-label="Text style"
-				selectedKey={currentType}
-				onSelectionChange={(key) => {
-					if (typeof key !== "string" || key === currentType) return;
+			<SelectTrigger size="sm" className="w-32">
+				<SelectValue />
+			</SelectTrigger>
+			<SelectContent className="ignore-click-outside/toolbar min-w-40">
+				{BLOCK_OPTIONS.map((option) => (
+					<SelectItem key={option.id} id={option.id}>
+						{option.label}
+					</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
+	);
+}
 
-					editor.tf.toggleBlock(key);
-					editor.tf.focus();
-				}}
-			>
-				<SelectTrigger size="sm" className="w-32">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent className="min-w-40">
-					{BLOCK_OPTIONS.map((option) => (
-						<SelectItem key={option.id} id={option.id}>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
+/** A thin divider between toolbar groups. */
+function ToolbarSeparator() {
+	return <span aria-hidden className="mx-0.5 h-4 w-px bg-app-border" />;
+}
 
-			<ToolbarSeparator />
+export function EditorFloatingToolbar() {
+	const editorId = useEditorId();
+	const focusedEditorId = useEventEditorValue("focus");
+	const [linkOpen, setLinkOpen] = useState(false);
 
-			<MarkButton mark="bold" label="Bold">
-				<BoldIcon aria-hidden />
-			</MarkButton>
-			<MarkButton mark="italic" label="Italic">
-				<ItalicIcon aria-hidden />
-			</MarkButton>
-			<MarkButton mark="underline" label="Underline">
-				<UnderlineIcon aria-hidden />
-			</MarkButton>
-			<MarkButton mark="strikethrough" label="Strikethrough">
-				<StrikethroughIcon aria-hidden />
-			</MarkButton>
-			<MarkButton mark="code" label="Inline code">
-				<CodeIcon aria-hidden />
-			</MarkButton>
+	const state = useFloatingToolbarState({
+		editorId,
+		focusedEditorId,
+		// The link prompt is modal, so the bar must not sit behind it.
+		hideToolbar: linkOpen,
+		floatingOptions: {
+			placement: "top",
+			middleware: [
+				offset(8),
+				flip({
+					padding: 12,
+					fallbackPlacements: [
+						"top-start",
+						"top-end",
+						"bottom-start",
+						"bottom-end",
+					],
+				}),
+			],
+		},
+	});
+	const {
+		clickOutsideRef,
+		hidden,
+		props: rootProps,
+		ref: floatingRef,
+	} = useFloatingToolbar(state);
 
-			<ToolbarSeparator />
+	return (
+		<>
+			{/* Kept mounted even while hidden, otherwise opening the link prompt
+			    (which hides the bar) would unmount the dialog in the same pass. */}
+			{!hidden && (
+				<FloatingPortal>
+					<div ref={clickOutsideRef}>
+						<div
+							{...rootProps}
+							ref={floatingRef}
+							role="toolbar"
+							aria-label="Text formatting"
+							className="ignore-click-outside/toolbar flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 border border-app-border bg-app-panel p-1 shadow-md"
+						>
+							<BlockSelect />
 
-			<ListButton nodeType="ul" label="Bulleted list">
-				<ListIcon aria-hidden />
-			</ListButton>
-			<ListButton nodeType="ol" label="Numbered list">
-				<ListOrderedIcon aria-hidden />
-			</ListButton>
+							<ToolbarSeparator />
 
-			<OutdentButton />
-			<IndentButton />
+							<MarkButton mark="bold" label="Bold">
+								<BoldIcon aria-hidden />
+							</MarkButton>
+							<MarkButton mark="italic" label="Italic">
+								<ItalicIcon aria-hidden />
+							</MarkButton>
+							<MarkButton mark="underline" label="Underline">
+								<UnderlineIcon aria-hidden />
+							</MarkButton>
+							<MarkButton mark="strikethrough" label="Strikethrough">
+								<StrikethroughIcon aria-hidden />
+							</MarkButton>
+							<MarkButton mark="code" label="Inline code">
+								<CodeIcon aria-hidden />
+							</MarkButton>
 
-			<LinkButton />
+							<ToolbarSeparator />
 
-			<ToolbarSeparator />
+							<ListButton list="ul" label="Bulleted list">
+								<ListIcon aria-hidden />
+							</ListButton>
+							<ListButton list="ol" label="Numbered list">
+								<ListOrderedIcon aria-hidden />
+							</ListButton>
 
-			<ToolbarButton
-				label="Undo"
-				onPress={() => {
-					editor.tf.undo();
-					editor.tf.focus();
-				}}
-			>
-				<Undo2Icon aria-hidden />
-			</ToolbarButton>
-			<ToolbarButton
-				label="Redo"
-				onPress={() => {
-					editor.tf.redo();
-					editor.tf.focus();
-				}}
-			>
-				<Redo2Icon aria-hidden />
-			</ToolbarButton>
-		</div>
+							<ToolbarSeparator />
+
+							<IndentButton reverse />
+							<IndentButton reverse={false} />
+
+							<ToolbarSeparator />
+
+							<ToolbarButton label="Link" onPress={() => setLinkOpen(true)}>
+								<LinkIcon aria-hidden />
+							</ToolbarButton>
+						</div>
+					</div>
+				</FloatingPortal>
+			)}
+
+			<EditorLinkDialog isOpen={linkOpen} onOpenChange={setLinkOpen} />
+		</>
 	);
 }

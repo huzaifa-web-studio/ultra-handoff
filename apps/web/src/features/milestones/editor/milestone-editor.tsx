@@ -18,6 +18,9 @@
  * so they indent and outdent the current block instead of leaving the field.
  * Escape blurs the editor, which keeps Tab from becoming a keyboard trap.
  *
+ * There is no fixed toolbar. Formatting lives in the floating bar that follows
+ * a text selection, which keeps the surface quiet until the writer needs it.
+ *
  * Used by: features/milestones/milestone-detail-panel.tsx.
  */
 
@@ -25,9 +28,8 @@ import type { Value } from "platejs";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { PlateStatic } from "platejs/static";
 import { type KeyboardEvent, useState } from "react";
-
 import { EMPTY_EDITOR_VALUE, milestoneEditorPlugins } from "./editor-kit";
-import { EditorToolbar } from "./editor-toolbar";
+import { EditorFloatingToolbar } from "./editor-toolbar";
 
 /**
  * Normalise a stored body into something Slate can mount.
@@ -79,7 +81,6 @@ export function MilestoneEditor({
 			readOnly={readOnly}
 			onChange={({ value }) => onChange(value as unknown[])}
 		>
-			{!readOnly && <EditorToolbar />}
 			<PlateContent
 				aria-label={ariaLabel}
 				onKeyDown={handleEditorKeyDown}
@@ -90,6 +91,9 @@ export function MilestoneEditor({
 				className="min-h-40 w-full cursor-text px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
 				disableDefaultStyles
 			/>
+
+			{/* The only formatting surface: it follows the text selection. */}
+			{!readOnly && <EditorFloatingToolbar />}
 		</Plate>
 	);
 }
