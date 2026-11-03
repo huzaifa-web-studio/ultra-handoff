@@ -307,7 +307,10 @@ function ProjectRowItem({
 	onPin: (projectId: string, pinned: boolean) => void;
 }) {
 	const url = `/${orgSlug}/projects/${project.slug}`;
-	const active = pathname === url;
+	// A project stays active for every nested route it owns (settings,
+	// milestones), so the check has to cover child paths. An exact match alone
+	// dropped the highlight the moment the user opened a project tab.
+	const active = pathname === url || pathname.startsWith(`${url}/`);
 	const archived = project.status === "archived";
 
 	return (
