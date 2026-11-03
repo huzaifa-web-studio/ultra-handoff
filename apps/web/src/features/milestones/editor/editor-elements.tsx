@@ -236,7 +236,7 @@ export function LinkElement(props: PlateElementProps) {
 			as="a"
 			{...anchorProps}
 			className={cn(
-				"text-app-focus underline underline-offset-4 hover:text-app-text",
+				"cursor-pointer font-medium text-app-focus underline decoration-app-focus/60 underline-offset-4 transition-colors hover:text-app-text hover:decoration-app-text",
 				props.className,
 			)}
 		/>

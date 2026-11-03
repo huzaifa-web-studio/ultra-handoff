@@ -27,6 +27,7 @@ import {
 } from "@platejs/basic-nodes/react";
 import { DndPlugin } from "@platejs/dnd";
 import { IndentPlugin } from "@platejs/indent/react";
+import { LinkRules } from "@platejs/link";
 import { LinkPlugin } from "@platejs/link/react";
 import {
 	BulletedListRules,
@@ -63,6 +64,30 @@ import {
 	TaskListElement,
 	UnderlineLeaf,
 } from "./editor-elements";
+
+/**
+ * Turn a bare domain into an https URL for autolinking.
+ *
+ * Why: Plate's default `isUrl` requires a scheme, so pasting `example.com`
+ * leaves it as plain text. Returning the href here keeps the visible text as
+ * typed while the anchor points at the secure URL.
+ *
+ * Returning undefined means "use the text unchanged", which is what a value
+ * that already carries a scheme should do.
+ */
+function autolinkHref(text: string): string | undefined {
+	const value = text.trim();
+
+	if (value.length === 0) return undefined;
+	// Already a full URL, mailto or tel. Let Plate validate it as is.
+	if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return undefined;
+	// A host with at least one dot, optionally with a path. No spaces allowed.
+	if (!/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(value)) {
+		return undefined;
+	}
+
+	return `https://${value}`;
+}
 
 /** The plugins passed to `usePlateEditor`. */
 export const milestoneEditorPlugins = [
@@ -133,8 +158,18 @@ export const milestoneEditorPlugins = [
 	StrikethroughPlugin.withComponent(StrikethroughLeaf),
 	CodePlugin.withComponent(CodeLeaf),
 
-	// Links
-	LinkPlugin.withComponent(LinkElement),
+	// Links. The autolink rules turn a pasted or typed URL into a link as soon
+	// as the action completes, so the writer never has to open the link prompt
+	// to confirm what the browser already treats as a URL.
+	LinkPlugin.configure({
+		inputRules: [
+			LinkRules.markdown(),
+			LinkRules.autolink({ variant: "paste" }),
+			LinkRules.autolink({ variant: "space" }),
+			LinkRules.autolink({ variant: "break" }),
+		],
+		options: { getUrlHref: autolinkHref },
+	}).withComponent(LinkElement),
 ];
 
 /**
