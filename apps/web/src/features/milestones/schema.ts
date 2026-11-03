@@ -217,7 +217,12 @@ export function describeDueDate(
 	return formatDate(`${day}T00:00:00`);
 }
 
-/** Format a start and due pair for the date field trigger. */
+/**
+ * Format a start and due pair for the date field trigger.
+ *
+ * A one sided schedule is named so the trigger does not read as a broken
+ * range, for example "Start 3 Nov" instead of "3 Nov - No due date".
+ */
 export function describeDateRange(
 	startDate: string | null,
 	dueDate: string | null,
@@ -227,10 +232,13 @@ export function describeDateRange(
 
 	if (!startDay && !dueDay) return "No dates";
 
-	const start = startDay ? formatDate(`${startDay}T00:00:00`) : "No start";
-	const due = dueDay ? formatDate(`${dueDay}T00:00:00`) : "No due date";
+	const start = startDay ? formatDate(`${startDay}T00:00:00`) : null;
+	const due = dueDay ? formatDate(`${dueDay}T00:00:00`) : null;
 
-	return `${start} - ${due}`;
+	if (start && due) return `${start} - ${due}`;
+	if (start) return `Start ${start}`;
+
+	return `Due ${due}`;
 }
 
 /**

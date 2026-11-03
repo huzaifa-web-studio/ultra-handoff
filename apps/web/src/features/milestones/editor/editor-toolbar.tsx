@@ -26,6 +26,7 @@ import {
 	SelectValue,
 } from "@org/ui/components/select";
 import { Tooltip, TooltipTrigger } from "@org/ui/components/tooltip";
+import { useIndentButton, useOutdentButton } from "@platejs/indent/react";
 import { upsertLink } from "@platejs/link";
 import {
 	useListToolbarButton,
@@ -35,6 +36,8 @@ import { cn } from "cn";
 import {
 	BoldIcon,
 	CodeIcon,
+	IndentDecreaseIcon,
+	IndentIncreaseIcon,
 	ItalicIcon,
 	LinkIcon,
 	ListIcon,
@@ -143,6 +146,43 @@ function ListButton({
 			}}
 		>
 			{children}
+		</ToolbarButton>
+	);
+}
+
+/** Indent the current block. */
+function IndentButton() {
+	const { props } = useIndentButton();
+	const editor = useEditorRef();
+
+	return (
+		<ToolbarButton
+			label="Indent"
+			onPress={() => {
+				props.onClick();
+				// Keep the contenteditable focused so the user can keep typing.
+				editor.tf.focus();
+			}}
+		>
+			<IndentIncreaseIcon aria-hidden />
+		</ToolbarButton>
+	);
+}
+
+/** Outdent the current block. */
+function OutdentButton() {
+	const { props } = useOutdentButton();
+	const editor = useEditorRef();
+
+	return (
+		<ToolbarButton
+			label="Outdent"
+			onPress={() => {
+				props.onClick();
+				editor.tf.focus();
+			}}
+		>
+			<IndentDecreaseIcon aria-hidden />
 		</ToolbarButton>
 	);
 }
@@ -307,6 +347,9 @@ export function EditorToolbar() {
 			<ListButton nodeType="ol" label="Numbered list">
 				<ListOrderedIcon aria-hidden />
 			</ListButton>
+
+			<OutdentButton />
+			<IndentButton />
 
 			<LinkButton />
 

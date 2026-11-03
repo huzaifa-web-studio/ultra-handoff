@@ -14,13 +14,17 @@
  * The value stays local to the editor while typing; the parent debounces the
  * save. Sending a new `initialValue` on every keystroke would fight the cursor.
  *
+ * Tab and Shift+Tab are handled by the indent plugin registered in editor-kit,
+ * so they indent and outdent the current block instead of leaving the field.
+ * Escape blurs the editor, which keeps Tab from becoming a keyboard trap.
+ *
  * Used by: features/milestones/milestone-detail-panel.tsx.
  */
 
 import type { Value } from "platejs";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { PlateStatic } from "platejs/static";
-import { useState } from "react";
+import { type KeyboardEvent, useState } from "react";
 
 import { EMPTY_EDITOR_VALUE, milestoneEditorPlugins } from "./editor-kit";
 import { EditorToolbar } from "./editor-toolbar";
@@ -36,6 +40,20 @@ function toEditorValue(value: unknown[]): Value {
 	if (value.length === 0) return structuredClone(EMPTY_EDITOR_VALUE) as Value;
 
 	return structuredClone(value) as Value;
+}
+
+/**
+ * Let keyboard users leave the editor.
+ *
+ * Tab is now claimed for block indentation, so Escape is the documented way
+ * out. Blurring hands focus back to the document, where Tab moves to the next
+ * control again, which is what keeps the editor from being a keyboard trap.
+ */
+function handleEditorKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+	if (event.key !== "Escape") return;
+	if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+	event.currentTarget.blur();
 }
 
 export function MilestoneEditor({
@@ -64,8 +82,12 @@ export function MilestoneEditor({
 			{!readOnly && <EditorToolbar />}
 			<PlateContent
 				aria-label={ariaLabel}
+				onKeyDown={handleEditorKeyDown}
 				placeholder="Write the details, the expected outcome, or anything the assignee needs."
-				className="min-h-40 w-full cursor-text px-3 py-3 text-sm text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
+				// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`, so
+				// the editor has to restate it. Without it the browser collapses
+				// spaces as they are typed and the text looks trimmed on screen.
+				className="min-h-40 w-full cursor-text px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
 				disableDefaultStyles
 			/>
 		</Plate>
@@ -95,7 +117,9 @@ export function MilestoneEditorStatic({
 		<PlateStatic
 			editor={editor}
 			aria-label={ariaLabel}
-			className="px-3 py-3 text-sm text-app-text"
+			// Match the editable surface, so a body with deliberate spacing is
+			// shown exactly as it was written.
+			className="px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text"
 		/>
 	);
 }

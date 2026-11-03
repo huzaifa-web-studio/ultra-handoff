@@ -51,6 +51,12 @@ const ALLOWED_MARKS = new Set([
 	"code",
 ]);
 
+/** Block types that may carry an indent level. */
+const INDENTABLE_BLOCK_TYPES = new Set(["p", "h2", "h3", "blockquote"]);
+
+/** Highest indent level accepted from a saved document. */
+const MAX_INDENT = 8;
+
 /** Link protocols that are safe to render as a clickable anchor. */
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
@@ -163,6 +169,14 @@ function sanitizeNode(
 	if (children.length === 0) children.push({ text: "" });
 
 	const element: Record<string, unknown> = { type, children };
+
+	// Indentation is a single bounded integer on supported block types. It
+	// changes only spacing, so an arbitrary number written by a crafted request
+	// is not allowed to survive the round trip.
+	if (INDENTABLE_BLOCK_TYPES.has(type) && Number.isInteger(node.indent)) {
+		const indent = node.indent as number;
+		if (indent >= 1 && indent <= MAX_INDENT) element.indent = indent;
+	}
 
 	if (type === "a" || rawType === "a") {
 		const url = safeUrl(node.url);

@@ -25,6 +25,7 @@ import {
 	StrikethroughPlugin,
 	UnderlinePlugin,
 } from "@platejs/basic-nodes/react";
+import { IndentPlugin } from "@platejs/indent/react";
 import { LinkPlugin } from "@platejs/link/react";
 import { BulletedListRules, OrderedListRules } from "@platejs/list-classic";
 import {
@@ -60,6 +61,29 @@ export const milestoneEditorPlugins = [
 	H2Plugin.withComponent(H2Element),
 	H3Plugin.withComponent(H3Element),
 	BlockquotePlugin.withComponent(BlockquoteElement),
+
+	// Block indentation. Ordered before the list plugin so the list handler
+	// runs first and can nest a list item, then fall through to indentation.
+	// The sanitizer only keeps `indent` on the block types listed here, so a
+	// list keeps nesting structurally and plain text is never corrupted.
+	//
+	// The inject object spells out the default node props as well as the extra
+	// block types, so the plugin keeps mapping `indent` to `marginLeft`.
+	IndentPlugin.configure({
+		inject: {
+			isBlock: true,
+			nodeProps: {
+				nodeKey: "indent",
+				styleKey: "marginLeft",
+				transformNodeValue: ({ getOptions, nodeValue }) => {
+					const { offset = 24, unit = "px" } = getOptions();
+					return `${String(nodeValue * offset)}${unit}`;
+				},
+			},
+			targetPlugins: ["p", "h2", "h3", "blockquote"],
+		},
+		options: { indentMax: 8, offset: 24, unit: "px" },
+	}),
 
 	// Lists. `ListPlugin` carries the normalisation and the toggle behaviour,
 	// the two list plugins only register the wrappers. Without ListPlugin the
