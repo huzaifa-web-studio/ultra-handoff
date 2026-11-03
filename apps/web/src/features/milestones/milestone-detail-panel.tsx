@@ -91,6 +91,7 @@ function MetaField({
  */
 export function MilestoneDetailPanel({
 	orgSlug,
+	organizationId,
 	projectId,
 	milestoneId,
 	members,
@@ -99,6 +100,7 @@ export function MilestoneDetailPanel({
 	onDeleted,
 }: {
 	orgSlug: string;
+	organizationId: string;
 	projectId: string;
 	milestoneId: string | null;
 	members: AssignableMember[];
@@ -166,6 +168,7 @@ export function MilestoneDetailPanel({
 	return (
 		<MilestoneDetailContent
 			orgSlug={orgSlug}
+			organizationId={organizationId}
 			projectId={projectId}
 			milestone={query.data.milestone}
 			viewer={query.data.viewer}
@@ -180,6 +183,7 @@ export function MilestoneDetailPanel({
 /** The loaded detail pane. */
 function MilestoneDetailContent({
 	orgSlug,
+	organizationId,
 	projectId,
 	milestone,
 	viewer,
@@ -189,6 +193,7 @@ function MilestoneDetailContent({
 	onDeleted,
 }: {
 	orgSlug: string;
+	organizationId: string;
 	projectId: string;
 	milestone: MilestoneDetail;
 	viewer: MilestoneViewer;
@@ -501,6 +506,8 @@ function MilestoneDetailContent({
 									initialValue={milestone.description}
 									onChange={(value) => saveBody.schedule(value)}
 									ariaLabel="Milestone details"
+									organizationId={organizationId}
+									organizationSlug={orgSlug}
 								/>
 							) : milestone.description.length > 0 ? (
 								<MilestoneEditorStatic

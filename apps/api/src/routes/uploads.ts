@@ -13,7 +13,7 @@ import { Elysia, t } from "elysia";
 import { auth } from "../auth/auth";
 import { canEditOrganization } from "../auth/permissions";
 import { authMacro } from "../auth/plugin";
-import { objectUrl, UPLOAD_PURPOSES } from "../lib/storage";
+import { objectUrl, UPLOAD_POLICIES, UPLOAD_PURPOSES } from "../lib/storage";
 import {
 	enqueueUploadVerification,
 	waitForUploadVerification,
@@ -61,10 +61,10 @@ export const uploadRoutes = new Elysia()
 			// touched. The check lives here rather than in the service because
 			// it is an HTTP permission decision, and the same check runs again
 			// on completion in case the role changed in between.
-			if (
-				body.purpose === "organization-logo" ||
-				body.purpose === "project-logo"
-			) {
+			//
+			// The policy table decides which purposes are organization scoped,
+			// so a new purpose is covered without editing this condition.
+			if (UPLOAD_POLICIES[body.purpose].scopedTo === "organization") {
 				if (!organizationId) {
 					return status(400, {
 						message: "An organization is required for this upload",
@@ -79,9 +79,10 @@ export const uploadRoutes = new Elysia()
 					});
 				}
 
-				// A logo is a settings change. A project image is not: any
-				// workspace member may upload one, and attaching it still
-				// requires project edit permission on the project route.
+				// A logo is a settings change. A project image or a milestone
+				// image is not: any workspace member may upload one, and
+				// attaching it still requires edit permission on the route that
+				// owns the document.
 				if (
 					body.purpose === "organization-logo" &&
 					!canEditOrganization(role)
@@ -147,10 +148,13 @@ export const uploadRoutes = new Elysia()
 			}
 
 			// The upload was authorized when it was created. Membership may have
-			// changed since then, so project images are re-checked here. The URL
-			// itself grants nothing: attaching it to a project still requires a
-			// project owner or admin on the project route.
-			if (latest.purpose === "project-logo") {
+			// changed since then, so project and milestone images are re-checked
+			// here. The URL itself grants nothing: attaching it to a milestone
+			// still requires edit permission on the milestone route.
+			if (
+				latest.purpose === "project-logo" ||
+				latest.purpose === "milestone-image"
+			) {
 				const organizationId = latest.organizationId;
 
 				if (!organizationId) {

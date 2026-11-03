@@ -45,6 +45,7 @@ const ALLOWED_BLOCK_TYPES = new Set([
 	"code_block",
 	"code_line",
 	"hr",
+	"img",
 ]);
 
 /** Marks the editor toolbar can toggle. */
@@ -64,6 +65,9 @@ const MAX_INDENT = 8;
 
 /** Cell types that can carry a row or column span. */
 const TABLE_CELL_TYPES = new Set(["td", "th"]);
+
+/** Longest image alt text stored. A short caption is enough for a screen reader. */
+const MAX_IMAGE_ALT_LENGTH = 200;
 
 /** Largest row or column span accepted. */
 const MAX_TABLE_SPAN = 20;
@@ -116,6 +120,43 @@ function safeUrl(url: unknown): string | undefined {
 		return ALLOWED_PROTOCOLS.has(new URL(trimmed).protocol)
 			? trimmed
 			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Keep an image source only when it is safe to render.
+ *
+ * Uploaded images are served from our own origin through `/files/...`, which
+ * the editor stores as a relative URL, so that form is allowed alongside an
+ * absolute http or https URL. Anything else, including `data:`, `blob:` and
+ * protocol relative values, is dropped.
+ */
+function safeImageUrl(url: unknown): string | undefined {
+	if (typeof url !== "string") return undefined;
+
+	const trimmed = url.trim();
+	if (trimmed.length === 0) return undefined;
+
+	// Uploaded objects are the only relative form the editor produces. Reject
+	// traversal, whitespace and a protocol relative value up front.
+	if (trimmed.startsWith("/files/")) {
+		if (
+			trimmed.includes("..") ||
+			trimmed.includes("\\") ||
+			/\s/.test(trimmed)
+		) {
+			return undefined;
+		}
+
+		return trimmed;
+	}
+
+	try {
+		const protocol = new URL(trimmed).protocol;
+
+		return protocol === "http:" || protocol === "https:" ? trimmed : undefined;
 	} catch {
 		return undefined;
 	}
@@ -188,6 +229,33 @@ function sanitizeNode(
 	// An unknown type is downgraded rather than dropped, so a plugin that is
 	// added later and then removed cannot silently eat a document.
 	const type = ALLOWED_BLOCK_TYPES.has(rawType) ? rawType : "p";
+
+	// An image is a void block with no text. It is kept only when its source
+	// is safe to render; an image that cannot load is dropped rather than
+	// turned into an empty paragraph the writer never wrote.
+	if (type === "img") {
+		const url = safeImageUrl(node.url);
+		if (!url) return null;
+
+		const image: Record<string, unknown> = {
+			type: "img",
+			url,
+			// Plate requires every element to have a child, even when the node
+			// renders as void. The renderer keeps it invisible.
+			children: [{ text: "" }],
+		};
+
+		if (typeof node.alt === "string") {
+			const alt = node.alt.trim().slice(0, MAX_IMAGE_ALT_LENGTH);
+			if (alt.length > 0) image.alt = alt;
+		}
+
+		// Keep a line break in the plain text mirror so a preview does not run
+		// the text on either side of the image together.
+		state.text.push("\n");
+
+		return image;
+	}
 
 	const rawChildren = Array.isArray(node.children) ? node.children : [];
 	const children: unknown[] = [];

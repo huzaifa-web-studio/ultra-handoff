@@ -19,6 +19,9 @@ export const MAX_ORGANIZATION_LOGO_BYTES = 5 * 1024 * 1024;
 /** Project logos use the same image rules and ceiling as organization logos. */
 export const MAX_PROJECT_LOGO_BYTES = 5 * 1024 * 1024;
 
+/** Images embedded in a milestone description use the same image rules. */
+export const MAX_MILESTONE_IMAGE_BYTES = 5 * 1024 * 1024;
+
 /**
  * The set of purposes the API currently accepts.
  *
@@ -29,6 +32,7 @@ export const UPLOAD_PURPOSES = [
 	"avatar",
 	"organization-logo",
 	"project-logo",
+	"milestone-image",
 ] as const;
 
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
@@ -103,6 +107,15 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 		// Separate from the organization logo so project images can be found
 		// and cleaned up without touching the logo object.
 		prefix: (scope) => `${organizationScopePrefix(scope)}/projects`,
+		label: "PNG or JPG up to 5 MB",
+	},
+	"milestone-image": {
+		maxBytes: MAX_MILESTONE_IMAGE_BYTES,
+		allowedMime: ["image/png", "image/jpeg"],
+		scopedTo: "organization",
+		// One folder per tenant, separate from logos, so an image that is no
+		// longer referenced by any milestone can be found by prefix later.
+		prefix: (scope) => `${organizationScopePrefix(scope)}/milestones`,
 		label: "PNG or JPG up to 5 MB",
 	},
 };

@@ -18,7 +18,11 @@
 
 import { api, readApiError } from "./api";
 
-export type UploadPurpose = "avatar" | "organization-logo" | "project-logo";
+export type UploadPurpose =
+	| "avatar"
+	| "organization-logo"
+	| "project-logo"
+	| "milestone-image";
 
 export type FilePolicy = {
 	maxBytes: number;
@@ -47,6 +51,12 @@ export const FILE_POLICIES: Record<UploadPurpose, FilePolicy> = {
 		mime: ["image/png", "image/jpeg"],
 		accept: "image/png,image/jpeg",
 		label: "PNG or JPG up to 5 MB, square recommended",
+	},
+	"milestone-image": {
+		maxBytes: 5 * 1024 * 1024,
+		mime: ["image/png", "image/jpeg"],
+		accept: "image/png,image/jpeg",
+		label: "PNG or JPG up to 5 MB",
 	},
 };
 

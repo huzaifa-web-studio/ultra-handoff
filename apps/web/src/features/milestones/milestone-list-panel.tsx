@@ -84,6 +84,7 @@ function countForFilter(
 
 export function MilestoneListPanel({
 	orgSlug,
+	organizationId,
 	projectId,
 	members,
 	filters,
@@ -105,6 +106,7 @@ export function MilestoneListPanel({
 	registerRowRef,
 }: {
 	orgSlug: string;
+	organizationId: string;
 	projectId: string;
 	members: AssignableMember[];
 	filters: MilestoneFilters;
@@ -362,6 +364,7 @@ export function MilestoneListPanel({
 			{createOpen && (
 				<MilestoneCreateDialog
 					orgSlug={orgSlug}
+					organizationId={organizationId}
 					projectId={projectId}
 					members={members}
 					isOpen={createOpen}

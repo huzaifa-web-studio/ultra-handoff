@@ -8,9 +8,11 @@
  * server sanitizer has to understand. This list is the smallest set that covers
  * writing a usable brief: structure, emphasis, lists and links.
  *
- * What is deliberately absent: tables, images, media, mentions, code blocks,
- * AI and collaboration. They can be added later; the sanitizer already refuses
- * node types it does not know, so an old document cannot smuggle one in.
+ * What is deliberately absent: media, mentions, code blocks, AI and
+ * collaboration. Images use one small custom node instead of the media kit, so
+ * there is no caption, resize or second upload surface to maintain. The
+ * sanitizer already refuses node types it does not know, so an old document
+ * cannot smuggle one in.
  *
  * Used by: features/milestones/editor/milestone-editor.tsx.
  */
@@ -61,6 +63,7 @@ import {
 	CodeLeaf,
 	H2Element,
 	H3Element,
+	ImageElement,
 	ItalicLeaf,
 	LinkElement,
 	ListItemContentElement,
@@ -138,6 +141,18 @@ const TrailingParagraphPlugin = createPlatePlugin({
 	},
 }));
 
+/**
+ * An image block.
+ *
+ * A custom node instead of `@platejs/media`: the editor needs one image with a
+ * stored URL, not captions, resizing and a captions toolbar. Keeping it custom
+ * also means the server sanitizer understands the exact shape it stores.
+ */
+const ImagePlugin = createPlatePlugin({
+	key: "img",
+	node: { isElement: true, isVoid: true },
+}).withComponent(ImageElement);
+
 /** The plugins passed to `usePlateEditor`. */
 export const milestoneEditorPlugins = [
 	// Blocks
@@ -145,6 +160,7 @@ export const milestoneEditorPlugins = [
 	H2Plugin.withComponent(H2Element),
 	H3Plugin.withComponent(H3Element),
 	BlockquotePlugin.withComponent(BlockquoteElement),
+	ImagePlugin,
 
 	// Block indentation. Ordered before the list plugin so the list handler
 	// runs first and can nest a list item, then fall through to indentation.

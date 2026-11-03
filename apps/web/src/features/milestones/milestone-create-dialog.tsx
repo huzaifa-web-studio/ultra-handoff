@@ -47,6 +47,7 @@ import {
 
 export function MilestoneCreateDialog({
 	orgSlug,
+	organizationId,
 	projectId,
 	members,
 	isOpen,
@@ -54,6 +55,7 @@ export function MilestoneCreateDialog({
 	onCreated,
 }: {
 	orgSlug: string;
+	organizationId: string;
 	projectId: string;
 	members: AssignableMember[];
 	isOpen: boolean;
@@ -232,6 +234,8 @@ export function MilestoneCreateDialog({
 									descriptionRef.current = value;
 								}}
 								ariaLabel="Milestone details"
+								organizationId={organizationId}
+								organizationSlug={orgSlug}
 							/>
 						</div>
 					</div>

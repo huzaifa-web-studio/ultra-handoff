@@ -29,6 +29,7 @@ import {
 } from "platejs/react";
 import { Children, type ReactNode } from "react";
 
+import { resolveAssetUrl } from "#/lib/files";
 import { useEditorStatic } from "./editor-view-context";
 
 /** Shared body text style. */
@@ -240,6 +241,53 @@ export function LinkElement(props: PlateElementProps) {
 				props.className,
 			)}
 		/>
+	);
+}
+
+/**
+ * An image embedded in the body.
+ *
+ * The URL is validated on the server before it is stored. The wrapper is not
+ * editable, so a click selects the image as one block and the browser never
+ * tries to place a caret inside it. The element's single text child is what
+ * Slate requires for a void node and stays invisible.
+ */
+export function ImageElement(props: PlateElementProps) {
+	const url = (props.element as { url?: unknown }).url;
+	const alt = (props.element as { alt?: unknown }).alt;
+	// A `/files/...` value is relative to the API origin, not the web origin.
+	// Resolving it here keeps the stored value portable while the browser
+	// requests the bytes from the server that actually serves them.
+	const src = resolveAssetUrl(typeof url === "string" ? url : null);
+
+	// A stored image without a usable URL cannot render. The sanitizer drops
+	// those, so this only guards a document written by an older build.
+	if (!src) {
+		return (
+			<PlateElement
+				{...props}
+				as="div"
+				className={cn("my-1", props.className)}
+			/>
+		);
+	}
+
+	return (
+		<PlateElement
+			{...props}
+			as="figure"
+			className={cn("my-3", props.className)}
+		>
+			<div contentEditable={false} className="select-none">
+				<img
+					src={src}
+					alt={typeof alt === "string" ? alt : ""}
+					loading="lazy"
+					className="block h-auto max-h-[32rem] w-auto max-w-full border border-app-border bg-app-panel-subtle object-contain"
+				/>
+			</div>
+			{props.children}
+		</PlateElement>
 	);
 }
 

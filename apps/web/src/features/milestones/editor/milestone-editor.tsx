@@ -69,11 +69,16 @@ export function MilestoneEditor({
 	onChange,
 	readOnly = false,
 	ariaLabel,
+	organizationId,
+	organizationSlug,
 }: {
 	initialValue: unknown[];
 	onChange: (value: unknown[]) => void;
 	readOnly?: boolean;
 	ariaLabel: string;
+	/** Where an inline image is stored. Omit to hide the image item. */
+	organizationId?: string;
+	organizationSlug?: string;
 }) {
 	// Created once for this mounted instance. The parent key handles resets.
 	const editor = usePlateEditor({
@@ -85,7 +90,10 @@ export function MilestoneEditor({
 	});
 
 	return (
-		<BlockMenuProvider>
+		<BlockMenuProvider
+			organizationId={organizationId}
+			organizationSlug={organizationSlug}
+		>
 			<Plate
 				editor={editor}
 				readOnly={readOnly}

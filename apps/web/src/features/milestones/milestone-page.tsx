@@ -63,6 +63,7 @@ export function MilestonePage({
 }) {
 	const projectQuery = useProjectDetailBySlug(orgSlug, projectSlug);
 	const projectId = projectQuery.data?.project.id ?? "";
+	const organizationId = projectQuery.data?.organizationId ?? "";
 	const members = projectQuery.data?.members ?? [];
 
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
@@ -163,6 +164,7 @@ export function MilestonePage({
 	const list = (
 		<MilestoneListPanel
 			orgSlug={orgSlug}
+			organizationId={organizationId}
 			projectId={projectId}
 			members={members}
 			filters={{ ...filters, search }}
@@ -218,6 +220,7 @@ export function MilestonePage({
 								<MilestoneDetailPanel
 									key={`${selectedId ?? "none"}-${detailVersion}`}
 									orgSlug={orgSlug}
+									organizationId={organizationId}
 									projectId={projectId}
 									milestoneId={selectedId}
 									members={members}
@@ -252,6 +255,7 @@ export function MilestonePage({
 						<MilestoneDetailPanel
 							key={`${selectedId}-${detailVersion}`}
 							orgSlug={orgSlug}
+							organizationId={organizationId}
 							projectId={projectId}
 							milestoneId={selectedId}
 							members={members}

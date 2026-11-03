@@ -32,6 +32,7 @@ import {
 	GripVerticalIcon,
 	Heading2Icon,
 	Heading3Icon,
+	ImageIcon,
 	ListIcon,
 	ListOrderedIcon,
 	ListTodoIcon,
@@ -52,6 +53,10 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { toast } from "sonner";
+
+import { beginOrganizationOperation } from "#/features/organization/switch-guard";
+import { FILE_POLICIES, uploadFile, validateUploadFile } from "#/lib/upload";
 
 /** Blocks the insert menu can create. */
 type InsertKind = "table" | "checklist" | "h2" | "h3" | "quote" | "ul" | "ol";
@@ -60,6 +65,8 @@ type InsertKind = "table" | "checklist" | "h2" | "h3" | "quote" | "ul" | "ol";
 type BlockMenuState = {
 	openId: string | null;
 	setOpenId: Dispatch<SetStateAction<string | null>>;
+	/** Where an uploaded image is stored. Null when the host has no tenant. */
+	uploadOrganization: { id: string; slug: string } | null;
 };
 
 const BlockMenuContext = createContext<BlockMenuState | null>(null);
@@ -70,12 +77,29 @@ const BlockMenuContext = createContext<BlockMenuState | null>(null);
  * Every block owns a trigger, but only one menu may be open at a time. Without
  * this, hovering a second block while a menu is open can mount a second
  * popover and the two fight over the same place on screen.
+ *
+ * The organization is carried here as well because the image item lives inside
+ * a per-block trigger, which is several layers below the editor host.
  */
-export function BlockMenuProvider({ children }: { children: ReactNode }) {
+export function BlockMenuProvider({
+	organizationId,
+	organizationSlug,
+	children,
+}: {
+	organizationId?: string;
+	organizationSlug?: string;
+	children: ReactNode;
+}) {
 	const [openId, setOpenId] = useState<string | null>(null);
+	const uploadOrganization =
+		organizationId && organizationSlug
+			? { id: organizationId, slug: organizationSlug }
+			: null;
 
 	return (
-		<BlockMenuContext.Provider value={{ openId, setOpenId }}>
+		<BlockMenuContext.Provider
+			value={{ openId, setOpenId, uploadOrganization }}
+		>
 			{children}
 		</BlockMenuContext.Provider>
 	);
@@ -137,12 +161,15 @@ function Draggable(props: PlateElementProps) {
 	const { children, element, path } = props;
 	const blockId = String(element.id);
 	const editor = useEditorRef();
-	const { openId, setOpenId } = useBlockMenu();
+	const { openId, setOpenId, uploadOrganization } = useBlockMenu();
 	const menuOpen = openId === blockId;
 	const anotherMenuOpen = openId !== null && !menuOpen;
 	// Pressing the + opens the menu on the press. Without this, the release of
 	// that same press can land on the first item and create it immediately.
 	const openedAt = useRef(0);
+	// The file picker is a real input, so the browser keeps the user gesture
+	// that opened it and can read the chosen file.
+	const imageInputRef = useRef<HTMLInputElement>(null);
 
 	// A block can disappear while it owns the open menu, for example when it is
 	// deleted. Release the shared slot so other blocks are not blocked forever.
@@ -229,6 +256,100 @@ function Draggable(props: PlateElementProps) {
 		editor.tf.focus();
 	}
 
+	/**
+	 * Insert an uploaded image at this line and leave the caret below it.
+	 *
+	 * An image is a void block, so the same empty paragraph rule as a table
+	 * applies: leaving one at the very end would give the writer nowhere to
+	 * continue typing.
+	 */
+	function insertImage(url: string, fileName: string) {
+		// An upload can take a moment, so resolve the block again instead of
+		// trusting the path captured when the picker opened. Slate keeps the
+		// element reference for an untouched block, which is the common case.
+		const anchor = editor.api.findPath(element) ?? path;
+		const isEmptyParagraph =
+			element.type === "p" && editor.api.string(anchor).trim().length === 0;
+		const at = isEmptyParagraph ? anchor : PathApi.next(anchor);
+		// The filename is a useful default description for a screen reader.
+		const alt = fileName
+			.replace(/\.[^.]+$/, "")
+			.trim()
+			.slice(0, 200);
+
+		editor.tf.withoutNormalizing(() => {
+			if (isEmptyParagraph) editor.tf.removeNodes({ at: anchor });
+
+			editor.tf.insertNodes(
+				{ type: "img", url, alt, children: [{ text: "" }] },
+				{ at },
+			);
+
+			const afterImage = PathApi.next(at);
+			if (!editor.api.node(afterImage)) {
+				editor.tf.insertNodes(
+					{ type: "p", children: [{ text: "" }] },
+					{ at: afterImage },
+				);
+			}
+		});
+
+		const below = editor.api.start(PathApi.next(at));
+		if (below) editor.tf.select(below);
+
+		setOpenId(null);
+		editor.tf.focus();
+	}
+
+	/**
+	 * Upload a picked file and add it to the document.
+	 *
+	 * The upload uses the same presigned pipeline as the logo controls. A
+	 * progress toast keeps feedback visible after the menu closes, and the
+	 * organization guard stops a workspace switch during a slow upload.
+	 */
+	async function handleImageFile(file: File) {
+		if (!uploadOrganization) return;
+
+		const problem = validateUploadFile(file, "milestone-image");
+		if (problem) {
+			toast.error(problem);
+			return;
+		}
+
+		// The picker closes the menu, and clearing the shared slot now means
+		// the next + opens normally instead of thinking its menu is open.
+		setOpenId(null);
+
+		const toastId = toast.loading("Uploading image...");
+		const operation = beginOrganizationOperation({
+			organizationId: uploadOrganization.id,
+			organizationSlug: uploadOrganization.slug,
+			reason: "Uploading a milestone image",
+		});
+
+		try {
+			const uploaded = await uploadFile({
+				file,
+				purpose: "milestone-image",
+				organizationId: uploadOrganization.id,
+				onProgress: (percent) => {
+					toast.loading(`Uploading image ${percent}%`, { id: toastId });
+				},
+			});
+
+			insertImage(uploaded.url, file.name);
+			toast.success("Image added.", { id: toastId });
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Could not upload the image.",
+				{ id: toastId },
+			);
+		} finally {
+			operation.end();
+		}
+	}
+
 	return (
 		<div
 			className={cn(
@@ -278,6 +399,15 @@ function Draggable(props: PlateElementProps) {
 							<TableIcon aria-hidden />
 							Table
 						</DropdownMenuItem>
+						{uploadOrganization && (
+							<DropdownMenuItem
+								id="image"
+								onAction={() => imageInputRef.current?.click()}
+							>
+								<ImageIcon aria-hidden />
+								Image
+							</DropdownMenuItem>
+						)}
 						<DropdownMenuItem
 							id="checklist"
 							onAction={() => insert("checklist")}
@@ -307,6 +437,21 @@ function Draggable(props: PlateElementProps) {
 						</DropdownMenuItem>
 					</DropdownMenu>
 				</DropdownMenuTrigger>
+
+				<input
+					ref={imageInputRef}
+					type="file"
+					accept={FILE_POLICIES["milestone-image"].accept}
+					aria-hidden
+					tabIndex={-1}
+					className="hidden"
+					onChange={(event) => {
+						const file = event.target.files?.[0];
+						// Reset first, so picking the same file twice still fires.
+						event.target.value = "";
+						if (file) void handleImageFile(file);
+					}}
+				/>
 
 				<div
 					ref={handleRef}
