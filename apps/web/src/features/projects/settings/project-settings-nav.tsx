@@ -5,6 +5,12 @@
  * sidebar, and on small screens the same links become a tab bar. The links are
  * routes, so the URL changes, deep links work and the settings tab stays active.
  *
+ * Why it is sticky: the section content scrolls inside the project workspace
+ * column, and the navigation must stay reachable while it does. On desktop the
+ * sidebar keeps its resting position (the offset matches the scroll container's
+ * top padding, so it does not jump). On small screens the tab bar pins to the
+ * top and paints its own canvas background so content cannot show through it.
+ *
  * Used by: project-settings-layout.tsx.
  */
 
@@ -47,10 +53,14 @@ export function ProjectSettingsNav({
 		<nav
 			aria-label="Project settings"
 			className={cn(
-				// Small screens: a horizontal tab bar.
-				"flex gap-1 overflow-x-auto border-b border-app-border",
-				// Desktop: a vertical settings sidebar.
-				"md:flex-col md:self-start md:gap-1 md:overflow-visible md:border md:bg-app-panel md:p-2",
+				// Small screens: a horizontal tab bar pinned under the project tabs.
+				// The background is required while stuck, otherwise rows scroll
+				// through the bar.
+				"sticky top-0 z-20 flex gap-1 overflow-x-auto border-b border-app-border bg-app-canvas",
+				// Desktop: a vertical settings sidebar. `top-6` matches the scroll
+				// container's `pt-6`, so the panel starts at its natural position
+				// and simply stops there instead of jumping on the first scroll.
+				"md:sticky md:top-6 md:flex-col md:self-start md:gap-1 md:overflow-visible md:border md:bg-app-panel md:p-2",
 			)}
 		>
 			{links.map((link) => {
