@@ -228,19 +228,6 @@ export const ImageElement = withHOC(
 						<ResizeHandle options={{ direction: "right" }} />
 					</Resizable>
 
-					{!readOnly && selected && (
-						<Button
-							{...remove.props}
-							type="button"
-							variant="surface"
-							size="icon-xs"
-							aria-label="Remove image"
-							className="absolute top-1 right-1 z-30"
-						>
-							<Trash2Icon aria-hidden />
-						</Button>
-					)}
-
 					{/*
 					 * Always rendered, never gated on selection.
 					 *
@@ -250,9 +237,17 @@ export const ImageElement = withHOC(
 					 * had to click a second time, and often the focus landed
 					 * on the block instead. A permanently mounted field can be
 					 * clicked once and focused immediately.
+					 *
+					 * The remove button is deliberately rendered after this
+					 * field. When it sat before the caption, selecting or
+					 * deselecting the image added or removed a sibling ahead
+					 * of the textarea, React remounted the textarea, and the
+					 * caret was lost. Keeping the caption at a stable position
+					 * is what lets it keep focus while the image deselects.
 					 */}
 					{!readOnly && (
 						<figcaption
+							key="caption"
 							data-block-side-ignore
 							style={{ width }}
 							className={cn(
@@ -269,9 +264,25 @@ export const ImageElement = withHOC(
 								readOnly={readOnly}
 								aria-label="Image caption"
 								placeholder="Add a caption..."
+								onMouseDown={(event) => event.stopPropagation()}
+								onClick={(event) => event.stopPropagation()}
 								className="w-full resize-none border-0 bg-transparent p-0 text-xs text-app-text-muted outline-none placeholder:text-app-text-muted/70"
 							/>
 						</figcaption>
+					)}
+
+					{!readOnly && selected && (
+						<Button
+							key="remove"
+							{...remove.props}
+							type="button"
+							variant="surface"
+							size="icon-xs"
+							aria-label="Remove image"
+							className="absolute top-1 right-1 z-30"
+						>
+							<Trash2Icon aria-hidden />
+						</Button>
 					)}
 				</figure>
 
