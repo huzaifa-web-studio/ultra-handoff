@@ -20,6 +20,7 @@ import {
 	type CommentListQuery,
 	createMilestoneComment,
 	deleteMilestoneComment,
+	getMilestoneCommentThread,
 	listMilestoneComments,
 	updateMilestoneComment,
 } from "../services/comment.service";
@@ -117,6 +118,25 @@ export const commentRoutes = new Elysia({ name: "comments" })
 				),
 			}),
 		},
+	)
+	/** One complete thread, used by the focused comment tab. */
+	.get(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/comments/:commentId/thread",
+		async ({ tenant, status, params }) => {
+			try {
+				return await getMilestoneCommentThread(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					params.commentId,
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not load the discussion."),
+				});
+			}
+		},
+		{ tenant: true, params: commentParams },
 	)
 	/** Change the body of your own comment. */
 	.patch(

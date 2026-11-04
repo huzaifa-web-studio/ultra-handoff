@@ -23,7 +23,12 @@ import {
 } from "@org/ui/components/message";
 import { Tooltip, TooltipTrigger } from "@org/ui/components/tooltip";
 import { cn } from "cn";
-import { PencilIcon, ReplyIcon, Trash2Icon } from "lucide-react";
+import {
+	PencilIcon,
+	ReplyIcon,
+	SquareArrowOutUpRightIcon,
+	Trash2Icon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { UserAvatar } from "#/components/user-avatar";
@@ -81,6 +86,7 @@ export function CommentItem({
 	isReply = false,
 	canComment,
 	onReply,
+	onOpenTab,
 	onRequestDelete,
 }: {
 	orgSlug: string;
@@ -94,6 +100,8 @@ export function CommentItem({
 	canComment: boolean;
 	/** Present on a root only. Replies are one level deep. */
 	onReply?: () => void;
+	/** Present on a root in the main comments tab, not inside a focused tab. */
+	onOpenTab?: () => void;
 	onRequestDelete: (comment: Comment) => void;
 }) {
 	const update = useUpdateComment(orgSlug, projectId, milestoneId);
@@ -222,6 +230,12 @@ export function CommentItem({
 								{onReply && canComment && (
 									<CommentAction label="Reply" onPress={onReply}>
 										<ReplyIcon aria-hidden />
+									</CommentAction>
+								)}
+
+								{onOpenTab && (
+									<CommentAction label="Open as tab" onPress={onOpenTab}>
+										<SquareArrowOutUpRightIcon aria-hidden />
 									</CommentAction>
 								)}
 

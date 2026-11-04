@@ -34,6 +34,7 @@ import {
 import type { Comment } from "./api";
 import { CommentComposer } from "./comment-composer";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
+import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
 import { useMilestoneComments } from "./hooks";
 
@@ -82,20 +83,6 @@ function writeExpandedThreads(key: string, value: Set<string>): void {
 	}
 }
 
-/** A quiet placeholder while the first page loads. */
-function CommentSkeleton() {
-	return (
-		<div className="flex gap-3">
-			<div className="size-8 shrink-0 animate-pulse rounded-full bg-app-panel-subtle" />
-			<div className="flex flex-1 flex-col gap-2">
-				<div className="h-3 w-40 animate-pulse bg-app-panel-subtle" />
-				<div className="h-3 w-full animate-pulse bg-app-panel-subtle" />
-				<div className="h-3 w-2/3 animate-pulse bg-app-panel-subtle" />
-			</div>
-		</div>
-	);
-}
-
 export function CommentTab({
 	orgSlug,
 	organizationId,
@@ -105,6 +92,7 @@ export function CommentTab({
 	canComment,
 	locked,
 	active,
+	onOpenCommentTab,
 }: {
 	orgSlug: string;
 	organizationId: string;
@@ -116,6 +104,8 @@ export function CommentTab({
 	locked: boolean;
 	/** True while this tab is selected, which is when the list is worth loading. */
 	active: boolean;
+	/** Open a root comment as its own tab. */
+	onOpenCommentTab: (comment: Comment) => void;
 }) {
 	const query = useMilestoneComments(orgSlug, projectId, milestoneId, {
 		enabled: active,
@@ -382,6 +372,7 @@ export function CommentTab({
 						isReplyTarget={replyingTo?.id === thread.comment.id}
 						onToggle={() => toggleThread(thread.comment.id)}
 						onReply={handleReply}
+						onOpenTab={onOpenCommentTab}
 						onRequestDelete={setPendingDelete}
 						registerRef={registerThreadRef}
 					/>

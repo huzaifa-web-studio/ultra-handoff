@@ -83,6 +83,11 @@ export type CommentListResult = {
 	nextCursor: string | null;
 };
 
+/** One complete thread, used by the focused comment tab. */
+export type CommentThreadResult = {
+	thread: CommentThread;
+};
+
 /** The write result every create and delete returns. */
 export type CommentWriteResult = {
 	comment: CommentRow;
@@ -378,6 +383,66 @@ export async function listMilestoneComments(
 					hasMore && pageRoots.length > 0
 						? encodeCursor(pageRoots[pageRoots.length - 1] as CommentRecord)
 						: null,
+			};
+		},
+	);
+}
+
+/**
+ * One complete thread, for the focused comment tab.
+ *
+ * Why a separate read: the list is paged by root, so a comment the reader opened
+ * earlier may not be in the pages currently loaded. This endpoint always returns
+ * the root and every reply, which is what a dedicated tab needs.
+ */
+export async function getMilestoneCommentThread(
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+	commentId: string,
+): Promise<CommentThreadResult> {
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const { access } = await requireMilestoneAccess(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+			);
+			const locked = access.row.archivedAt !== null;
+
+			const root = await loadCommentRecord(tx, tenant, milestoneId, commentId);
+
+			// A reply has no thread of its own. Answering 404 keeps the tab read
+			// honest instead of showing a single reply out of context.
+			if (!root || root.parentId !== null) {
+				throw new APIError("NOT_FOUND", {
+					message: "That discussion no longer exists.",
+				});
+			}
+
+			const replies = await tx
+				.select()
+				.from(comment)
+				.where(
+					and(
+						eq(comment.organizationId, tenant.organizationId),
+						eq(comment.milestoneId, milestoneId),
+						eq(comment.parentId, commentId),
+					),
+				)
+				.orderBy(asc(comment.createdAt), asc(comment.id));
+
+			const people = await loadPeople([root, ...replies]);
+
+			return {
+				thread: {
+					comment: toCommentRow(root, people, tenant.userId, locked),
+					replies: replies.map((reply) =>
+						toCommentRow(reply, people, tenant.userId, locked),
+					),
+				},
 			};
 		},
 	);

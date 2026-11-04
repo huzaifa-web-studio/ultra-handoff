@@ -44,9 +44,13 @@ export function CommentThread({
 	thread,
 	canComment,
 	collapsed,
+	collapsible = true,
+	frameless = false,
+	replyScroll = true,
 	isReplyTarget,
 	onToggle,
 	onReply,
+	onOpenTab,
 	onRequestDelete,
 	registerRef,
 }: {
@@ -59,11 +63,22 @@ export function CommentThread({
 	thread: CommentThreadType;
 	canComment: boolean;
 	collapsed: boolean;
+	/** False in a focused tab, where the whole thread is the point. */
+	collapsible?: boolean;
+	/**
+	 * True in a focused tab: no card outline and no tinted root. The tab is
+	 * already the container, so a second frame only adds noise.
+	 */
+	frameless?: boolean;
+	/** False in a focused tab, where the page scroll shows every reply. */
+	replyScroll?: boolean;
 	/** True while the bottom composer is replying to this thread. */
 	isReplyTarget: boolean;
 	onToggle: () => void;
 	/** Set the main composer's reply target to this root comment. */
 	onReply: (comment: Comment) => void;
+	/** Open this root comment as its own tab. Omitted inside a focused tab. */
+	onOpenTab?: (comment: Comment) => void;
 	onRequestDelete: (comment: Comment) => void;
 	/** Lets the tab scroll this thread into view after a reply is posted. */
 	registerRef: (id: string, element: HTMLLIElement | null) => void;
@@ -99,13 +114,23 @@ export function CommentThread({
 		<li
 			ref={(element) => registerRef(thread.comment.id, element)}
 			className={cn(
-				"border bg-app-panel transition-colors",
-				isReplyTarget
-					? "border-app-focus ring-1 ring-app-focus/30"
-					: "border-app-border",
+				"transition-colors",
+				frameless
+					? "bg-transparent"
+					: cn(
+							"border bg-app-panel",
+							isReplyTarget
+								? "border-app-focus ring-1 ring-app-focus/30"
+								: "border-app-border",
+						),
 			)}
 		>
-			<div className={cn("p-3", isReplyTarget && "bg-app-selected/30")}>
+			<div
+				className={cn(
+					frameless ? "p-0" : "p-3",
+					!frameless && isReplyTarget && "bg-app-selected/30",
+				)}
+			>
 				<CommentItem
 					orgSlug={orgSlug}
 					organizationId={organizationId}
@@ -115,37 +140,42 @@ export function CommentThread({
 					comment={thread.comment}
 					canComment={canComment}
 					onReply={() => onReply(thread.comment)}
+					onOpenTab={onOpenTab ? () => onOpenTab(thread.comment) : undefined}
 					onRequestDelete={onRequestDelete}
 				/>
 			</div>
 
 			{replyCount > 0 && (
 				<>
-					<div className="flex items-center border-t border-app-border px-3 py-1.5">
-						<Button
-							variant="ghost"
-							size="xs"
-							aria-expanded={!collapsed}
-							onPress={onToggle}
-							className="text-app-text-muted"
-						>
-							<ChevronDownIcon
-								className={cn(
-									"transition-transform",
-									collapsed && "-rotate-90",
-								)}
-								aria-hidden
-							/>
-							{replyCount} {replyCount === 1 ? "reply" : "replies"}
-						</Button>
-					</div>
+					{collapsible && (
+						<div className="flex items-center border-t border-app-border px-3 py-1.5">
+							<Button
+								variant="ghost"
+								size="xs"
+								aria-expanded={!collapsed}
+								onPress={onToggle}
+								className="text-app-text-muted"
+							>
+								<ChevronDownIcon
+									className={cn(
+										"transition-transform",
+										collapsed && "-rotate-90",
+									)}
+									aria-hidden
+								/>
+								{replyCount} {replyCount === 1 ? "reply" : "replies"}
+							</Button>
+						</div>
+					)}
 
-					{!collapsed && (
+					{(!collapsible || !collapsed) && (
 						<ol
 							ref={repliesRef}
 							className={cn(
 								"ml-6 flex flex-col gap-3 border-l border-app-border py-3 pl-4 pr-3",
-								repliesOverflow &&
+								!collapsible && !frameless && "border-t",
+								replyScroll &&
+									repliesOverflow &&
 									"max-h-96 overflow-y-auto overscroll-contain",
 							)}
 						>

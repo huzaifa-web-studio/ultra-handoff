@@ -20,6 +20,7 @@ import {
 	type InfiniteData,
 	useInfiniteQuery,
 	useMutation,
+	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
 
@@ -29,9 +30,11 @@ import { milestoneDetailKey, milestonesKey } from "../hooks";
 import {
 	type Comment,
 	type CommentPage,
+	type CommentThreadResponse,
 	createComment,
 	deleteComment,
 	fetchComments,
+	fetchCommentThread,
 	updateComment,
 } from "./api";
 
@@ -51,6 +54,20 @@ export function commentsKey(
 /** One paged discussion. */
 function listKey(orgSlug: string, projectId: string, milestoneId: string) {
 	return [...commentsKey(orgSlug, projectId, milestoneId), "list"] as const;
+}
+
+/** One complete thread, used by the focused comment tab. */
+function threadKey(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	commentId: string,
+) {
+	return [
+		...commentsKey(orgSlug, projectId, milestoneId),
+		"thread",
+		commentId,
+	] as const;
 }
 
 /** The shape react-query stores for the infinite list. */
@@ -143,6 +160,61 @@ function appendToPages(data: CommentPages, next: Comment): CommentPages {
 	};
 }
 
+/** Append a reply to a focused thread cache, when that thread is open. */
+function appendReplyToThread(
+	queryClient: ReturnType<typeof useQueryClient>,
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	comment: Comment,
+): void {
+	if (!comment.parentId) return;
+
+	queryClient.setQueryData<CommentThreadResponse>(
+		threadKey(orgSlug, projectId, milestoneId, comment.parentId),
+		(current) =>
+			current
+				? {
+						thread: {
+							...current.thread,
+							replies: [...current.thread.replies, comment],
+						},
+					}
+				: current,
+	);
+}
+
+/** Replace a comment in a focused thread cache, when that thread is open. */
+function replaceInThread(
+	queryClient: ReturnType<typeof useQueryClient>,
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	comment: Comment,
+): void {
+	const rootId = comment.parentId ?? comment.id;
+
+	queryClient.setQueryData<CommentThreadResponse>(
+		threadKey(orgSlug, projectId, milestoneId, rootId),
+		(current) => {
+			if (!current) return current;
+
+			if (current.thread.comment.id === comment.id) {
+				return { thread: { ...current.thread, comment } };
+			}
+
+			return {
+				thread: {
+					...current.thread,
+					replies: current.thread.replies.map((reply) =>
+						reply.id === comment.id ? comment : reply,
+					),
+				},
+			};
+		},
+	);
+}
+
 /** Keep the tab badge in step with the server's total. */
 function patchCommentCount(
 	queryClient: ReturnType<typeof useQueryClient>,
@@ -186,6 +258,29 @@ export function useMilestoneComments(
 	});
 }
 
+/** One complete thread, for the focused comment tab. */
+export function useCommentThread(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	commentId: string,
+	options?: { enabled?: boolean },
+) {
+	return useQuery({
+		queryKey: threadKey(orgSlug, projectId, milestoneId, commentId),
+		queryFn: () =>
+			fetchCommentThread(orgSlug, projectId, milestoneId, commentId),
+		enabled:
+			Boolean(orgSlug) &&
+			Boolean(projectId) &&
+			Boolean(milestoneId) &&
+			Boolean(commentId) &&
+			(options?.enabled ?? true),
+		staleTime: 10_000,
+		retry: retryCommentQuery,
+	});
+}
+
 /** Post a comment or a reply. */
 export function useCreateComment(
 	orgSlug: string,
@@ -217,6 +312,14 @@ export function useCreateComment(
 				milestoneId,
 				data.total,
 			);
+			// A focused tab for the parent thread should see the reply too.
+			appendReplyToThread(
+				queryClient,
+				orgSlug,
+				projectId,
+				milestoneId,
+				data.comment,
+			);
 		},
 	});
 }
@@ -237,6 +340,13 @@ export function useUpdateComment(
 			updatePages(queryClient, key, (pages) =>
 				replaceInPages(pages, data.comment),
 			);
+			replaceInThread(
+				queryClient,
+				orgSlug,
+				projectId,
+				milestoneId,
+				data.comment,
+			);
 		},
 	});
 }
@@ -256,6 +366,13 @@ export function useDeleteComment(
 		onSuccess: (data) => {
 			updatePages(queryClient, key, (pages) =>
 				replaceInPages(pages, data.comment),
+			);
+			replaceInThread(
+				queryClient,
+				orgSlug,
+				projectId,
+				milestoneId,
+				data.comment,
 			);
 			patchCommentCount(
 				queryClient,

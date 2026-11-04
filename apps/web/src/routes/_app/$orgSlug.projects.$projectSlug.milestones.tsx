@@ -25,23 +25,43 @@ type MilestoneSearch = {
 	milestone?: string;
 	/**
 	 * The detail tab. Only the non default value is stored, so an ordinary
-	 * milestone link stays short.
+	 * milestone link stays short. A focused comment tab uses the `comment:` id
+	 * prefix.
 	 */
-	milestoneTab?: Extract<MilestoneTabKey, "comments">;
+	milestoneTab?: Extract<MilestoneTabKey, "comments" | `comment:${string}`>;
 };
+
+/** The tab values the URL contract accepts. */
+function toTabSearchValue(
+	tab: MilestoneTabKey,
+): MilestoneSearch["milestoneTab"] {
+	if (tab === "comments") return "comments";
+	if (tab.startsWith("comment:")) return tab as `comment:${string}`;
+
+	return undefined;
+}
 
 export const Route = createFileRoute(
 	"/_app/$orgSlug/projects/$projectSlug/milestones",
 )({
 	// Validate instead of trusting the URL: a hand edited or stale link can
 	// carry anything, and the detail fetch should only receive a plausible id.
-	validateSearch: (search: Record<string, unknown>): MilestoneSearch => ({
-		milestone:
-			typeof search.milestone === "string" && search.milestone.length > 0
-				? search.milestone
-				: undefined,
-		milestoneTab: search.milestoneTab === "comments" ? "comments" : undefined,
-	}),
+	validateSearch: (search: Record<string, unknown>): MilestoneSearch => {
+		const tab = search.milestoneTab;
+		const milestoneTab =
+			tab === "comments" ||
+			(typeof tab === "string" && /^comment:[A-Za-z0-9_-]{1,64}$/.test(tab))
+				? (tab as MilestoneSearch["milestoneTab"])
+				: undefined;
+
+		return {
+			milestone:
+				typeof search.milestone === "string" && search.milestone.length > 0
+					? search.milestone
+					: undefined,
+			milestoneTab,
+		};
+	},
 	component: MilestonesRoute,
 	staticData: { breadcrumb: "Milestones" },
 });
@@ -88,7 +108,7 @@ function MilestonesRoute() {
 				params: { orgSlug, projectSlug },
 				search: (previous) => ({
 					...previous,
-					milestoneTab: tab === "comments" ? "comments" : undefined,
+					milestoneTab: toTabSearchValue(tab),
 				}),
 				replace: true,
 			});

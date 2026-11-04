@@ -6,8 +6,10 @@
  * anything" and "how close to the limit are they". A local walk keeps the
  * composer independent of the editor package internals.
  *
- * Used by: comment-composer.tsx and comment-item.tsx.
+ * Used by: comment-composer.tsx, comment-item.tsx and the focused tabs.
  */
+
+import type { Comment } from "./api";
 
 /**
  * The client mirror of the server text limit.
@@ -90,4 +92,29 @@ export function isCommentChanged(
 	previous: unknown[],
 ): boolean {
 	return JSON.stringify(next) !== JSON.stringify(previous);
+}
+
+/**
+ * Short label and full title for a focused comment tab.
+ *
+ * The label is persisted so a tab can render before its thread has loaded. The
+ * title carries the full first line for the hover tooltip.
+ */
+export function commentTabLabel(comment: Comment): {
+	label: string;
+	title: string;
+} {
+	const author = comment.author?.name ?? "Former member";
+	const text = commentText(comment.body).replace(/\s+/g, " ").trim();
+
+	if (text.length === 0) {
+		return {
+			label: `${author}: Attachment`,
+			title: `${author}: attachment`,
+		};
+	}
+
+	const short = text.length > 36 ? `${text.slice(0, 36)}...` : text;
+
+	return { label: `${author}: ${short}`, title: `${author}: ${text}` };
 }

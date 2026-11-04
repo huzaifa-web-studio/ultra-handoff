@@ -42,7 +42,16 @@ import { UserAvatar } from "#/components/user-avatar";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
 import { formatRelativeTime } from "#/lib/date";
 import type { MilestoneDetail, MilestoneViewer } from "./api";
+import type { Comment } from "./comments/api";
 import { CommentTab } from "./comments/comment-tab";
+import { CommentThreadTab } from "./comments/comment-thread-tab";
+import {
+	commentTabsStorageKey,
+	type OpenCommentTab,
+	readCommentTabs,
+	toOpenCommentTab,
+	writeCommentTabs,
+} from "./comments/tabs-storage";
 import {
 	MilestoneEditor,
 	MilestoneEditorStatic,
@@ -70,8 +79,13 @@ import {
 /** Save indicator states. */
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-/** The two sections of the milestone detail pane. */
-export type MilestoneTabKey = "overview" | "comments";
+/**
+ * The sections of the milestone detail pane.
+ *
+ * The first two are fixed. Every additional key is a focused comment tab whose
+ * id follows the `comment:` prefix.
+ */
+export type MilestoneTabKey = "overview" | "comments" | `comment:${string}`;
 
 /** A small labelled cell in the metadata grid. */
 function MetaField({
@@ -245,6 +259,20 @@ function MilestoneDetailContent({
 		selectedTab === "comments",
 	);
 
+	// Focused comment tabs, persisted per milestone. The tab bar can grow to as
+	// many as the reader opens; the list scrolls horizontally when it does.
+	const commentTabsKey = commentTabsStorageKey(orgSlug, milestone.id);
+	const [openCommentTabs, setOpenCommentTabs] = useState<OpenCommentTab[]>(() =>
+		readCommentTabs(commentTabsKey),
+	);
+	// Trigger elements, so the selected tab can be revealed in the horizontal
+	// tab strip when many focused tabs are open.
+	const commentTabRefs = useRef(new Map<string, HTMLDivElement>());
+
+	useEffect(() => {
+		writeCommentTabs(commentTabsKey, openCommentTabs);
+	}, [commentTabsKey, openCommentTabs]);
+
 	const retryRef = useRef<(() => Promise<unknown>) | null>(null);
 	const lastSeenVersion = useRef(milestone.updatedAt);
 	const lastSavedTitle = useRef(milestone.title);
@@ -393,6 +421,58 @@ function MilestoneDetailContent({
 		await save(task);
 	}
 
+	/** Open a focused tab for one root comment, or move to it if it exists. */
+	function openCommentTab(comment: Comment) {
+		const tab = toOpenCommentTab(comment);
+
+		setOpenCommentTabs((current) => {
+			const existing = current.some((item) => item.id === tab.id);
+
+			if (existing) {
+				// Keep the label fresh if the comment was edited since it opened.
+				return current.map((item) =>
+					item.id === tab.id
+						? { ...item, label: tab.label, title: tab.title }
+						: item,
+				);
+			}
+
+			return [...current, tab];
+		});
+
+		onTabChange(`comment:${tab.id}`);
+	}
+
+	/** Close a focused tab and fall back to the full discussion if it was open. */
+	function closeCommentTab(id: string) {
+		setOpenCommentTabs((current) => current.filter((tab) => tab.id !== id));
+
+		if (selectedTab === `comment:${id}`) {
+			onTabChange("comments");
+		}
+	}
+
+	// A stored tab can disappear if local storage was cleared. In that case the
+	// URL falls back to the full discussion instead of showing an empty pane.
+	const openTabKeys = new Set(
+		openCommentTabs.map((tab) => `comment:${tab.id}`),
+	);
+	const effectiveSelectedTab: MilestoneTabKey =
+		selectedTab === "overview" ||
+		selectedTab === "comments" ||
+		openTabKeys.has(selectedTab)
+			? selectedTab
+			: "comments";
+
+	// Reveal the active comment tab when the strip is wider than the pane.
+	useEffect(() => {
+		if (!effectiveSelectedTab.startsWith("comment:")) return;
+
+		commentTabRefs.current
+			.get(effectiveSelectedTab)
+			?.scrollIntoView({ block: "nearest", inline: "nearest" });
+	}, [effectiveSelectedTab]);
+
 	return (
 		<section className="flex h-full min-h-0 flex-col border border-app-border bg-app-panel">
 			{/* Header */}
@@ -476,21 +556,23 @@ function MilestoneDetailContent({
 			 * is marked inert by react-aria and hidden here.
 			 */}
 			<Tabs
-				selectedKey={selectedTab}
-				onSelectionChange={(key) =>
-					onTabChange(key === "comments" ? "comments" : "overview")
-				}
+				selectedKey={effectiveSelectedTab}
+				onSelectionChange={(key) => {
+					if (typeof key === "string") {
+						onTabChange(key as MilestoneTabKey);
+					}
+				}}
 				className="flex min-h-0 flex-1 flex-col gap-0"
 			>
 				<TabsList
 					variant="line"
 					aria-label="Milestone sections"
-					className="w-full justify-start border-b border-app-border px-2"
+					className="w-full justify-start overflow-x-auto overflow-y-hidden border-b border-app-border px-2"
 				>
-					<TabsTrigger id="overview" className="flex-none">
+					<TabsTrigger id="overview" className="flex-none cursor-pointer">
 						Overview
 					</TabsTrigger>
-					<TabsTrigger id="comments" className="flex-none">
+					<TabsTrigger id="comments" className="flex-none cursor-pointer">
 						Comments
 						{milestone.commentCount > 0 && (
 							<span className="inline-flex h-4 min-w-4 items-center justify-center border border-current px-1 text-[0.6rem] tabular-nums">
@@ -498,6 +580,54 @@ function MilestoneDetailContent({
 							</span>
 						)}
 					</TabsTrigger>
+
+					{/*
+					 * Focused comment tabs. The first one carries a vertical rule
+					 * that separates the fixed sections from the reader's own tabs.
+					 * The list scrolls horizontally, so opening many stays usable.
+					 */}
+					{openCommentTabs.map((tab, index) => (
+						<TabsTrigger
+							key={tab.id}
+							id={`comment:${tab.id}`}
+							aria-label={tab.title}
+							ref={(element) => {
+								const key = `comment:${tab.id}`;
+
+								if (element) {
+									commentTabRefs.current.set(key, element);
+								} else {
+									commentTabRefs.current.delete(key);
+								}
+							}}
+							className={cn(
+								"max-w-48 flex-none cursor-pointer gap-1.5 pr-1.5 normal-case tracking-normal",
+								index === 0 &&
+									"ml-2 pl-3 before:absolute before:inset-y-1.5 before:left-0 before:w-px before:bg-app-border before:content-['']",
+							)}
+						>
+							<span className="min-w-0 truncate">{tab.label}</span>
+
+							{/*
+							 * A quick close on the tab itself. It stops the press from
+							 * selecting the tab. Keyboard users have the explicit Close
+							 * tab button inside the focused pane.
+							 */}
+							<button
+								type="button"
+								tabIndex={-1}
+								aria-label={`Close ${tab.label}`}
+								className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-app-text-muted transition-colors hover:bg-app-panel-subtle hover:text-app-text"
+								onPointerDown={(event) => event.stopPropagation()}
+								onClick={(event) => {
+									event.stopPropagation();
+									closeCommentTab(tab.id);
+								}}
+							>
+								<XIcon className="size-3.5" aria-hidden />
+							</button>
+						</TabsTrigger>
+					))}
 				</TabsList>
 
 				<TabsContent
@@ -646,10 +776,33 @@ function MilestoneDetailContent({
 							viewerId={viewer.userId}
 							canComment={viewer.canComment}
 							locked={viewer.locked}
-							active={selectedTab === "comments"}
+							active={effectiveSelectedTab === "comments"}
+							onOpenCommentTab={openCommentTab}
 						/>
 					)}
 				</TabsContent>
+
+				{openCommentTabs.map((tab) => (
+					<TabsContent
+						key={tab.id}
+						id={`comment:${tab.id}`}
+						shouldForceMount
+						className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
+					>
+						<CommentThreadTab
+							orgSlug={orgSlug}
+							organizationId={organizationId}
+							projectId={projectId}
+							milestoneId={milestone.id}
+							viewerId={viewer.userId}
+							commentId={tab.id}
+							canComment={viewer.canComment}
+							locked={viewer.locked}
+							active={effectiveSelectedTab === `comment:${tab.id}`}
+							onClose={() => closeCommentTab(tab.id)}
+						/>
+					</TabsContent>
+				))}
 			</Tabs>
 
 			{canWrite && (

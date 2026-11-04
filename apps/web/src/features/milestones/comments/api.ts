@@ -47,6 +47,38 @@ export type CommentThread = CommentPage["threads"][number];
 export type Comment = CommentThread["comment"];
 export type CommentReply = CommentThread["replies"][number];
 
+/** Read one complete thread, for the focused comment tab. */
+export async function fetchCommentThread(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	commentId: string,
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.comments({ commentId })
+		.thread.get();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load the discussion."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load the discussion.", 0);
+	}
+
+	return response.data;
+}
+
+export type CommentThreadResponse = Awaited<
+	ReturnType<typeof fetchCommentThread>
+>;
+
 /** Post a comment, or a reply when `parentId` is set. */
 export async function createComment(
 	orgSlug: string,
