@@ -605,12 +605,12 @@ function MilestoneDetailContent({
 
 							{/*
 							 * A quick close on the tab itself. It stops the press from
-							 * selecting the tab. Keyboard users have the explicit Close
-							 * tab button inside the focused pane.
+							 * selecting the tab. It is a real focus stop so keyboard users
+							 * can close a thread now that the pane no longer has its own
+							 * Close tab bar.
 							 */}
 							<button
 								type="button"
-								tabIndex={-1}
 								aria-label={`Close ${tab.label}`}
 								className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-app-text-muted transition-colors hover:bg-app-panel-subtle hover:text-app-text"
 								onPointerDown={(event) => event.stopPropagation()}

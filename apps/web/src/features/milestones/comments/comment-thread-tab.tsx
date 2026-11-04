@@ -132,24 +132,6 @@ export function CommentThreadTab({
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<div className="flex items-center justify-between gap-2 border-b border-app-border px-3 py-2">
-				<div className="min-w-0">
-					<p className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
-						Focused thread
-					</p>
-					<p className="truncate text-xs text-app-text-muted">{authorName}</p>
-				</div>
-				<Button
-					variant="ghost"
-					size="xs"
-					aria-label="Close this tab"
-					onPress={onClose}
-				>
-					<XIcon aria-hidden />
-					Close tab
-				</Button>
-			</div>
-
 			<ScrollArea ref={scrollRef} className="min-h-0 flex-1">
 				<div className="p-4">
 					<ol className="flex flex-col">
