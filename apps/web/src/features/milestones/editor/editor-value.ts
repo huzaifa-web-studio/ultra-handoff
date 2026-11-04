@@ -26,9 +26,22 @@ export const EMPTY_EDITOR_VALUE = [{ type: "p", children: [{ text: "" }] }];
  * The clone is not optional: Slate mutates its `children` array while typing,
  * and the stored value lives in the React Query cache. Handing that array over
  * directly would edit the cache in place and make a discarded draft look saved.
+ *
+ * Attachments used to be block nodes and are inline now. A stored top level
+ * `file` is wrapped in a paragraph here, so old comments and milestone bodies
+ * load as valid documents without a database migration.
  */
 export function toEditorValue(value: unknown[]): Value {
-	if (value.length === 0) return structuredClone(EMPTY_EDITOR_VALUE) as Value;
+	const source = value.length === 0 ? EMPTY_EDITOR_VALUE : value;
+	const cloned = structuredClone(source) as unknown[];
 
-	return structuredClone(value) as Value;
+	return cloned.map((node) => {
+		if (!node || typeof node !== "object") return node;
+
+		const record = node as Record<string, unknown>;
+
+		if (record.type !== "file") return node;
+
+		return { type: "p", children: [node] };
+	}) as Value;
 }

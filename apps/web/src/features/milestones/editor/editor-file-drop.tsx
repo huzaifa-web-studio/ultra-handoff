@@ -17,7 +17,7 @@
  * Behaviour:
  *   - only real file drags are claimed, so text drops, URL drops and internal
  *     block reordering keep working exactly as before
- *   - the drop point comes from the pointer, not the caret, so the block lands
+ *   - the drop point comes from the pointer, not the caret, so the chip lands
  *     where the writer released it
  *   - several files are uploaded one at a time and inserted in order
  *   - one rejected file does not cancel the rest of the drop
@@ -25,7 +25,7 @@
  * Used by: editor/milestone-editor.tsx and comments/editor/comment-editor.tsx.
  */
 
-import { PathApi } from "platejs";
+import { PathApi, type TRange } from "platejs";
 import type { PlateEditor } from "platejs/react";
 import { type DragEvent, useState } from "react";
 import { toast } from "sonner";
@@ -37,7 +37,7 @@ import {
 	validateUploadFile,
 } from "#/lib/upload";
 import {
-	type EditorInsertPoint,
+	insertInlineNode,
 	insertVoidBlock,
 	resolveInsertPoint,
 } from "./editor-insert";
@@ -161,12 +161,13 @@ export function useEditorFileDrop(
 	 * Upload every accepted file and insert it at the captured point.
 	 *
 	 * Insertion happens one file at a time, after its own upload, so the order
-	 * in the editor matches the order in the drop. The insert point advances
-	 * past each new block so a multi file drop stays stacked.
+	 * in the editor matches the order in the drop. Images land as blocks, the
+	 * documents land as inline chips, and each insert advances the point used
+	 * by the next file.
 	 */
 	async function handleFiles(
 		files: File[],
-		point: EditorInsertPoint | null,
+		range: TRange | null,
 	): Promise<void> {
 		if (!organizationId || !organizationSlug) return;
 
@@ -188,8 +189,6 @@ export function useEditorFileDrop(
 
 		if (accepted.length === 0) return;
 
-		let target = point ?? resolveInsertPoint(editor);
-
 		// Why the label: the switch guard shows this reason in the blocked
 		// dialog, so it must describe what the person would interrupt.
 		const reason =
@@ -198,6 +197,14 @@ export function useEditorFileDrop(
 				: accepted[0]?.purpose === imagePurpose
 					? "Uploading an image"
 					: "Uploading a file";
+
+		// Images stay block nodes, so they need the top level block point. An
+		// attachment is inline, so it uses the text range instead. Both advance
+		// after each insert so a mixed drop keeps its order.
+		let blockPoint = range
+			? resolveInsertPoint(editor, range)
+			: resolveInsertPoint(editor);
+		let inlineRange = range;
 
 		// A storage disabled browser throws on the guard write. Keeping the
 		// handle optional means the upload still runs and still releases the
@@ -238,12 +245,22 @@ export function useEditorFileDrop(
 							? imageNode(uploaded.url, file.name)
 							: fileNode(uploaded.url, file);
 
-					const insertedAt = insertVoidBlock(editor, target, node);
-
-					target = {
-						at: PathApi.next(insertedAt),
-						replaceEmpty: false,
-					};
+					if (purpose === imagePurpose) {
+						const insertedAt = insertVoidBlock(editor, blockPoint, node);
+						blockPoint = {
+							at: PathApi.next(insertedAt),
+							replaceEmpty: false,
+						};
+						// The drop range points at the block before the new image,
+						// so later attachments follow the caret below it instead.
+						inlineRange = null;
+					} else {
+						// The first chip uses the drop point. After that the caret sits
+						// right behind the previous chip, so the next one is inserted
+						// there instead of at the original pointer position.
+						insertInlineNode(editor, inlineRange, node);
+						inlineRange = null;
+					}
 
 					toast.success(
 						purpose === imagePurpose ? "Image added." : "File added.",
@@ -309,10 +326,9 @@ export function useEditorFileDrop(
 		event.preventDefault();
 		event.stopPropagation();
 
-		const range = editor.api.findEventRange(event.nativeEvent);
-		const point = range ? resolveInsertPoint(editor, range) : null;
+		const range = editor.api.findEventRange(event.nativeEvent) ?? null;
 
-		void handleFiles(files, point);
+		void handleFiles(files, range);
 	}
 
 	return {

@@ -104,12 +104,13 @@ import {
  *
  * Tables were the original case. Images and bookmarks have the same shape, and
  * a bookmark moved to the end by drag or by deleting the paragraph below it
- * reproduced the same dead end, so all three are covered.
+ * reproduced the same dead end, so all three are covered. Attachments are
+ * inline now, so they never end the document on their own.
  *
  * The paragraph is only inserted when there is no node below, so real content
  * is never replaced.
  */
-const TRAILING_PARAGRAPH_TYPES = new Set(["table", "img", "bookmark", "file"]);
+const TRAILING_PARAGRAPH_TYPES = new Set(["table", "img", "bookmark"]);
 
 const TrailingParagraphPlugin = createPlatePlugin({
 	key: "milestoneTrailingParagraph",
@@ -168,6 +169,7 @@ const TrailingParagraphPlugin = createPlatePlugin({
 				at: editor.selection,
 				match: (node) =>
 					ElementApi.isElement(node) &&
+					editor.api.isBlock(node) &&
 					(editor.api.isVoid(node) || node.type === editor.getType("table")),
 			});
 

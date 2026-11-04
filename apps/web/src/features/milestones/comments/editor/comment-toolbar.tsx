@@ -46,6 +46,12 @@ import {
 	uploadFile,
 	validateUploadFile,
 } from "#/lib/upload";
+import {
+	canInsertInlineAt,
+	captureEditorRange,
+	insertInlineInParagraph,
+	insertInlineNode,
+} from "../../editor/editor-insert";
 import { fileNode, imageNode } from "../../editor/editor-nodes";
 import {
 	BlockSelect,
@@ -80,6 +86,9 @@ export function CommentToolbar({
 	// The selection is captured before the picker steals focus, so the node lands
 	// where the writer left the caret even after a long upload.
 	const pointRef = useRef<CommentInsertPoint | null>(null);
+	// Attachments are inline, so they need the text selection rather than the
+	// block path. The clone survives the picker closing.
+	const rangeRef = useRef<ReturnType<typeof captureEditorRange>>(null);
 	const [uploading, setUploading] = useState<"image" | "file" | null>(null);
 
 	const canUpload =
@@ -92,6 +101,10 @@ export function CommentToolbar({
 
 	function pickFile() {
 		pointRef.current = resolveCommentInsertPoint(editor);
+		// An attachment chip flows inside the text, so the caret is what decides
+		// where it lands. The block point stays as the fallback for an empty
+		// paragraph or an invalid selection.
+		rangeRef.current = captureEditorRange(editor);
 		fileInputRef.current?.click();
 	}
 
@@ -157,7 +170,17 @@ export function CommentToolbar({
 			if (purpose === "comment-image") {
 				insertCommentBlock(editor, point, imageNode(uploaded.url, file.name));
 			} else {
-				insertCommentBlock(editor, point, fileNode(uploaded.url, file));
+				const node = fileNode(uploaded.url, file);
+				const range = rangeRef.current;
+
+				// The chip is inline, so the caret position is preferred. A null or
+				// stale range means the editor moved on, so the block point is the
+				// safe place to fall back to.
+				if (range && canInsertInlineAt(editor, range)) {
+					insertInlineNode(editor, range, node);
+				} else {
+					insertInlineInParagraph(editor, point, node);
+				}
 			}
 
 			toast.success(kind === "image" ? "Image added." : "File added.", {
@@ -177,6 +200,7 @@ export function CommentToolbar({
 			setUploading(null);
 			onUploadingChange?.(false);
 			pointRef.current = null;
+			rangeRef.current = null;
 		}
 	}
 

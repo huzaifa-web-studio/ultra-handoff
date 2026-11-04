@@ -372,7 +372,7 @@ function sanitizeNode(
 		};
 	}
 
-	// A file attachment is a void block carrying the metadata its card renders.
+	// A file attachment is a void node carrying the metadata its chip renders.
 	// The bytes live in object storage; only the reference is stored here.
 	if (type === "file") {
 		const url = safeAssetUrl(node.url);

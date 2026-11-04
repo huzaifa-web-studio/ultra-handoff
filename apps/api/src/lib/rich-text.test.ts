@@ -304,4 +304,32 @@ describe("sanitizeRichText (milestone profile)", () => {
 		expect((result.value[0] as { name?: string }).name).toBe("Brief.pdf");
 		expect((result.value[1] as { type?: string }).type).toBe("p");
 	});
+
+	test("keeps an inline attachment between two text leaves", () => {
+		const result = sanitizeRichText([
+			{
+				type: "p",
+				children: [
+					{ text: "Please review " },
+					{
+						type: "file",
+						url: "/files/organizations/org/milestones/files/brief.pdf",
+						name: "Brief.pdf",
+						mime: "application/pdf",
+						size: 2048,
+						children: [{ text: "" }],
+					},
+					{ text: " before Friday." },
+				],
+			},
+		]);
+
+		const block = result.value[0] as { type?: string; children?: unknown[] };
+
+		expect(block.type).toBe("p");
+		expect(block.children).toHaveLength(3);
+		expect((block.children?.[1] as { type?: string }).type).toBe("file");
+		expect(result.text).toContain("Please review");
+		expect(result.text).toContain("Brief.pdf");
+	});
 });

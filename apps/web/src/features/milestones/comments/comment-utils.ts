@@ -48,8 +48,8 @@ export function commentText(value: unknown[]): string {
 		.trim();
 }
 
-/** Block types that are complete content even without any text of their own. */
-const EMBED_BLOCK_TYPES = new Set(["img", "file", "bookmark"]);
+/** Node types that are complete content even without any text of their own. */
+const EMBED_TYPES = new Set(["img", "file", "bookmark"]);
 
 /**
  * True when the editor value has something worth sending.
@@ -71,7 +71,7 @@ export function commentHasContent(value: unknown[]): boolean {
 			return;
 		}
 
-		if (typeof record.type === "string" && EMBED_BLOCK_TYPES.has(record.type)) {
+		if (typeof record.type === "string" && EMBED_TYPES.has(record.type)) {
 			found = true;
 			return;
 		}

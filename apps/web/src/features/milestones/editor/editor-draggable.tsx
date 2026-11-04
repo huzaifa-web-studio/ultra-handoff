@@ -68,7 +68,7 @@ import {
 	insertBookmarkNode,
 	turnBookmarkIntoLink,
 } from "./editor-bookmark";
-import { insertVoidBlock } from "./editor-insert";
+import { insertInlineAtBlockEnd, insertVoidBlock } from "./editor-insert";
 import { fileNode, imageNode } from "./editor-nodes";
 
 /** Blocks the insert menu can create. */
@@ -314,9 +314,12 @@ function Draggable(props: PlateElementProps) {
 		insertUploaded(imageNode(url, fileName));
 	}
 
-	/** Insert an uploaded attachment at this line. */
+	/** Insert an uploaded attachment inline in this block's text. */
 	function insertFile(url: string, file: File) {
-		insertUploaded(fileNode(url, file));
+		// An attachment is inline now, so it joins the text of the hovered block
+		// instead of taking a line of its own.
+		insertInlineAtBlockEnd(editor, element, path, fileNode(url, file));
+		setOpenId(null);
 	}
 
 	/**
