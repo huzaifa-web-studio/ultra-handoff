@@ -54,6 +54,11 @@ import { SlateElement, type SlateElementProps } from "platejs/static";
 import type { ComponentProps } from "react";
 
 import { resolveAssetUrl } from "#/lib/files";
+import {
+	BlockSideIndicator,
+	beginBlockSide,
+	clearBlockSide,
+} from "./editor-block-side";
 
 /** The image node plus the fields the media, caption and resize plugins add. */
 type MilestoneImageElement = TImageElement & TCaptionProps & TResizableProps;
@@ -96,6 +101,7 @@ function ResizeHandle({
 
 	return (
 		<div
+			data-block-side-ignore
 			className={cn(
 				"absolute top-0 z-20 h-full w-5 cursor-col-resize touch-none select-none",
 				state.direction === "left" ? "-left-2" : "-right-2",
@@ -187,7 +193,20 @@ export const ImageElement = withHOC(
 		}
 
 		return (
-			<PlateElement {...props} className={cn("my-3", props.className)}>
+			<PlateElement
+				{...props}
+				className={cn("relative my-3", props.className)}
+				attributes={{
+					...props.attributes,
+					onMouseDown: (event) => {
+						if (!beginBlockSide(editor, props.element, event, 24)) {
+							clearBlockSide(editor);
+						}
+					},
+				}}
+			>
+				<BlockSideIndicator element={props.element} />
+
 				<figure contentEditable={false} className="group/image relative m-0">
 					<Resizable align={align} options={{ align, readOnly }}>
 						<ResizeHandle options={{ direction: "left" }} />
@@ -234,6 +253,7 @@ export const ImageElement = withHOC(
 					 */}
 					{!readOnly && (
 						<figcaption
+							data-block-side-ignore
 							style={{ width }}
 							className={cn(
 								"mt-2 max-w-full",

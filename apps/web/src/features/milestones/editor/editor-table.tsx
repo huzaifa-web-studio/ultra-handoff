@@ -54,6 +54,11 @@ import {
 } from "platejs/react";
 import type { ReactNode } from "react";
 
+import {
+	BlockSideIndicator,
+	beginBlockSide,
+	clearBlockSide,
+} from "./editor-block-side";
 import { useEditorStatic } from "./editor-view-context";
 
 /** Props shared by a body cell and a header cell. */
@@ -295,6 +300,7 @@ function TableToolbar() {
 const TableElementEditable = withHOC(
 	TableProvider,
 	function TableElementEditable(props: PlateElementProps) {
+		const editor = useEditorRef();
 		const { marginLeft, props: tableProps } = useTableElement();
 		const selected = useSelected();
 		const focused = useFocused();
@@ -302,14 +308,23 @@ const TableElementEditable = withHOC(
 		return (
 			<PlateElement
 				{...props}
-				className={cn("my-4", props.className)}
+				className={cn("relative my-4", props.className)}
 				style={{ ...props.style, paddingLeft: marginLeft }}
 			>
+				<BlockSideIndicator element={props.element} />
+
 				{selected && focused && <TableToolbar />}
 
 				<div className="overflow-x-auto">
 					<table
 						{...tableProps}
+						onMouseDown={(event) => {
+							// Preserve the plugin's own handler when the press is not on
+							// an edge.
+							if (beginBlockSide(editor, props.element, event, 10)) return;
+							clearBlockSide(editor);
+							tableProps.onMouseDown?.();
+						}}
 						className="w-full table-fixed border-collapse text-sm"
 					>
 						<tbody>{props.children}</tbody>

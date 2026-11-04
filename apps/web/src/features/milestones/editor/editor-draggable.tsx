@@ -38,11 +38,12 @@ import {
 	ListIcon,
 	ListOrderedIcon,
 	ListTodoIcon,
+	PilcrowIcon,
 	PlusIcon,
 	QuoteIcon,
 	TableIcon,
 } from "lucide-react";
-import { PathApi } from "platejs";
+import { type Path, PathApi } from "platejs";
 import type { PlateElementProps, RenderNodeWrapper } from "platejs/react";
 import { useEditorRef } from "platejs/react";
 import {
@@ -372,6 +373,32 @@ function Draggable(props: PlateElementProps) {
 	}
 
 	/**
+	 * Insert an empty paragraph at an exact path.
+	 *
+	 * Used by the explicit Paragraph above and below actions, which are the
+	 * reliable path for a table: Enter inside a table edits a cell by design,
+	 * so the edge gesture is not the only way to add a gap.
+	 */
+	function insertParagraphAt(at: Path) {
+		editor.tf.insertNodes({ type: "p", children: [{ text: "" }] }, { at });
+
+		const start = editor.api.start(at);
+		if (start) editor.tf.select(start);
+
+		setOpenId(null);
+		editor.tf.focus();
+	}
+
+	function insertParagraphAbove() {
+		insertParagraphAt(editor.api.findPath(element) ?? path);
+	}
+
+	function insertParagraphBelow() {
+		const anchor = editor.api.findPath(element) ?? path;
+		insertParagraphAt(PathApi.next(anchor));
+	}
+
+	/**
 	 * Upload a picked file and add it to the document.
 	 *
 	 * The upload uses the same presigned pipeline as the logo controls. A
@@ -471,6 +498,14 @@ function Draggable(props: PlateElementProps) {
 								Turn into link
 							</DropdownMenuItem>
 						)}
+						<DropdownMenuItem id="p-above" onAction={insertParagraphAbove}>
+							<PilcrowIcon aria-hidden />
+							Paragraph above
+						</DropdownMenuItem>
+						<DropdownMenuItem id="p-below" onAction={insertParagraphBelow}>
+							<PilcrowIcon aria-hidden />
+							Paragraph below
+						</DropdownMenuItem>
 						<DropdownMenuItem id="table" onAction={() => insert("table")}>
 							<TableIcon aria-hidden />
 							Table

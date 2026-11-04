@@ -39,6 +39,12 @@ import { type FormEvent, useState } from "react";
 import { BookmarkPreview } from "#/features/link-previews/link-preview-card";
 import { useLinkPreview } from "#/features/link-previews/link-preview-context";
 import { isPreviewableHref, shortenUrl } from "#/features/link-previews/utils";
+import {
+	BlockSideIndicator,
+	BlockSidePlugin,
+	beginBlockSide,
+	clearBlockSide,
+} from "./editor-block-side";
 
 /** Read the stored URL, ignoring anything that is not a page link. */
 function bookmarkUrl(element: unknown): string | undefined {
@@ -206,6 +212,14 @@ export function BookmarkElement(props: PlateElementProps) {
 	 * are left alone so the browser can apply its own behaviour.
 	 */
 	function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
+		// An edge press selects the block for an Enter instead of opening the
+		// link. The press already prevented the default, but the click can
+		// still follow, so it is stopped here as well.
+		if (editor.getOption(BlockSidePlugin, "side")) {
+			event.preventDefault();
+			return;
+		}
+
 		if (
 			event.metaKey ||
 			event.ctrlKey ||
@@ -240,7 +254,21 @@ export function BookmarkElement(props: PlateElementProps) {
 	}
 
 	return (
-		<PlateElement {...props} as="div" className={cn("my-3", props.className)}>
+		<PlateElement
+			{...props}
+			as="div"
+			className={cn("relative my-3", props.className)}
+			attributes={{
+				...props.attributes,
+				onMouseDown: (event) => {
+					if (!beginBlockSide(editor, props.element, event, 16)) {
+						clearBlockSide(editor);
+					}
+				},
+			}}
+		>
+			<BlockSideIndicator element={props.element} />
+
 			{/*
 			 * The card is a real link, so a click opens it. A bookmark is a
 			 * block, not text, so there is no caret to protect here. The block

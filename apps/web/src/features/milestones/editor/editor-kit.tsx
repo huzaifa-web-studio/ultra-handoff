@@ -53,10 +53,15 @@ import {
 	TablePlugin,
 	TableRowPlugin,
 } from "@platejs/table/react";
-import { KEYS, PathApi } from "platejs";
+import { ElementApi, KEYS, PathApi } from "platejs";
 import { createPlatePlugin, ParagraphPlugin } from "platejs/react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
+import {
+	BlockSidePlugin,
+	clearBlockSide,
+	isBlockSideFor,
+} from "./editor-block-side";
 import { BookmarkElementStatic, BookmarkPlugin } from "./editor-bookmark";
 import { BlockDraggable } from "./editor-draggable";
 import {
@@ -129,20 +134,31 @@ const TRAILING_PARAGRAPH_TYPES = new Set(["table", "img", "bookmark"]);
 
 const TrailingParagraphPlugin = createPlatePlugin({
 	key: "milestoneTrailingParagraph",
-}).overrideEditor(({ editor, tf: { normalizeNode } }) => ({
+}).overrideEditor(({ editor, tf: { normalizeNode, insertBreak } }) => ({
 	transforms: {
 		normalizeNode(entry, options) {
 			const [node, path] = entry;
 
 			if (
 				path.length === 1 &&
-				"type" in node &&
+				ElementApi.isElement(node) &&
 				typeof node.type === "string" &&
 				TRAILING_PARAGRAPH_TYPES.has(node.type)
 			) {
 				const nextPath = PathApi.next(path);
+				const nextNode = editor.api.node(nextPath)?.[0];
 
-				if (!editor.api.node(nextPath)) {
+				const nextIsSpecial =
+					nextNode !== undefined &&
+					ElementApi.isElement(nextNode) &&
+					typeof nextNode.type === "string" &&
+					TRAILING_PARAGRAPH_TYPES.has(nextNode.type);
+
+				// A line is needed when the block ends the document or when the
+				// next block is another atomic one. Two void blocks side by side
+				// otherwise have no interior where the caret can live, so there
+				// is no way to click between them or press Enter to add a gap.
+				if (!nextNode || nextIsSpecial) {
 					editor.tf.insertNodes(
 						{ type: "p", children: [{ text: "" }] },
 						{ at: nextPath },
@@ -152,6 +168,86 @@ const TrailingParagraphPlugin = createPlatePlugin({
 			}
 
 			normalizeNode(entry, options);
+		},
+
+		/**
+		 * Enter on a table, image or bookmark creates a line on the chosen side.
+		 *
+		 * A side pressed on a block edge wins. Otherwise a void block defaults
+		 * to a line below it, which is the behaviour most writers expect when
+		 * they select an image and press Enter. A table without a chosen side
+		 * falls through, because Enter inside a table cell must keep editing
+		 * that cell.
+		 */
+		insertBreak() {
+			if (!editor.selection) {
+				insertBreak();
+				return;
+			}
+
+			const blockEntry = editor.api.above({
+				at: editor.selection,
+				match: (node) =>
+					ElementApi.isElement(node) &&
+					(editor.api.isVoid(node) || node.type === editor.getType("table")),
+			});
+
+			if (!blockEntry) {
+				clearBlockSide(editor);
+				insertBreak();
+				return;
+			}
+
+			const [blockNode, blockPath] = blockEntry;
+			const storedSide = editor.getOption(BlockSidePlugin, "side");
+			const selectedSide = isBlockSideFor(editor, blockPath)
+				? storedSide
+				: ElementApi.isElement(blockNode) && editor.api.isVoid(blockNode)
+					? "after"
+					: null;
+
+			clearBlockSide(editor);
+
+			if (!selectedSide) {
+				insertBreak();
+				return;
+			}
+
+			const siblingPath =
+				selectedSide === "before"
+					? PathApi.previous(blockPath)
+					: PathApi.next(blockPath);
+			const sibling = siblingPath
+				? editor.api.node(siblingPath)?.[0]
+				: undefined;
+
+			// An empty paragraph is already on the requested side: move into it
+			// instead of stacking a second blank line.
+			if (
+				siblingPath &&
+				sibling &&
+				ElementApi.isElement(sibling) &&
+				sibling.type === editor.getType("p") &&
+				editor.api.isEmpty(sibling)
+			) {
+				const point =
+					selectedSide === "before"
+						? editor.api.end(siblingPath)
+						: editor.api.start(siblingPath);
+
+				if (point) editor.tf.select(point);
+				editor.tf.focus();
+				return;
+			}
+
+			const at =
+				selectedSide === "before" ? blockPath : PathApi.next(blockPath);
+
+			editor.tf.insertNodes({ type: "p", children: [{ text: "" }] }, { at });
+
+			const point = editor.api.start(at);
+			if (point) editor.tf.select(point);
+			editor.tf.focus();
 		},
 	},
 }));
@@ -234,6 +330,7 @@ export const milestoneEditorPlugins = [
 	TableRowPlugin.withComponent(TableRowElement),
 	TableCellPlugin.withComponent(TableCellElement),
 	TableCellHeaderPlugin.withComponent(TableCellHeaderElement),
+	BlockSidePlugin,
 	TrailingParagraphPlugin,
 
 	// Bookmarks. A void block that renders the cached preview of one URL.
