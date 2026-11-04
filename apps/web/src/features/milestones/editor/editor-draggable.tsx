@@ -38,12 +38,13 @@ import {
 	ListIcon,
 	ListOrderedIcon,
 	ListTodoIcon,
+	PaperclipIcon,
 	PilcrowIcon,
 	PlusIcon,
 	QuoteIcon,
 	TableIcon,
 } from "lucide-react";
-import { type Path, PathApi } from "platejs";
+import { type Path, PathApi, type TElement } from "platejs";
 import type { PlateElementProps, RenderNodeWrapper } from "platejs/react";
 import { useEditorRef } from "platejs/react";
 import {
@@ -67,6 +68,8 @@ import {
 	insertBookmarkNode,
 	turnBookmarkIntoLink,
 } from "./editor-bookmark";
+import { insertVoidBlock } from "./editor-insert";
+import { fileNode, imageNode } from "./editor-nodes";
 
 /** Blocks the insert menu can create. */
 type InsertKind = "table" | "checklist" | "h2" | "h3" | "quote" | "ul" | "ol";
@@ -177,9 +180,10 @@ function Draggable(props: PlateElementProps) {
 	// Pressing the + opens the menu on the press. Without this, the release of
 	// that same press can land on the first item and create it immediately.
 	const openedAt = useRef(0);
-	// The file picker is a real input, so the browser keeps the user gesture
-	// that opened it and can read the chosen file.
+	// The file pickers are real inputs, so the browser keeps the user gesture
+	// that opened them and can read the chosen file.
 	const imageInputRef = useRef<HTMLInputElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 	// The bookmark prompt is local to this block, because it inserts at this
 	// block's path and needs no shared state beyond the open flag.
 	const [bookmarkOpen, setBookmarkOpen] = useState(false);
@@ -280,48 +284,39 @@ function Draggable(props: PlateElementProps) {
 	}
 
 	/**
-	 * Insert an uploaded image at this line and leave the caret below it.
+	 * Insert an uploaded void block at this line and leave the caret below it.
 	 *
-	 * An image is a void block, so the same empty paragraph rule as a table
-	 * applies: leaving one at the very end would give the writer nowhere to
-	 * continue typing.
+	 * The empty paragraph and trailing paragraph rules are shared with the drop
+	 * handler, so a picked image and a dropped one land the same way.
 	 */
-	function insertImage(url: string, fileName: string) {
+	function insertUploaded(node: TElement) {
 		// An upload can take a moment, so resolve the block again instead of
 		// trusting the path captured when the picker opened. Slate keeps the
 		// element reference for an untouched block, which is the common case.
 		const anchor = editor.api.findPath(element) ?? path;
 		const isEmptyParagraph =
 			element.type === "p" && editor.api.string(anchor).trim().length === 0;
-		const at = isEmptyParagraph ? anchor : PathApi.next(anchor);
-		// The filename is a useful default description for a screen reader.
-		const alt = fileName
-			.replace(/\.[^.]+$/, "")
-			.trim()
-			.slice(0, 200);
 
-		editor.tf.withoutNormalizing(() => {
-			if (isEmptyParagraph) editor.tf.removeNodes({ at: anchor });
-
-			editor.tf.insertNodes(
-				{ type: "img", url, alt, children: [{ text: "" }] },
-				{ at },
-			);
-
-			const afterImage = PathApi.next(at);
-			if (!editor.api.node(afterImage)) {
-				editor.tf.insertNodes(
-					{ type: "p", children: [{ text: "" }] },
-					{ at: afterImage },
-				);
-			}
-		});
-
-		const below = editor.api.start(PathApi.next(at));
-		if (below) editor.tf.select(below);
+		insertVoidBlock(
+			editor,
+			{
+				at: isEmptyParagraph ? anchor : PathApi.next(anchor),
+				replaceEmpty: isEmptyParagraph,
+			},
+			node,
+		);
 
 		setOpenId(null);
-		editor.tf.focus();
+	}
+
+	/** Insert an uploaded image at this line. */
+	function insertImage(url: string, fileName: string) {
+		insertUploaded(imageNode(url, fileName));
+	}
+
+	/** Insert an uploaded attachment at this line. */
+	function insertFile(url: string, file: File) {
+		insertUploaded(fileNode(url, file));
 	}
 
 	/**
@@ -399,16 +394,18 @@ function Draggable(props: PlateElementProps) {
 	}
 
 	/**
-	 * Upload a picked file and add it to the document.
+	 * Upload a picked image or document and add it to the document.
 	 *
 	 * The upload uses the same presigned pipeline as the logo controls. A
 	 * progress toast keeps feedback visible after the menu closes, and the
 	 * organization guard stops a workspace switch during a slow upload.
 	 */
-	async function handleImageFile(file: File) {
+	async function uploadAttachment(file: File, kind: "image" | "file") {
 		if (!uploadOrganization) return;
 
-		const problem = validateUploadFile(file, "milestone-image");
+		const purpose = kind === "image" ? "milestone-image" : "milestone-file";
+		const problem = validateUploadFile(file, purpose);
+
 		if (problem) {
 			toast.error(problem);
 			return;
@@ -418,32 +415,55 @@ function Draggable(props: PlateElementProps) {
 		// the next + opens normally instead of thinking its menu is open.
 		setOpenId(null);
 
-		const toastId = toast.loading("Uploading image...");
-		const operation = beginOrganizationOperation({
-			organizationId: uploadOrganization.id,
-			organizationSlug: uploadOrganization.slug,
-			reason: "Uploading a milestone image",
-		});
+		const label = kind === "image" ? "image" : "file";
+		const toastId = toast.loading(`Uploading ${label}...`);
+
+		// A storage disabled browser throws on the guard write. The upload must
+		// still run, so the missing safety net cannot block it.
+		let operation: ReturnType<typeof beginOrganizationOperation> | null = null;
+
+		try {
+			operation = beginOrganizationOperation({
+				organizationId: uploadOrganization.id,
+				organizationSlug: uploadOrganization.slug,
+				reason: `Uploading a milestone ${label}`,
+			});
+		} catch {
+			// Ignored on purpose, see above.
+		}
 
 		try {
 			const uploaded = await uploadFile({
 				file,
-				purpose: "milestone-image",
+				purpose,
 				organizationId: uploadOrganization.id,
 				onProgress: (percent) => {
-					toast.loading(`Uploading image ${percent}%`, { id: toastId });
+					toast.loading(`Uploading ${label} ${String(percent)}%`, {
+						id: toastId,
+					});
 				},
 			});
 
-			insertImage(uploaded.url, file.name);
-			toast.success("Image added.", { id: toastId });
+			if (kind === "image") {
+				insertImage(uploaded.url, file.name);
+			} else {
+				insertFile(uploaded.url, file);
+			}
+
+			toast.success(kind === "image" ? "Image added." : "File added.", {
+				id: toastId,
+			});
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "Could not upload the image.",
+				error instanceof Error
+					? error.message
+					: kind === "image"
+						? "Could not upload the image."
+						: "Could not upload the file.",
 				{ id: toastId },
 			);
 		} finally {
-			operation.end();
+			operation?.end();
 		}
 	}
 
@@ -511,13 +531,22 @@ function Draggable(props: PlateElementProps) {
 							Table
 						</DropdownMenuItem>
 						{uploadOrganization && (
-							<DropdownMenuItem
-								id="image"
-								onAction={() => imageInputRef.current?.click()}
-							>
-								<ImageIcon aria-hidden />
-								Image
-							</DropdownMenuItem>
+							<>
+								<DropdownMenuItem
+									id="image"
+									onAction={() => imageInputRef.current?.click()}
+								>
+									<ImageIcon aria-hidden />
+									Image
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									id="file"
+									onAction={() => fileInputRef.current?.click()}
+								>
+									<PaperclipIcon aria-hidden />
+									File
+								</DropdownMenuItem>
+							</>
 						)}
 						<DropdownMenuItem
 							id="bookmark"
@@ -573,7 +602,21 @@ function Draggable(props: PlateElementProps) {
 						const file = event.target.files?.[0];
 						// Reset first, so picking the same file twice still fires.
 						event.target.value = "";
-						if (file) void handleImageFile(file);
+						if (file) void uploadAttachment(file, "image");
+					}}
+				/>
+
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept={FILE_POLICIES["milestone-file"].accept}
+					aria-hidden
+					tabIndex={-1}
+					className="hidden"
+					onChange={(event) => {
+						const file = event.target.files?.[0];
+						event.target.value = "";
+						if (file) void uploadAttachment(file, "file");
 					}}
 				/>
 

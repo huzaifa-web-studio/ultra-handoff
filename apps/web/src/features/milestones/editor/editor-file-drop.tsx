@@ -49,8 +49,11 @@ type DropImagePurpose = Extract<
 	"milestone-image" | "comment-image"
 >;
 
-/** Attachment purpose a drop can use. Only comments accept attachments. */
-type DropFilePurpose = Extract<UploadPurpose, "comment-file">;
+/** Attachment purpose a drop can use. */
+type DropFilePurpose = Extract<
+	UploadPurpose,
+	"comment-file" | "milestone-file"
+>;
 
 /** The DOM handlers a host spreads onto `PlateContent`. */
 export type EditorDropProps = {

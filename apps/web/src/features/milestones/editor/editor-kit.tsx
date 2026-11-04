@@ -6,7 +6,8 @@
  * Why curated instead of a full kit: a milestone description is a short brief,
  * not a document. Every plugin adds bundle weight and another node type the
  * server sanitizer has to understand. This list is the smallest set that covers
- * writing a usable brief: structure, emphasis, lists and links.
+ * writing a usable brief: structure, emphasis, lists, links, images and
+ * attachments.
  *
  * What is deliberately absent: audio, video, embeds, mentions, code blocks, AI
  * and collaboration. Images use the official media plugin with the app's own
@@ -83,6 +84,7 @@ import {
 	TaskListElement,
 	UnderlineLeaf,
 } from "./editor-elements";
+import { FileElement, FileElementStatic, FilePlugin } from "./editor-file";
 import { ImageElement, ImageElementStatic } from "./editor-image";
 import { EditorFloatingLinkToolbar } from "./editor-link-toolbar";
 import { MediaPreviewDialog } from "./editor-media-preview";
@@ -253,6 +255,9 @@ export const milestoneEditorPlugins = [
 	H3Plugin.withComponent(H3Element),
 	BlockquotePlugin.withComponent(BlockquoteElement),
 	MilestoneImagePlugin,
+	// Attachments. A void block that renders the stored file metadata, so a
+	// brief or a deck can be handed over inside the description itself.
+	FilePlugin.withComponent(FileElement),
 	// Captions are stored on the image node. The renderer reveals the field
 	// when the image is selected, so no floating caption button is needed.
 	CaptionPlugin.configure({
@@ -377,7 +382,8 @@ export const milestoneStaticEditorPlugins = [
 			plugin.key !== KEYS.img &&
 			plugin.key !== KEYS.caption &&
 			plugin.key !== KEYS.link &&
-			plugin.key !== "bookmark",
+			plugin.key !== "bookmark" &&
+			plugin.key !== "file",
 	),
 	// The static image node renders the stored width and caption directly.
 	// It never mounts the resize handles or the preview dialog.
@@ -386,4 +392,7 @@ export const milestoneStaticEditorPlugins = [
 	LinkPlugin.withComponent(LinkElementStatic),
 	// The static bookmark keeps the card and opens the link on click.
 	BookmarkPlugin.withComponent(BookmarkElementStatic),
+	// The static attachment keeps the card and the download link, without the
+	// remove control or the block edge handling.
+	FilePlugin.withComponent(FileElementStatic),
 ];

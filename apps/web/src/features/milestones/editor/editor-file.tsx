@@ -1,19 +1,20 @@
 "use client";
 
 /**
- * The attachment block inside a comment.
+ * The attachment block inside a milestone description or a comment.
  *
- * Why a custom node: comments can carry any document the upload policy allows,
- * not only images, and Plate has no attachment node out of the box. The bytes
- * live in object storage; the node stores only the URL, the original name, the
- * MIME type and the size, which is everything the card needs to render.
+ * Why a custom node: a brief or a discussion can carry any document the upload
+ * policy allows, not only images, and Plate has no attachment node out of the
+ * box. The bytes live in object storage; the node stores only the URL, the
+ * original name, the MIME type and the size, which is everything the card needs
+ * to render.
  *
  * Why void: the card is not editable text, and `isVoid` keeps Slate from trying
  * to place a caret inside it. It is a block, so the trailing paragraph rule and
  * the block edge Enter behaviour both apply exactly as they do to an image or a
  * bookmark.
  *
- * Used by: comments/editor/comment-kit.tsx.
+ * Used by: editor-kit.tsx, which registers it for both editor surfaces.
  */
 
 import { Button } from "@org/ui/components/button";
@@ -42,7 +43,7 @@ import {
 	BlockSideIndicator,
 	beginBlockSide,
 	clearBlockSide,
-} from "../../editor/editor-block-side";
+} from "./editor-block-side";
 
 /** Read the stored URL, if any. */
 function fileUrl(element: unknown): string | undefined {

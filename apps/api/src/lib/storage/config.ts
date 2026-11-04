@@ -26,13 +26,13 @@ export const MAX_MILESTONE_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_COMMENT_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /**
- * Documents attached to a comment.
+ * Documents attached to a comment or a milestone description.
  *
  * Larger than an image because a brief, a deck or a zip of assets is a normal
  * thing to hand over in a discussion. Still bounded, so one message cannot park
  * an unbounded object in storage.
  */
-export const MAX_COMMENT_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 /**
  * The set of purposes the API currently accepts.
@@ -45,6 +45,7 @@ export const UPLOAD_PURPOSES = [
 	"organization-logo",
 	"project-logo",
 	"milestone-image",
+	"milestone-file",
 	"comment-image",
 	"comment-file",
 ] as const;
@@ -101,6 +102,25 @@ function organizationScopePrefix(scope: UploadScope): string {
 }
 
 /**
+ * Documents that a discussion or a milestone description may carry.
+ *
+ * No HTML and no SVG: both can execute script from our own origin. Everything
+ * here is either rendered by a fixed viewer or downloaded.
+ */
+const DOCUMENT_MIME = [
+	"application/pdf",
+	"text/plain",
+	"text/csv",
+	"application/msword",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/vnd.ms-excel",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.ms-powerpoint",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"application/zip",
+] as const;
+
+/**
  * Single source of truth for upload limits.
  *
  * Keys are generated from the policy, so a client can never choose a path or
@@ -145,6 +165,16 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 		prefix: (scope) => `${organizationScopePrefix(scope)}/milestones`,
 		label: "PNG or JPG up to 5 MB",
 	},
+	"milestone-file": {
+		maxBytes: MAX_ATTACHMENT_BYTES,
+		allowedMime: DOCUMENT_MIME,
+		kind: "file",
+		scopedTo: "organization",
+		// A nested folder keeps attachments from being mistaken for milestone
+		// images when either set is cleaned up later.
+		prefix: (scope) => `${organizationScopePrefix(scope)}/milestones/files`,
+		label: "PDF, Office, text or ZIP up to 10 MB",
+	},
 	"comment-image": {
 		maxBytes: MAX_COMMENT_IMAGE_BYTES,
 		allowedMime: ["image/png", "image/jpeg"],
@@ -156,21 +186,8 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 		label: "PNG or JPG up to 5 MB",
 	},
 	"comment-file": {
-		maxBytes: MAX_COMMENT_FILE_BYTES,
-		// No HTML and no SVG: both can execute script from our own origin.
-		// Everything here is either rendered by a fixed viewer or downloaded.
-		allowedMime: [
-			"application/pdf",
-			"text/plain",
-			"text/csv",
-			"application/msword",
-			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			"application/vnd.ms-excel",
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-			"application/vnd.ms-powerpoint",
-			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-			"application/zip",
-		],
+		maxBytes: MAX_ATTACHMENT_BYTES,
+		allowedMime: DOCUMENT_MIME,
 		kind: "file",
 		scopedTo: "organization",
 		prefix: (scope) => `${organizationScopePrefix(scope)}/comments/files`,

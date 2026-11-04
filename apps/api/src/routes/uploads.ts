@@ -154,6 +154,7 @@ export const uploadRoutes = new Elysia()
 			if (
 				latest.purpose === "project-logo" ||
 				latest.purpose === "milestone-image" ||
+				latest.purpose === "milestone-file" ||
 				latest.purpose === "comment-image" ||
 				latest.purpose === "comment-file"
 			) {

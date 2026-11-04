@@ -23,6 +23,7 @@ export type UploadPurpose =
 	| "organization-logo"
 	| "project-logo"
 	| "milestone-image"
+	| "milestone-file"
 	| "comment-image"
 	| "comment-file";
 
@@ -34,6 +35,29 @@ export type FilePolicy = {
 	/** Short text shown next to the picker. */
 	label: string;
 };
+
+/**
+ * Documents a milestone description or a comment may carry.
+ *
+ * Kept in one place so the two policies can never drift apart. The list is the
+ * same one the API signs, and it deliberately excludes HTML and SVG.
+ */
+const DOCUMENT_MIME = [
+	"application/pdf",
+	"text/plain",
+	"text/csv",
+	"application/msword",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	"application/vnd.ms-excel",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	"application/vnd.ms-powerpoint",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"application/zip",
+] as const;
+
+/** The document list as a file input `accept` value. */
+const DOCUMENT_ACCEPT =
+	"application/pdf,.pdf,text/plain,.txt,text/csv,.csv,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.ms-excel,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.ms-powerpoint,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,application/zip,.zip";
 
 export const FILE_POLICIES: Record<UploadPurpose, FilePolicy> = {
 	avatar: {
@@ -60,6 +84,12 @@ export const FILE_POLICIES: Record<UploadPurpose, FilePolicy> = {
 		accept: "image/png,image/jpeg",
 		label: "PNG or JPG up to 5 MB",
 	},
+	"milestone-file": {
+		maxBytes: 10 * 1024 * 1024,
+		mime: DOCUMENT_MIME,
+		accept: DOCUMENT_ACCEPT,
+		label: "PDF, Office, text or ZIP up to 10 MB",
+	},
 	"comment-image": {
 		maxBytes: 5 * 1024 * 1024,
 		mime: ["image/png", "image/jpeg"],
@@ -68,20 +98,8 @@ export const FILE_POLICIES: Record<UploadPurpose, FilePolicy> = {
 	},
 	"comment-file": {
 		maxBytes: 10 * 1024 * 1024,
-		mime: [
-			"application/pdf",
-			"text/plain",
-			"text/csv",
-			"application/msword",
-			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			"application/vnd.ms-excel",
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-			"application/vnd.ms-powerpoint",
-			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-			"application/zip",
-		],
-		accept:
-			"application/pdf,.pdf,text/plain,.txt,text/csv,.csv,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.ms-excel,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.ms-powerpoint,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,application/zip,.zip",
+		mime: DOCUMENT_MIME,
+		accept: DOCUMENT_ACCEPT,
 		label: "PDF, Office, text or ZIP up to 10 MB",
 	},
 };

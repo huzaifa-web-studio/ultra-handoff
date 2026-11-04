@@ -86,13 +86,14 @@ export function MilestoneEditor({
 		extractLinkUrls(initialValue),
 	);
 
-	// A milestone description accepts images only. The API profile has no
-	// `file` node and there is no attachment upload policy for milestones, so a
-	// dropped document gets a clear error instead of a card that cannot save.
+	// A milestone description accepts images and the same documents a comment
+	// does. Both purposes are milestone scoped, so an attached file can never be
+	// confused with a discussion attachment.
 	const drop = useEditorFileDrop(editor, {
 		organizationId,
 		organizationSlug,
 		imagePurpose: "milestone-image",
+		filePurpose: "milestone-file",
 		disabled: readOnly,
 	});
 
@@ -147,7 +148,7 @@ export function MilestoneEditor({
 
 						<EditorDropOverlay
 							visible={drop.isDragging}
-							label="Drop an image to add it"
+							label="Drop to add an image or a file"
 						/>
 					</div>
 

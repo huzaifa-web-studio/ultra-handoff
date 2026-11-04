@@ -4,8 +4,8 @@
  * Why these exist: the comment profile is the security boundary between an
  * editor value and a database column every participant renders. The tests pin
  * the two things that matter most: comments cannot smuggle in block types the
- * comment editor does not offer, and the milestone profile is unchanged by the
- * profile refactor.
+ * comment editor does not offer, and the milestone profile keeps its structural
+ * rules while still accepting attachments and images.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -286,18 +286,22 @@ describe("sanitizeRichText (milestone profile)", () => {
 		expect((result.value[0] as { type?: string }).type).toBe("img");
 	});
 
-	test("drops an attachment node, which only comments support", () => {
+	test("keeps an attachment node for a milestone description", () => {
 		const result = sanitizeRichText([
 			{
 				type: "file",
-				url: "/files/organizations/org/comments/files/brief.pdf",
+				url: "/files/organizations/org/milestones/files/brief.pdf",
 				name: "Brief.pdf",
+				mime: "application/pdf",
+				size: 2048,
 				children: [{ text: "" }],
 			},
 			paragraph("Body"),
 		]);
 
-		expect(result.value).toHaveLength(1);
-		expect((result.value[0] as { type?: string }).type).toBe("p");
+		expect(result.value).toHaveLength(2);
+		expect((result.value[0] as { type?: string }).type).toBe("file");
+		expect((result.value[0] as { name?: string }).name).toBe("Brief.pdf");
+		expect((result.value[1] as { type?: string }).type).toBe("p");
 	});
 });

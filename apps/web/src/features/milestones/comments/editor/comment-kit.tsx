@@ -3,17 +3,15 @@
  *
  * Why it reuses the milestone kit instead of a second curated list: a comment
  * is now a full rich text message. It needs tables, images, link cards, bookmarks,
- * checklists and indentation, and every one of those already has a renderer and
- * a sanitizer rule in the milestone editor. Reusing the kit keeps the two
- * surfaces looking and behaving the same, including the link hover card.
+ * checklists, attachments and indentation, and every one of those already has a
+ * renderer and a sanitizer rule in the milestone editor. Reusing the kit keeps
+ * the two surfaces looking and behaving the same, including the link hover card
+ * and the attachment card.
  *
  * The one thing removed is drag and drop. The product explicitly does not want
  * draggable sections inside a discussion, and removing `DndPlugin` also removes
  * the block gutter that hosts the side insert menu. Blocks are inserted from the
  * bottom toolbar instead.
- *
- * The one thing added is the attachment node, which the milestone kit does not
- * have.
  *
  * Used by: comments/editor/comment-editor.tsx.
  */
@@ -25,7 +23,6 @@ import {
 	milestoneStaticEditorPlugins,
 } from "../../editor/editor-kit";
 import { CommentStaticListItemElement } from "../comment-checklist";
-import { FileElementStatic, FilePlugin } from "./comment-file";
 
 /**
  * Everything the milestone editor has except the drag provider.
@@ -38,7 +35,7 @@ const commentBasePlugins = milestoneEditorPlugins.filter(
 );
 
 /** The plugins passed to `usePlateEditor` while writing. */
-export const commentEditorPlugins = [...commentBasePlugins, FilePlugin];
+export const commentEditorPlugins = commentBasePlugins;
 
 /**
  * Everything the static milestone renderer has, except the list item renderer.
@@ -55,5 +52,4 @@ const commentStaticBasePlugins = milestoneStaticEditorPlugins.filter(
 export const commentStaticEditorPlugins = [
 	...commentStaticBasePlugins,
 	ListItemPlugin.withComponent(CommentStaticListItemElement),
-	FilePlugin.withComponent(FileElementStatic),
 ];

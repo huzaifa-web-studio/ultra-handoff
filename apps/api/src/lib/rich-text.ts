@@ -13,10 +13,10 @@
  *   - link URLs must be absolute http, https or mailto
  *   - node count, depth and payload size are capped
  *
- * Two profiles share the walk. A milestone description is a short brief that
- * may contain headings, tables, images and bookmarks. A comment is a message
- * and only allows the lighter block set, with smaller caps. Keeping one walk
- * means the two can never develop different link or mark rules.
+ * Two profiles share the walk. A milestone description is a brief that may
+ * contain headings, tables, images, attachments and bookmarks. A comment is a
+ * message and only allows the lighter block set, with smaller caps. Keeping one
+ * walk means the two can never develop different link or mark rules.
  *
  * The same walk produces the plain text mirror used by search, previews and
  * empty body checks. Keeping both in one pass means they can never disagree.
@@ -35,7 +35,7 @@ import {
 	MILESTONE_DESCRIPTION_MAX,
 	MILESTONE_TEXT_MAX,
 } from "../auth/milestone-permissions";
-import { MAX_COMMENT_FILE_BYTES } from "./storage/config";
+import { MAX_ATTACHMENT_BYTES } from "./storage/config";
 
 /** Block types the editor is allowed to produce. */
 const ALLOWED_BLOCK_TYPES = new Set([
@@ -59,6 +59,7 @@ const ALLOWED_BLOCK_TYPES = new Set([
 	"hr",
 	"img",
 	"bookmark",
+	"file",
 ]);
 
 /** Marks the editor toolbar can toggle. */
@@ -107,7 +108,7 @@ const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
  * The comment composer is a full editor: headings, quotes, lists, checklists,
  * tables, images, link cards and file attachments. The set is explicit so a
  * plugin that exists only in the milestone kit still cannot be smuggled into a
- * comment, and `file` is the one type the milestone kit never produces.
+ * comment.
  */
 const COMMENT_BLOCK_TYPES = new Set([
 	"p",
@@ -155,7 +156,7 @@ type RichTextProfile = {
 	maxText: number;
 };
 
-/** A milestone description: structure, tables, images and bookmarks. */
+/** A milestone description: structure, tables, images, attachments and bookmarks. */
 const MILESTONE_PROFILE: RichTextProfile = {
 	label: "milestone description",
 	allowedBlocks: ALLOWED_BLOCK_TYPES,
@@ -387,7 +388,7 @@ function sanitizeNode(
 			typeof node.size === "number" &&
 			Number.isInteger(node.size) &&
 			node.size >= 0 &&
-			node.size <= MAX_COMMENT_FILE_BYTES
+			node.size <= MAX_ATTACHMENT_BYTES
 				? node.size
 				: undefined;
 
