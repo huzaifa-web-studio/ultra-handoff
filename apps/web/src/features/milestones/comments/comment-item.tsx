@@ -30,6 +30,7 @@ import {
 	Trash2Icon,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { UserAvatar } from "#/components/user-avatar";
 import { formatCommentTime, formatDateTime } from "#/lib/date";
@@ -42,7 +43,7 @@ import {
 } from "./comment-utils";
 import { CommentBody, CommentEditor } from "./editor/comment-editor";
 import { CommentToolbar } from "./editor/comment-toolbar";
-import { useUpdateComment } from "./hooks";
+import { useToggleChecklist, useUpdateComment } from "./hooks";
 
 /**
  * One icon action in the comment header.
@@ -105,6 +106,7 @@ export function CommentItem({
 	onRequestDelete: (comment: Comment) => void;
 }) {
 	const update = useUpdateComment(orgSlug, projectId, milestoneId);
+	const toggleChecklist = useToggleChecklist(orgSlug, projectId, milestoneId);
 
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState<unknown[]>(comment.body);
@@ -155,6 +157,30 @@ export function CommentItem({
 					? saveError.message
 					: "Could not save the comment.",
 			);
+		}
+	}
+
+	/**
+	 * Tick a checklist item without entering edit mode.
+	 *
+	 * The endpoint is open to anyone who can comment, so the author and every
+	 * other participant use the same path. A failed toggle is a toast because
+	 * the checkbox itself reverts to the stored value.
+	 */
+	async function handleToggleChecklist(itemId: string, checked: boolean) {
+		try {
+			await toggleChecklist.mutateAsync({
+				commentId: comment.id,
+				itemId,
+				checked,
+			});
+		} catch (toggleError) {
+			toast.error(
+				toggleError instanceof Error
+					? toggleError.message
+					: "Could not update the checklist.",
+			);
+			throw toggleError;
 		}
 	}
 
@@ -319,12 +345,16 @@ export function CommentItem({
 						</div>
 					) : (
 						<CommentBody
-							// Remount when the comment is edited elsewhere, otherwise the
-							// static editor would keep rendering the value it mounted with.
-							key={`${comment.id}-${comment.editedAt ?? "original"}`}
+							// Remount on every body change, including a checklist
+							// toggle, otherwise the static editor would keep the value
+							// it mounted with and the checkbox would never move.
+							key={`${comment.id}-${comment.updatedAt}`}
 							value={comment.body}
 							ariaLabel={`Comment by ${authorName}`}
 							organizationSlug={orgSlug}
+							canToggleChecklist={canComment}
+							checklistPending={toggleChecklist.isPending}
+							onToggleChecklist={handleToggleChecklist}
 						/>
 					)}
 				</MessageContent>

@@ -198,6 +198,53 @@ describe("sanitizeCommentBody", () => {
 		expect((result.value[0] as { type?: string }).type).toBe("bookmark");
 	});
 
+	test("gives checklist items a stable id and keeps an existing one", () => {
+		const generated = sanitizeCommentBody([
+			{
+				type: "taskList",
+				children: [
+					{
+						type: "li",
+						checked: false,
+						children: [{ type: "lic", children: [{ text: "Ship it" }] }],
+					},
+				],
+			},
+		]);
+
+		const generatedItem = (
+			generated.value[0] as {
+				children: { id?: string }[];
+			}
+		).children[0];
+
+		expect(typeof generatedItem?.id).toBe("string");
+		expect(generatedItem?.id?.length).toBeGreaterThan(0);
+
+		const preserved = sanitizeCommentBody([
+			{
+				type: "taskList",
+				children: [
+					{
+						type: "li",
+						id: "item-1",
+						checked: true,
+						children: [{ type: "lic", children: [{ text: "Already done" }] }],
+					},
+				],
+			},
+		]);
+
+		const preservedItem = (
+			preserved.value[0] as {
+				children: { id?: string; checked?: boolean }[];
+			}
+		).children[0];
+
+		expect(preservedItem?.id).toBe("item-1");
+		expect(preservedItem?.checked).toBe(true);
+	});
+
 	test("rejects a body with no visible text", () => {
 		expect(() => sanitizeCommentBody([paragraph("   ")])).toThrow(APIError);
 	});

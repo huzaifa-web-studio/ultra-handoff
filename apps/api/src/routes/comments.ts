@@ -22,6 +22,7 @@ import {
 	deleteMilestoneComment,
 	getMilestoneCommentThread,
 	listMilestoneComments,
+	toggleMilestoneChecklistItem,
 	updateMilestoneComment,
 } from "../services/comment.service";
 
@@ -137,6 +138,39 @@ export const commentRoutes = new Elysia({ name: "comments" })
 			}
 		},
 		{ tenant: true, params: commentParams },
+	)
+	/**
+	 * Flip one checklist item.
+	 *
+	 * Anyone who can comment may call this. It is separate from the edit route
+	 * so checking an item never requires editing the text, and never marks the
+	 * comment as edited.
+	 */
+	.patch(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/comments/:commentId/checklist",
+		async ({ tenant, status, params, body }) => {
+			try {
+				return await toggleMilestoneChecklistItem(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					params.commentId,
+					body,
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not update the checklist."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: commentParams,
+			body: t.Object({
+				itemId: t.String({ minLength: 1, maxLength: 64 }),
+				checked: t.Boolean(),
+			}),
+		},
 	)
 	/** Change the body of your own comment. */
 	.patch(

@@ -18,10 +18,13 @@
  * Used by: comments/editor/comment-editor.tsx.
  */
 
+import { ListItemPlugin } from "@platejs/list-classic/react";
+
 import {
 	milestoneEditorPlugins,
 	milestoneStaticEditorPlugins,
 } from "../../editor/editor-kit";
+import { CommentStaticListItemElement } from "../comment-checklist";
 import { FileElementStatic, FilePlugin } from "./comment-file";
 
 /**
@@ -37,8 +40,20 @@ const commentBasePlugins = milestoneEditorPlugins.filter(
 /** The plugins passed to `usePlateEditor` while writing. */
 export const commentEditorPlugins = [...commentBasePlugins, FilePlugin];
 
+/**
+ * Everything the static milestone renderer has, except the list item renderer.
+ *
+ * The list item is swapped for one whose checklist checkbox stays interactive,
+ * because toggling an item is a shared action that does not require editing the
+ * comment.
+ */
+const commentStaticBasePlugins = milestoneStaticEditorPlugins.filter(
+	(plugin) => plugin.key !== "li",
+);
+
 /** The plugins passed to the static renderer. */
 export const commentStaticEditorPlugins = [
-	...milestoneStaticEditorPlugins,
+	...commentStaticBasePlugins,
+	ListItemPlugin.withComponent(CommentStaticListItemElement),
 	FilePlugin.withComponent(FileElementStatic),
 ];

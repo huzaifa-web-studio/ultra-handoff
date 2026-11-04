@@ -142,6 +142,37 @@ export async function updateComment(
 
 export type CommentEditResponse = { comment: Comment };
 
+/** Flip one checklist item without editing the comment text. */
+export async function toggleCommentChecklist(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	commentId: string,
+	input: { itemId: string; checked: boolean },
+): Promise<CommentChecklistResponse> {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.comments({ commentId })
+		.checklist.patch(input);
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not update the checklist."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not update the checklist.", 0);
+	}
+
+	return response.data;
+}
+
+export type CommentChecklistResponse = { comment: Comment };
+
 /** Soft delete your own comment. */
 export async function deleteComment(
 	orgSlug: string,

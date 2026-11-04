@@ -60,6 +60,8 @@ export type CommentRow = {
 	body: unknown[];
 	author: CommentAuthor | null;
 	createdAt: string;
+	/** Changes on an edit or a checklist toggle, so a static body can refresh. */
+	updatedAt: string;
 	editedAt: string | null;
 	deletedAt: string | null;
 	/** True when this caller is the author and the comment is still editable. */
@@ -193,6 +195,19 @@ async function countComments(
 	return row?.count ?? 0;
 }
 
+/** The scope every single-comment read uses. */
+function commentScope(
+	tenant: TenantContext,
+	milestoneId: string,
+	commentId: string,
+) {
+	return and(
+		eq(comment.organizationId, tenant.organizationId),
+		eq(comment.milestoneId, milestoneId),
+		eq(comment.id, commentId),
+	);
+}
+
 /**
  * Load one comment inside one milestone.
  *
@@ -208,14 +223,31 @@ async function loadCommentRecord(
 	const [record] = await tx
 		.select()
 		.from(comment)
-		.where(
-			and(
-				eq(comment.organizationId, tenant.organizationId),
-				eq(comment.milestoneId, milestoneId),
-				eq(comment.id, commentId),
-			),
-		)
+		.where(commentScope(tenant, milestoneId, commentId))
 		.limit(1);
+
+	return record ?? null;
+}
+
+/**
+ * Load one comment and lock its row for a write.
+ *
+ * Why: a checklist toggle and a text edit both rewrite `body`. Without a row
+ * lock the two could read the same version and the later write would drop the
+ * other change. Toggles lock so two readers checking different items both land.
+ */
+async function loadCommentRecordForUpdate(
+	tx: TenantTx,
+	tenant: TenantContext,
+	milestoneId: string,
+	commentId: string,
+): Promise<CommentRecord | null> {
+	const [record] = await tx
+		.select()
+		.from(comment)
+		.where(commentScope(tenant, milestoneId, commentId))
+		.limit(1)
+		.for("update");
 
 	return record ?? null;
 }
@@ -253,6 +285,7 @@ function toCommentRow(
 				}
 			: null,
 		createdAt: record.createdAt.toISOString(),
+		updatedAt: record.updatedAt.toISOString(),
 		editedAt: record.editedAt ? record.editedAt.toISOString() : null,
 		deletedAt: record.deletedAt ? record.deletedAt.toISOString() : null,
 		canEdit: editable,
@@ -569,7 +602,7 @@ export async function updateMilestoneComment(
 
 			assertProjectActive(access.row.archivedAt);
 
-			const record = await loadCommentRecord(
+			const record = await loadCommentRecordForUpdate(
 				tx,
 				tenant,
 				milestoneId,
@@ -626,6 +659,135 @@ export async function updateMilestoneComment(
 	);
 }
 
+/** The toggled comment, ready for the list and thread caches. */
+export type CommentChecklistResult = {
+	comment: CommentRow;
+};
+
+/** One checklist item change. */
+export type ToggleChecklistInput = {
+	itemId: string;
+	checked: boolean;
+};
+
+/** One checklist item inside a sanitized body. */
+type ChecklistItem = Record<string, unknown> & {
+	id: string;
+	checked: boolean;
+};
+
+/** Find a checklist item by id, walking nested lists. */
+function findChecklistItem(
+	nodes: unknown[],
+	itemId: string,
+): ChecklistItem | null {
+	for (const node of nodes) {
+		if (!node || typeof node !== "object") continue;
+
+		const record = node as Record<string, unknown>;
+
+		if (record.id === itemId && typeof record.checked === "boolean") {
+			return record as ChecklistItem;
+		}
+
+		if (Array.isArray(record.children)) {
+			const found = findChecklistItem(record.children, itemId);
+
+			if (found) return found;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Flip one checklist item.
+ *
+ * Anyone who can comment may do this, including a client. The comment text is
+ * untouched, the author's edited marker does not move, and the row lock keeps
+ * two readers checking different items from dropping each other's change.
+ */
+export async function toggleMilestoneChecklistItem(
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+	commentId: string,
+	input: ToggleChecklistInput,
+): Promise<CommentChecklistResult> {
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const { access } = await requireMilestoneAccess(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+			);
+
+			assertProjectActive(access.row.archivedAt);
+			assertCanComment(tenant.role, access.role);
+
+			const record = await loadCommentRecordForUpdate(
+				tx,
+				tenant,
+				milestoneId,
+				commentId,
+			);
+
+			if (!record) {
+				throw new APIError("NOT_FOUND", {
+					message: "That comment no longer exists.",
+				});
+			}
+
+			if (record.deletedAt !== null) {
+				throw new APIError("BAD_REQUEST", {
+					message: "That comment was deleted and can no longer be changed.",
+				});
+			}
+
+			const body = structuredClone(record.body);
+			const item = findChecklistItem(body, input.itemId);
+
+			if (!item) {
+				throw new APIError("NOT_FOUND", {
+					message: "That checklist item no longer exists.",
+				});
+			}
+
+			// A tap that matches the stored state is a no-op. Returning the row
+			// without an update keeps `updatedAt` and the static body stable.
+			if (item.checked === input.checked) {
+				const people = await loadPeople([record]);
+
+				return {
+					comment: toCommentRow(record, people, tenant.userId, false),
+				};
+			}
+
+			item.checked = input.checked;
+
+			const [updated] = await tx
+				.update(comment)
+				.set({ body })
+				.where(commentScope(tenant, milestoneId, commentId))
+				.returning();
+
+			if (!updated) {
+				throw new APIError("NOT_FOUND", {
+					message: "That comment no longer exists.",
+				});
+			}
+
+			const people = await loadPeople([updated]);
+
+			return {
+				comment: toCommentRow(updated, people, tenant.userId, false),
+			};
+		},
+	);
+}
+
 /**
  * Delete your own comment.
  *
@@ -653,7 +815,7 @@ export async function deleteMilestoneComment(
 
 			assertProjectActive(access.row.archivedAt);
 
-			const record = await loadCommentRecord(
+			const record = await loadCommentRecordForUpdate(
 				tx,
 				tenant,
 				milestoneId,

@@ -29,6 +29,7 @@ import {
 	LinkIcon,
 	ListIcon,
 	ListOrderedIcon,
+	ListTodoIcon,
 	PaperclipIcon,
 	StrikethroughIcon,
 	TableIcon,
@@ -244,6 +245,9 @@ export function CommentToolbar({
 				</ListButton>
 				<ListButton list="ol" label="Numbered list">
 					<ListOrderedIcon aria-hidden />
+				</ListButton>
+				<ListButton list="taskList" label="Checklist">
+					<ListTodoIcon aria-hidden />
 				</ListButton>
 
 				<ToolbarSeparator />

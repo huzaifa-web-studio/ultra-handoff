@@ -34,6 +34,7 @@ import {
 	deleteComment,
 	fetchComments,
 	fetchCommentThread,
+	toggleCommentChecklist,
 	updateComment,
 } from "./api";
 
@@ -308,6 +309,50 @@ export function useUpdateComment(
 	return useMutation({
 		mutationFn: ({ commentId, body }: { commentId: string; body: unknown[] }) =>
 			updateComment(orgSlug, projectId, milestoneId, commentId, body),
+		onSuccess: (data) => {
+			updatePages(queryClient, key, (pages) =>
+				replaceInPages(pages, data.comment),
+			);
+			replaceInThread(
+				queryClient,
+				orgSlug,
+				projectId,
+				milestoneId,
+				data.comment,
+			);
+		},
+	});
+}
+
+/**
+ * Flip one checklist item.
+ *
+ * Allowed for anyone who can comment, including the client role. The response
+ * replaces the comment in both the paged list and any focused thread, so the
+ * checkbox and the rest of the body stay in step.
+ */
+export function useToggleChecklist(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+) {
+	const queryClient = useQueryClient();
+	const key = listKey(orgSlug, projectId, milestoneId);
+
+	return useMutation({
+		mutationFn: ({
+			commentId,
+			itemId,
+			checked,
+		}: {
+			commentId: string;
+			itemId: string;
+			checked: boolean;
+		}) =>
+			toggleCommentChecklist(orgSlug, projectId, milestoneId, commentId, {
+				itemId,
+				checked,
+			}),
 		onSuccess: (data) => {
 			updatePages(queryClient, key, (pages) =>
 				replaceInPages(pages, data.comment),

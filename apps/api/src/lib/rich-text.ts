@@ -25,6 +25,7 @@
  * src/services/comment.service.ts.
  */
 
+import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
 import {
 	COMMENT_BODY_MAX,
@@ -190,6 +191,14 @@ const COMMENT_PROFILE: RichTextProfile = {
 type SanitizeState = {
 	nodes: number;
 	text: string[];
+	/**
+	 * Checklist ids already used in this document.
+	 *
+	 * A checklist item needs a stable id so any reader can toggle it without
+	 * editing the comment. The set keeps a crafted duplicate from making two
+	 * items share one id.
+	 */
+	itemIds: Set<string>;
 };
 
 /** The sanitised value plus its plain text mirror. */
@@ -485,6 +494,18 @@ function sanitizeNode(
 	// copying arbitrary node props.
 	if (type === "li" && typeof node.checked === "boolean") {
 		element.checked = node.checked;
+
+		// A checklist item needs a stable id so any reader can toggle it with a
+		// targeted request instead of editing the whole comment. A valid id from
+		// the editor is preserved; a missing or duplicate one is replaced.
+		const rawId = typeof node.id === "string" ? node.id.trim() : "";
+		const id =
+			/^[A-Za-z0-9_-]{1,64}$/.test(rawId) && !state.itemIds.has(rawId)
+				? rawId
+				: randomUUID();
+
+		state.itemIds.add(id);
+		element.id = id;
 	}
 
 	// Indentation is a single bounded integer on supported block types. It
@@ -581,7 +602,11 @@ function sanitizeProfile(
 		});
 	}
 
-	const state: SanitizeState = { nodes: 0, text: [] };
+	const state: SanitizeState = {
+		nodes: 0,
+		text: [],
+		itemIds: new Set(),
+	};
 	const clean: unknown[] = [];
 
 	for (const node of value) {

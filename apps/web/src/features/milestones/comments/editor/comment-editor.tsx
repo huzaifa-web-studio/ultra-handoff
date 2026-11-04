@@ -32,6 +32,7 @@ import { LinkPreviewProvider } from "#/features/link-previews/link-preview-conte
 import { extractLinkUrls } from "#/features/link-previews/utils";
 import { toEditorValue } from "../../editor/editor-value";
 import { EditorStaticProvider } from "../../editor/editor-view-context";
+import { CommentChecklistProvider } from "../comment-checklist";
 import {
 	commentEditorPlugins,
 	commentStaticEditorPlugins,
@@ -195,10 +196,18 @@ export function CommentBody({
 	value,
 	ariaLabel,
 	organizationSlug,
+	canToggleChecklist,
+	checklistPending,
+	onToggleChecklist,
 }: {
 	value: unknown[];
 	ariaLabel: string;
 	organizationSlug: string;
+	/** True when this viewer may tick a checklist item. */
+	canToggleChecklist: boolean;
+	/** True while a toggle is in flight for this comment. */
+	checklistPending: boolean;
+	onToggleChecklist: (itemId: string, checked: boolean) => Promise<void>;
 }) {
 	const [initialValue] = useState(() => toEditorValue(value));
 	const [previewUrls] = useState(() => extractLinkUrls(value));
@@ -209,13 +218,20 @@ export function CommentBody({
 
 	return (
 		<LinkPreviewProvider orgSlug={organizationSlug} urls={previewUrls}>
-			<EditorStaticProvider>
-				<PlateStatic
-					editor={editor}
-					aria-label={ariaLabel}
-					className="text-sm break-words whitespace-pre-wrap text-app-text"
-				/>
-			</EditorStaticProvider>
+			<CommentChecklistProvider
+				value={{
+					disabled: !canToggleChecklist || checklistPending,
+					onToggle: onToggleChecklist,
+				}}
+			>
+				<EditorStaticProvider>
+					<PlateStatic
+						editor={editor}
+						aria-label={ariaLabel}
+						className="text-sm break-words whitespace-pre-wrap text-app-text"
+					/>
+				</EditorStaticProvider>
+			</CommentChecklistProvider>
 		</LinkPreviewProvider>
 	);
 }
