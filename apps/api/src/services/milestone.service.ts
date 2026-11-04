@@ -23,7 +23,7 @@
 
 import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
-import { and, asc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 
 import { canCommentOnProject } from "../auth/comment-permissions";
 import {
@@ -38,12 +38,7 @@ import {
 	validateMilestoneTitle,
 } from "../auth/milestone-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
-import {
-	comment,
-	milestone,
-	milestoneAssignee,
-	projectMember,
-} from "../db/schema";
+import { milestone, milestoneAssignee, projectMember } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
@@ -87,11 +82,9 @@ export type MilestoneSummary = {
 	updatedAt: string;
 };
 
-/** The summary plus the full editor document and its discussion size. */
+/** The summary plus the full editor document. */
 export type MilestoneDetail = MilestoneSummary & {
 	description: unknown[];
-	/** Non-deleted comments in this milestone, used by the tab badge. */
-	commentCount: number;
 };
 
 /** Capabilities of the caller, so the UI never guesses from a role string. */
@@ -607,26 +600,9 @@ async function loadDetail(
 	);
 	const [summary] = await toSummaries(tx, tenant, [record]);
 
-	// One count for the tab badge. Deleted comments are excluded because the
-	// badge should describe what a reader can actually see.
-	const [countRow] = await tx
-		.select({ count: sql<number>`count(*)`.mapWith(Number) })
-		.from(comment)
-		.where(
-			and(
-				eq(comment.organizationId, tenant.organizationId),
-				eq(comment.milestoneId, milestoneId),
-				isNull(comment.deletedAt),
-			),
-		);
-
 	return {
 		projectId,
-		milestone: {
-			...summary,
-			description: record.description,
-			commentCount: countRow?.count ?? 0,
-		},
+		milestone: { ...summary, description: record.description },
 		viewer,
 	};
 }

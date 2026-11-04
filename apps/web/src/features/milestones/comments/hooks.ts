@@ -25,8 +25,7 @@ import {
 } from "@tanstack/react-query";
 
 import { ApiRequestError } from "#/lib/api";
-import type { MilestoneDetailResponse } from "../api";
-import { milestoneDetailKey, milestonesKey } from "../hooks";
+import { milestonesKey } from "../hooks";
 import {
 	type Comment,
 	type CommentPage,
@@ -215,26 +214,6 @@ function replaceInThread(
 	);
 }
 
-/** Keep the tab badge in step with the server's total. */
-function patchCommentCount(
-	queryClient: ReturnType<typeof useQueryClient>,
-	orgSlug: string,
-	projectId: string,
-	milestoneId: string,
-	total: number,
-): void {
-	queryClient.setQueryData<MilestoneDetailResponse>(
-		milestoneDetailKey(orgSlug, projectId, milestoneId),
-		(current) =>
-			current
-				? {
-						...current,
-						milestone: { ...current.milestone, commentCount: total },
-					}
-				: current,
-	);
-}
-
 /** One milestone's discussion, loaded page by page. */
 export function useMilestoneComments(
 	orgSlug: string,
@@ -305,13 +284,6 @@ export function useCreateComment(
 				void queryClient.invalidateQueries({ queryKey: key });
 			}
 
-			patchCommentCount(
-				queryClient,
-				orgSlug,
-				projectId,
-				milestoneId,
-				data.total,
-			);
 			// A focused tab for the parent thread should see the reply too.
 			appendReplyToThread(
 				queryClient,
@@ -373,13 +345,6 @@ export function useDeleteComment(
 				projectId,
 				milestoneId,
 				data.comment,
-			);
-			patchCommentCount(
-				queryClient,
-				orgSlug,
-				projectId,
-				milestoneId,
-				data.total,
 			);
 		},
 	});

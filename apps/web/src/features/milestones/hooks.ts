@@ -57,11 +57,7 @@ function listKey(
 }
 
 /** One milestone detail. Exported so the comments feature can patch its count. */
-export function milestoneDetailKey(
-	orgSlug: string,
-	projectId: string,
-	milestoneId: string,
-) {
+function detailKey(orgSlug: string, projectId: string, milestoneId: string) {
 	return [...milestonesKey(orgSlug, projectId), "detail", milestoneId] as const;
 }
 
@@ -108,7 +104,7 @@ export function useMilestoneDetail(
 	milestoneId: string | null,
 ) {
 	return useQuery({
-		queryKey: milestoneDetailKey(orgSlug, projectId, milestoneId ?? ""),
+		queryKey: detailKey(orgSlug, projectId, milestoneId ?? ""),
 		queryFn: () => fetchMilestone(orgSlug, projectId, milestoneId ?? ""),
 		enabled: Boolean(orgSlug) && Boolean(projectId) && Boolean(milestoneId),
 		staleTime: 10_000,
@@ -140,7 +136,7 @@ function syncMilestone(
 	const milestoneId = normalized.id;
 
 	queryClient.setQueryData<MilestoneDetailResponse>(
-		milestoneDetailKey(orgSlug, projectId, milestoneId),
+		detailKey(orgSlug, projectId, milestoneId),
 		(current) => ({
 			projectId,
 			viewer: current?.viewer ?? {
@@ -265,7 +261,7 @@ export function useDeleteMilestone(orgSlug: string, projectId: string) {
 			deleteMilestone(orgSlug, projectId, milestoneId),
 		onSuccess: (_data, milestoneId) => {
 			queryClient.removeQueries({
-				queryKey: milestoneDetailKey(orgSlug, projectId, milestoneId),
+				queryKey: detailKey(orgSlug, projectId, milestoneId),
 			});
 			void invalidate();
 		},

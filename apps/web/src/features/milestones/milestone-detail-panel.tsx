@@ -574,11 +574,6 @@ function MilestoneDetailContent({
 					</TabsTrigger>
 					<TabsTrigger id="comments" className="flex-none cursor-pointer">
 						Comments
-						{milestone.commentCount > 0 && (
-							<span className="inline-flex h-4 min-w-4 items-center justify-center border border-current px-1 text-[0.6rem] tabular-nums">
-								{milestone.commentCount > 99 ? "99+" : milestone.commentCount}
-							</span>
-						)}
 					</TabsTrigger>
 
 					{/*
