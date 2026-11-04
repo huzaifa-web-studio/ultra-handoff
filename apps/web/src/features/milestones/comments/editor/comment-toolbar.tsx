@@ -35,7 +35,6 @@ import {
 	TableIcon,
 	UnderlineIcon,
 } from "lucide-react";
-import { KEYS } from "platejs";
 import { useEditorRef } from "platejs/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -47,6 +46,7 @@ import {
 	uploadFile,
 	validateUploadFile,
 } from "#/lib/upload";
+import { fileNode, imageNode } from "../../editor/editor-nodes";
 import {
 	BlockSelect,
 	ListButton,
@@ -60,25 +60,6 @@ import {
 	insertCommentTable,
 	resolveCommentInsertPoint,
 } from "./comment-insert";
-
-/** The MIME string shown on the attachment card. */
-function displayMime(file: File): string {
-	const declared = file.type.split(";")[0]?.trim().toLowerCase();
-
-	return declared && declared.length > 0
-		? declared
-		: "application/octet-stream";
-}
-
-/** A safe default alt text from the original filename. */
-function imageAlt(file: File): string {
-	return (
-		file.name
-			.replace(/\.[^.]+$/, "")
-			.trim()
-			.slice(0, 200) || "Image"
-	);
-}
 
 export function CommentToolbar({
 	organizationId,
@@ -174,21 +155,9 @@ export function CommentToolbar({
 			const point = pointRef.current ?? resolveCommentInsertPoint(editor);
 
 			if (purpose === "comment-image") {
-				insertCommentBlock(editor, point, {
-					type: KEYS.img,
-					url: uploaded.url,
-					alt: imageAlt(file),
-					children: [{ text: "" }],
-				});
+				insertCommentBlock(editor, point, imageNode(uploaded.url, file.name));
 			} else {
-				insertCommentBlock(editor, point, {
-					type: "file",
-					url: uploaded.url,
-					name: file.name.slice(0, 200),
-					mime: displayMime(file),
-					size: file.size,
-					children: [{ text: "" }],
-				});
+				insertCommentBlock(editor, point, fileNode(uploaded.url, file));
 			}
 
 			toast.success(kind === "image" ? "Image added." : "File added.", {

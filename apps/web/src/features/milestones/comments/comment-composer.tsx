@@ -147,7 +147,9 @@ export function CommentComposer({
 					autoFocus={autoFocus || focusAfterPost}
 					focusToken={focusToken}
 					readOnly={create.isPending}
+					organizationId={organizationId}
 					organizationSlug={orgSlug}
+					onUploadingChange={setAttachmentUploading}
 					ariaLabel={
 						parentId
 							? `Reply to ${replyingToName ?? "this comment"}`

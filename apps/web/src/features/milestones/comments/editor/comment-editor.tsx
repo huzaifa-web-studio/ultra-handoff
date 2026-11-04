@@ -30,6 +30,10 @@ import { type KeyboardEvent, useEffect, useState } from "react";
 
 import { LinkPreviewProvider } from "#/features/link-previews/link-preview-context";
 import { extractLinkUrls } from "#/features/link-previews/utils";
+import {
+	EditorDropOverlay,
+	useEditorFileDrop,
+} from "../../editor/editor-file-drop";
 import { toEditorValue } from "../../editor/editor-value";
 import { EditorStaticProvider } from "../../editor/editor-view-context";
 import { CommentChecklistProvider } from "../comment-checklist";
@@ -97,12 +101,14 @@ export function CommentEditor({
 	onCancel,
 	ariaLabel,
 	placeholder,
+	organizationId,
 	organizationSlug,
 	autoFocus = false,
 	focusToken = 0,
 	readOnly = false,
 	minHeightClass = "min-h-16",
 	footer,
+	onUploadingChange,
 }: {
 	initialValue: unknown[];
 	onChange: (value: unknown[]) => void;
@@ -110,6 +116,8 @@ export function CommentEditor({
 	onCancel?: () => void;
 	ariaLabel: string;
 	placeholder: string;
+	/** Tenant that owns a dropped or picked upload. */
+	organizationId: string;
 	/** Where link preview cards are read from. */
 	organizationSlug: string;
 	autoFocus?: boolean;
@@ -127,6 +135,8 @@ export function CommentEditor({
 	 * the card exactly as the composer design requires.
 	 */
 	footer?: React.ReactNode;
+	/** Lets the host disable Post or Save while a drop uploads. */
+	onUploadingChange?: (uploading: boolean) => void;
 }) {
 	// Created once per mounted instance. The parent uses `key` to reset it after
 	// a successful post, which is the only reliable way to clear undo history.
@@ -157,6 +167,18 @@ export function CommentEditor({
 		setPreviewUrls((current) => (sameUrls(current, next) ? current : next));
 	}
 
+	// A comment accepts images and documents, matching the two comment upload
+	// policies. A file dropped while a save is pending is ignored, because the
+	// editable is read only at that moment.
+	const drop = useEditorFileDrop(editor, {
+		organizationId,
+		organizationSlug,
+		imagePurpose: "comment-image",
+		filePurpose: "comment-file",
+		disabled: readOnly,
+		onUploadingChange,
+	});
+
 	return (
 		<LinkPreviewProvider orgSlug={organizationSlug} urls={previewUrls}>
 			<div
@@ -167,16 +189,24 @@ export function CommentEditor({
 					readOnly={readOnly}
 					onChange={({ value }) => handleChange(value as unknown[])}
 				>
-					<PlateContent
-						aria-label={ariaLabel}
-						placeholder={placeholder}
-						autoFocus={autoFocus}
-						// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`,
-						// so the editor restates it. Without it the browser collapses
-						// spaces as they are typed and the text looks trimmed on screen.
-						className={`${minHeightClass} max-h-72 w-full cursor-text overflow-y-auto px-3 py-2 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100`}
-						disableDefaultStyles
-					/>
+					<div className="relative">
+						<PlateContent
+							aria-label={ariaLabel}
+							placeholder={placeholder}
+							autoFocus={autoFocus}
+							// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`,
+							// so the editor restates it. Without it the browser collapses
+							// spaces as they are typed and the text looks trimmed on screen.
+							className={`${minHeightClass} max-h-72 w-full cursor-text overflow-y-auto px-3 py-2 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100`}
+							disableDefaultStyles
+							{...drop.dropProps}
+						/>
+
+						<EditorDropOverlay
+							visible={drop.isDragging}
+							label="Drop to add an image or a file"
+						/>
+					</div>
 
 					{footer}
 				</Plate>

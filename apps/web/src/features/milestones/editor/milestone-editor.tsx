@@ -31,6 +31,7 @@ import { type KeyboardEvent, useState } from "react";
 import { LinkPreviewProvider } from "#/features/link-previews/link-preview-context";
 import { extractLinkUrls } from "#/features/link-previews/utils";
 import { BlockMenuProvider } from "./editor-draggable";
+import { EditorDropOverlay, useEditorFileDrop } from "./editor-file-drop";
 import {
 	milestoneEditorPlugins,
 	milestoneStaticEditorPlugins,
@@ -85,6 +86,16 @@ export function MilestoneEditor({
 		extractLinkUrls(initialValue),
 	);
 
+	// A milestone description accepts images only. The API profile has no
+	// `file` node and there is no attachment upload policy for milestones, so a
+	// dropped document gets a clear error instead of a card that cannot save.
+	const drop = useEditorFileDrop(editor, {
+		organizationId,
+		organizationSlug,
+		imagePurpose: "milestone-image",
+		disabled: readOnly,
+	});
+
 	function handleChange(value: unknown[]) {
 		onChange(value);
 
@@ -118,19 +129,27 @@ export function MilestoneEditor({
 					readOnly={readOnly}
 					onChange={({ value }) => handleChange(value as unknown[])}
 				>
-					<PlateContent
-						aria-label={ariaLabel}
-						onKeyDown={handleEditorKeyDown}
-						placeholder="Write the details, the expected outcome, or anything the assignee needs."
-						// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`, so
-						// the editor has to restate it. Without it the browser collapses
-						// spaces as they are typed and the text looks trimmed on screen.
-						//
-						// The left padding is the block gutter: 44px holds the insert
-						// button and the drag handle.
-						className="min-h-40 w-full cursor-text pl-11 pr-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
-						disableDefaultStyles
-					/>
+					<div className="relative">
+						<PlateContent
+							aria-label={ariaLabel}
+							onKeyDown={handleEditorKeyDown}
+							placeholder="Write the details, the expected outcome, or anything the assignee needs."
+							// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`, so
+							// the editor has to restate it. Without it the browser collapses
+							// spaces as they are typed and the text looks trimmed on screen.
+							//
+							// The left padding is the block gutter: 44px holds the insert
+							// button and the drag handle.
+							className="min-h-40 w-full cursor-text pl-11 pr-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
+							disableDefaultStyles
+							{...drop.dropProps}
+						/>
+
+						<EditorDropOverlay
+							visible={drop.isDragging}
+							label="Drop an image to add it"
+						/>
+					</div>
 
 					{/* The only formatting surface: it follows the text selection. */}
 					{!readOnly && <EditorFloatingToolbar />}

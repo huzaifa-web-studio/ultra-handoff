@@ -296,7 +296,9 @@ export function CommentItem({
 									onSubmit={() => void saveEdit()}
 									onCancel={cancelEdit}
 									readOnly={update.isPending}
+									organizationId={organizationId}
 									organizationSlug={orgSlug}
+									onUploadingChange={setAttachmentUploading}
 									ariaLabel={`Edit comment by ${authorName}`}
 									placeholder="Edit your comment..."
 									minHeightClass="min-h-16"
