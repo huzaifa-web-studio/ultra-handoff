@@ -46,6 +46,7 @@ const ALLOWED_BLOCK_TYPES = new Set([
 	"code_line",
 	"hr",
 	"img",
+	"bookmark",
 ]);
 
 /** Marks the editor toolbar can toggle. */
@@ -236,6 +237,26 @@ function sanitizeNode(
 	// An unknown type is downgraded rather than dropped, so a plugin that is
 	// added later and then removed cannot silently eat a document.
 	const type = ALLOWED_BLOCK_TYPES.has(rawType) ? rawType : "p";
+
+	// A bookmark is a void block that only carries a URL. The preview itself is
+	// looked up by that URL, so no metadata is stored in the document and a
+	// stale card can never be written into the body.
+	if (type === "bookmark") {
+		const url = safeUrl(node.url);
+		if (!url) return null;
+
+		// Keep a line break in the mirror so a preview does not run the text on
+		// either side of the card together.
+		state.text.push("\n");
+
+		return {
+			type: "bookmark",
+			url,
+			// Plate requires every element to have a child, even when it renders
+			// as void.
+			children: [{ text: "" }],
+		};
+	}
 
 	// An image is a void block with no text. It is kept only when its source
 	// is safe to render; an image that cannot load is dropped rather than

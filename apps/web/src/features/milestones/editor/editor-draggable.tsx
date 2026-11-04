@@ -29,10 +29,12 @@ import { useDraggable, useDropLine } from "@platejs/dnd";
 import { insertTable } from "@platejs/table";
 import { cn } from "cn";
 import {
+	BookmarkIcon,
 	GripVerticalIcon,
 	Heading2Icon,
 	Heading3Icon,
 	ImageIcon,
+	LinkIcon,
 	ListIcon,
 	ListOrderedIcon,
 	ListTodoIcon,
@@ -55,8 +57,15 @@ import {
 } from "react";
 import { toast } from "sonner";
 
+import { useLinkPreview } from "#/features/link-previews/link-preview-context";
+import { shortenUrl } from "#/features/link-previews/utils";
 import { beginOrganizationOperation } from "#/features/organization/switch-guard";
 import { FILE_POLICIES, uploadFile, validateUploadFile } from "#/lib/upload";
+import {
+	BookmarkDialog,
+	insertBookmarkNode,
+	turnBookmarkIntoLink,
+} from "./editor-bookmark";
 
 /** Blocks the insert menu can create. */
 type InsertKind = "table" | "checklist" | "h2" | "h3" | "quote" | "ul" | "ol";
@@ -170,6 +179,19 @@ function Draggable(props: PlateElementProps) {
 	// The file picker is a real input, so the browser keeps the user gesture
 	// that opened it and can read the chosen file.
 	const imageInputRef = useRef<HTMLInputElement>(null);
+	// The bookmark prompt is local to this block, because it inserts at this
+	// block's path and needs no shared state beyond the open flag.
+	const [bookmarkOpen, setBookmarkOpen] = useState(false);
+
+	// Only a bookmark block has a URL to read here. Asking the context for an
+	// undefined URL is harmless and keeps the hook order stable.
+	const bookmarkUrlValue =
+		element.type === "bookmark"
+			? (element as { url?: unknown }).url
+			: undefined;
+	const bookmarkPreview = useLinkPreview(
+		typeof bookmarkUrlValue === "string" ? bookmarkUrlValue : undefined,
+	);
 
 	// A block can disappear while it owns the open menu, for example when it is
 	// deleted. Release the shared slot so other blocks are not blocked forever.
@@ -302,6 +324,54 @@ function Draggable(props: PlateElementProps) {
 	}
 
 	/**
+	 * Insert a bookmark at this line.
+	 *
+	 * Same empty paragraph rule as an image: replacing the empty line keeps the
+	 * card where the writer put the caret instead of one line below it.
+	 */
+	function insertBookmark(url: string) {
+		const anchor = editor.api.findPath(element) ?? path;
+		const isEmptyParagraph =
+			element.type === "p" && editor.api.string(anchor).trim().length === 0;
+		const at = isEmptyParagraph ? anchor : PathApi.next(anchor);
+
+		if (isEmptyParagraph) {
+			editor.tf.removeNodes({ at: anchor });
+		}
+
+		insertBookmarkNode(editor, at, url);
+
+		setBookmarkOpen(false);
+		setOpenId(null);
+		editor.tf.focus();
+	}
+
+	/**
+	 * Convert this bookmark back into an inline link.
+	 *
+	 * The visible text reuses the preview title when it is known, so the
+	 * restored link reads like a line of prose instead of a raw URL.
+	 */
+	function convertBookmarkToLink() {
+		if (typeof bookmarkUrlValue !== "string") return;
+
+		const title = bookmarkPreview?.title?.trim();
+		const text =
+			title && title.length <= 60
+				? title
+				: shortenUrl(bookmarkUrlValue, 60) || bookmarkUrlValue;
+
+		turnBookmarkIntoLink(
+			editor,
+			editor.api.findPath(element) ?? path,
+			bookmarkUrlValue,
+			text,
+		);
+
+		setOpenId(null);
+	}
+
+	/**
 	 * Upload a picked file and add it to the document.
 	 *
 	 * The upload uses the same presigned pipeline as the logo controls. A
@@ -395,6 +465,12 @@ function Draggable(props: PlateElementProps) {
 						offset={6}
 						className="w-auto min-w-48"
 					>
+						{element.type === "bookmark" && (
+							<DropdownMenuItem id="to-link" onAction={convertBookmarkToLink}>
+								<LinkIcon aria-hidden />
+								Turn into link
+							</DropdownMenuItem>
+						)}
 						<DropdownMenuItem id="table" onAction={() => insert("table")}>
 							<TableIcon aria-hidden />
 							Table
@@ -408,6 +484,13 @@ function Draggable(props: PlateElementProps) {
 								Image
 							</DropdownMenuItem>
 						)}
+						<DropdownMenuItem
+							id="bookmark"
+							onAction={() => setBookmarkOpen(true)}
+						>
+							<BookmarkIcon aria-hidden />
+							Bookmark
+						</DropdownMenuItem>
 						<DropdownMenuItem
 							id="checklist"
 							onAction={() => insert("checklist")}
@@ -437,6 +520,12 @@ function Draggable(props: PlateElementProps) {
 						</DropdownMenuItem>
 					</DropdownMenu>
 				</DropdownMenuTrigger>
+
+				<BookmarkDialog
+					isOpen={bookmarkOpen}
+					onOpenChange={setBookmarkOpen}
+					onInsert={insertBookmark}
+				/>
 
 				<input
 					ref={imageInputRef}

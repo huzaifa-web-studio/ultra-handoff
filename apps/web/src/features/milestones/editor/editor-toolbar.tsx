@@ -35,6 +35,7 @@ import {
 	useFloatingToolbar,
 	useFloatingToolbarState,
 } from "@platejs/floating";
+import { triggerFloatingLinkInsert } from "@platejs/link/react";
 import { cn } from "cn";
 import {
 	BoldIcon,
@@ -55,10 +56,8 @@ import {
 	useEditorSelector,
 	useEventEditorValue,
 } from "platejs/react";
-import { useState } from "react";
 
 import { type EditorFormatAction, runFormatAction } from "./editor-actions";
-import { EditorLinkDialog } from "./editor-link-dialog";
 
 /** Block types the style select offers. */
 const BLOCK_OPTIONS = [
@@ -237,13 +236,11 @@ function ToolbarSeparator() {
 export function EditorFloatingToolbar() {
 	const editorId = useEditorId();
 	const focusedEditorId = useEventEditorValue("focus");
-	const [linkOpen, setLinkOpen] = useState(false);
+	const editor = useEditorRef();
 
 	const state = useFloatingToolbarState({
 		editorId,
 		focusedEditorId,
-		// The link prompt is modal, so the bar must not sit behind it.
-		hideToolbar: linkOpen,
 		floatingOptions: {
 			placement: "top",
 			middleware: [
@@ -320,15 +317,18 @@ export function EditorFloatingToolbar() {
 
 							<ToolbarSeparator />
 
-							<ToolbarButton label="Link" onPress={() => setLinkOpen(true)}>
+							<ToolbarButton
+								label="Link"
+								onPress={() =>
+									triggerFloatingLinkInsert(editor, { focused: true })
+								}
+							>
 								<LinkIcon aria-hidden />
 							</ToolbarButton>
 						</div>
 					</div>
 				</FloatingPortal>
 			)}
-
-			<EditorLinkDialog isOpen={linkOpen} onOpenChange={setLinkOpen} />
 		</>
 	);
 }

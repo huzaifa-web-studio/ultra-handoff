@@ -16,19 +16,29 @@
  */
 
 import { Checkbox } from "@org/ui/components/checkbox";
+import { HoverCard, HoverCardTrigger } from "@org/ui/components/hover-card";
+import { unwrapLink } from "@platejs/link";
+import { LinkPlugin } from "@platejs/link/react";
 import {
 	useTodoListElement,
 	useTodoListElementState,
 } from "@platejs/list-classic/react";
 import { cn } from "cn";
+import { NodeApi } from "platejs";
 import {
 	PlateElement,
 	type PlateElementProps,
 	PlateLeaf,
 	type PlateLeafProps,
+	useEditorRef,
 } from "platejs/react";
 import { Children, type ReactNode } from "react";
-
+import { Focusable } from "react-aria-components";
+import { LinkPreviewCard } from "#/features/link-previews/link-preview-card";
+import { useLinkPreview } from "#/features/link-previews/link-preview-context";
+import { isPreviewableHref } from "#/features/link-previews/utils";
+import { resolveAssetUrl } from "#/lib/files";
+import { turnLinkIntoBookmark } from "./editor-bookmark";
 import { useEditorStatic } from "./editor-view-context";
 
 /** Shared body text style. */
@@ -216,30 +226,195 @@ export function ListItemContentElement(props: PlateElementProps) {
 	return <PlateElement {...props} as="div" className={props.className} />;
 }
 
-/** A link. The URL is validated on the server before it is stored. */
+/**
+ * A link in the editable body.
+ *
+ * Why the anchor is rendered directly instead of through `PlateElement`: the
+ * hover card trigger needs to attach to the real DOM node, and `PlateElement`
+ * is a plain function component that does not forward a ref. Passing Slate's
+ * `attributes` to a real anchor is the standard Slate pattern and keeps the
+ * node structure Slate expects.
+ *
+ * The favicon is drawn with a pseudo element driven by a CSS variable, not an
+ * `<img>` child. An extra DOM child inside an inline text node is what makes
+ * Slate try to reconcile a node it did not create, and it would also be
+ * copied with the link text.
+ */
 export function LinkElement(props: PlateElementProps) {
+	const editor = useEditorRef();
 	const url = (props.element as { url?: unknown }).url;
+	const href = typeof url === "string" ? url : undefined;
+	const preview = useLinkPreview(href);
+	const favicon = resolveAssetUrl(preview?.faviconUrl);
+	const previewable = isPreviewableHref(href);
+	const linkPath = previewable ? editor.api.findPath(props.element) : undefined;
 
-	// PlateElement's props are typed for the default div, so the anchor
-	// attributes are passed through an index signature instead of widening the
-	// element component's generic.
-	const anchorProps = {
-		href: typeof url === "string" ? url : undefined,
-		target: "_blank",
-		// Opening a stored link must not hand the opener access to the app.
-		rel: "noreferrer noopener",
-	} as Record<string, unknown>;
+	/**
+	 * Open the link on a plain click.
+	 *
+	 * A plain anchor inside a contenteditable region is not reliably followed
+	 * by the browser, so the navigation is explicit. Modifier clicks are left
+	 * to the browser. Editing the link moves to the hover card, which is what
+	 * keeps a single click meaning "go there".
+	 */
+	function handleClick(event: React.MouseEvent<HTMLAnchorElement>) {
+		if (
+			!href ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.shiftKey ||
+			event.altKey ||
+			event.button !== 0
+		) {
+			return;
+		}
 
-	return (
-		<PlateElement
-			{...props}
-			as="a"
-			{...anchorProps}
+		event.preventDefault();
+		window.open(href, "_blank", "noopener,noreferrer");
+	}
+
+	/**
+	 * Open the insert popover, pre-filled, on the existing link.
+	 *
+	 * Why the insert popover and not Plate's edit mode: edit mode opens itself
+	 * whenever the caret lands inside a link, which is what made a click open
+	 * the link and an editor at the same time. The insert popover never opens
+	 * itself, and `upsertLink` updates the current link when the selection is
+	 * inside one, so it is the same form with none of that behaviour.
+	 */
+	function handleEdit() {
+		if (!linkPath || !href) return;
+
+		const point = editor.api.end(linkPath);
+		if (!point) return;
+
+		editor.tf.focus();
+		editor.tf.select(point);
+		editor.setOption(LinkPlugin, "url", href);
+		editor.setOption(LinkPlugin, "text", NodeApi.string(props.element));
+		editor.getApi(LinkPlugin).floatingLink.show("insert", editor.id);
+	}
+
+	/** Remove the link and keep its text. */
+	function handleUnlink() {
+		if (!linkPath) return;
+
+		const point = editor.api.end(linkPath);
+		if (!point) return;
+
+		editor.tf.focus();
+		editor.tf.select(point);
+		unwrapLink(editor);
+		editor.tf.focus();
+	}
+
+	/** Replace the link with a bookmark card. */
+	function handleBookmark() {
+		if (!linkPath || !href) return;
+
+		turnLinkIntoBookmark(editor, linkPath, href);
+	}
+
+	const anchor = (
+		<a
+			{...props.attributes}
+			href={href}
+			target="_blank"
+			// Opening a stored link must not hand the opener access to the app.
+			rel="noreferrer noopener"
+			onClick={handleClick}
+			style={
+				{
+					// Keep anything Slate put on the element, then add the icon. The
+					// favicon is a CSS variable so the pseudo element can read it
+					// without adding a DOM child Slate did not create.
+					...(props.attributes as { style?: React.CSSProperties }).style,
+					...(favicon ? { "--link-favicon": `url("${favicon}")` } : {}),
+				} as React.CSSProperties
+			}
 			className={cn(
 				"cursor-pointer font-medium text-app-focus underline decoration-app-focus/60 underline-offset-4 transition-colors hover:text-app-text hover:decoration-app-text",
+				favicon &&
+					"before:mr-1 before:inline-block before:size-3.5 before:bg-[image:var(--link-favicon)] before:bg-contain before:bg-center before:bg-no-repeat before:align-middle before:content-['']",
 				props.className,
 			)}
-		/>
+		>
+			{props.children}
+		</a>
+	);
+
+	if (!previewable) return anchor;
+
+	return (
+		<HoverCardTrigger delay={450} closeDelay={200}>
+			<Focusable>{anchor}</Focusable>
+			<HoverCard>
+				<LinkPreviewCard
+					href={href}
+					preview={preview}
+					text={NodeApi.string(props.element)}
+					actions={{
+						onEdit: handleEdit,
+						onUnlink: handleUnlink,
+						onBookmark: handleBookmark,
+					}}
+				/>
+			</HoverCard>
+		</HoverCardTrigger>
+	);
+}
+
+/**
+ * A link in the read only render.
+ *
+ * Same card, no click interception: a client clicking a link should leave the
+ * page, exactly like any other anchor on the web.
+ */
+export function LinkElementStatic(props: PlateElementProps) {
+	const url = (props.element as { url?: unknown }).url;
+	const href = typeof url === "string" ? url : undefined;
+	const preview = useLinkPreview(href);
+	const favicon = resolveAssetUrl(preview?.faviconUrl);
+
+	const anchor = (
+		<a
+			{...props.attributes}
+			href={href}
+			target="_blank"
+			rel="noreferrer noopener"
+			style={
+				{
+					// Keep anything Slate put on the element, then add the icon. The
+					// favicon is a CSS variable so the pseudo element can read it
+					// without adding a DOM child Slate did not create.
+					...(props.attributes as { style?: React.CSSProperties }).style,
+					...(favicon ? { "--link-favicon": `url("${favicon}")` } : {}),
+				} as React.CSSProperties
+			}
+			className={cn(
+				"font-medium text-app-focus underline decoration-app-focus/60 underline-offset-4 transition-colors hover:text-app-text hover:decoration-app-text",
+				favicon &&
+					"before:mr-1 before:inline-block before:size-3.5 before:bg-[image:var(--link-favicon)] before:bg-contain before:bg-center before:bg-no-repeat before:align-middle before:content-['']",
+				props.className,
+			)}
+		>
+			{props.children}
+		</a>
+	);
+
+	if (!isPreviewableHref(href)) return anchor;
+
+	return (
+		<HoverCardTrigger delay={450} closeDelay={200}>
+			<Focusable>{anchor}</Focusable>
+			<HoverCard>
+				<LinkPreviewCard
+					href={href}
+					preview={preview}
+					text={NodeApi.string(props.element)}
+				/>
+			</HoverCard>
+		</HoverCardTrigger>
 	);
 }
 

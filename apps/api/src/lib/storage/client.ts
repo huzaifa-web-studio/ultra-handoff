@@ -33,6 +33,33 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { s3Env } from "../env";
 
+/**
+ * Bound an SDK call that has no timeout of its own.
+ *
+ * The S3 client retries transient failures, but a hung connection to the
+ * storage service has no upper bound. A background job must not hold a worker
+ * slot forever, so every write is wrapped in a deadline.
+ */
+function withStorageTimeout<T>(operation: Promise<T>, ms: number): Promise<T> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(
+			() => reject(new Error("Storage request timed out")),
+			ms,
+		);
+
+		operation.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+}
+
 /** Shared connection settings for both clients. */
 const baseConfig = {
 	region: s3Env.region,
@@ -71,10 +98,15 @@ let bucketReady: Promise<void> | null = null;
 
 export function ensureBucket(): Promise<void> {
 	if (!bucketReady) {
-		bucketReady = createBucketIfMissing().catch((error) => {
-			bucketReady = null;
-			throw error;
-		});
+		// The timeout matters as much as the reset: without it a hung HEAD
+		// would leave the memoised promise pending forever and every later
+		// upload would wait on the same dead call.
+		bucketReady = withStorageTimeout(createBucketIfMissing(), 10_000).catch(
+			(error) => {
+				bucketReady = null;
+				throw error;
+			},
+		);
 	}
 	return bucketReady;
 }
@@ -135,6 +167,39 @@ export async function signPutUrl(
 export function headObject(key: string) {
 	return internalClient.send(
 		new HeadObjectCommand({ Bucket: s3Env.bucket, Key: key }),
+	);
+}
+
+/**
+ * Write an object the API generated itself.
+ *
+ * Why this exists: avatars and milestone images arrive through presigned PUTs
+ * because the browser sends the bytes. Link preview assets are fetched by the
+ * API, so the bytes are already in memory and a presigned round trip through
+ * the browser makes no sense.
+ *
+ * The content type is passed explicitly and must already have been derived
+ * from sniffed bytes, never from a remote header.
+ */
+export async function putObject(
+	key: string,
+	body: Uint8Array,
+	contentType: string,
+): Promise<void> {
+	await ensureBucket();
+
+	await withStorageTimeout(
+		internalClient.send(
+			new PutObjectCommand({
+				Bucket: s3Env.bucket,
+				Key: key,
+				Body: body,
+				ContentType: contentType,
+				// The key includes a content hash, so the bytes never change.
+				CacheControl: "public, max-age=31536000, immutable",
+			}),
+		),
+		15_000,
 	);
 }
 

@@ -513,6 +513,7 @@ function MilestoneDetailContent({
 								<MilestoneEditorStatic
 									value={milestone.description}
 									ariaLabel="Milestone details"
+									organizationSlug={orgSlug}
 								/>
 							) : (
 								<p className="p-3 text-sm text-app-text-muted">

@@ -57,6 +57,14 @@ export const fileRoutes = new Elysia().get(
 					// The served types are images, but nosniff removes any chance
 					// of a browser treating a mislabelled object as HTML.
 					"X-Content-Type-Options": "nosniff",
+					// Belt and braces for the same concern. A fetched preview asset
+					// is attacker influenced, so the response is locked to an
+					// inline image that cannot load anything or run a script even
+					// if a browser ever disagreed with the declared type.
+					"Content-Disposition": "inline",
+					"Content-Security-Policy":
+						"default-src 'none'; style-src 'none'; sandbox",
+					"Cross-Origin-Resource-Policy": "same-site",
 				},
 			});
 		} catch (error) {

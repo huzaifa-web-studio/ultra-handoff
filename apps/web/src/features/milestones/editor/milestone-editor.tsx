@@ -28,6 +28,9 @@ import type { Value } from "platejs";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { PlateStatic } from "platejs/static";
 import { type KeyboardEvent, useState } from "react";
+
+import { LinkPreviewProvider } from "#/features/link-previews/link-preview-context";
+import { extractLinkUrls } from "#/features/link-previews/utils";
 import { BlockMenuProvider } from "./editor-draggable";
 import {
 	EMPTY_EDITOR_VALUE,
@@ -89,34 +92,65 @@ export function MilestoneEditor({
 		shouldNormalizeEditor: true,
 	});
 
-	return (
-		<BlockMenuProvider
-			organizationId={organizationId}
-			organizationSlug={organizationSlug}
-		>
-			<Plate
-				editor={editor}
-				readOnly={readOnly}
-				onChange={({ value }) => onChange(value as unknown[])}
-			>
-				<PlateContent
-					aria-label={ariaLabel}
-					onKeyDown={handleEditorKeyDown}
-					placeholder="Write the details, the expected outcome, or anything the assignee needs."
-					// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`, so
-					// the editor has to restate it. Without it the browser collapses
-					// spaces as they are typed and the text looks trimmed on screen.
-					//
-					// The left padding is the block gutter: 44px holds the insert
-					// button and the drag handle.
-					className="min-h-40 w-full cursor-text pl-11 pr-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
-					disableDefaultStyles
-				/>
+	// The set of links in the body decides which previews are worth asking
+	// about. Keeping it in state means the provider only re-renders when the
+	// set actually changes, not on every keystroke.
+	const [previewUrls, setPreviewUrls] = useState(() =>
+		extractLinkUrls(initialValue),
+	);
 
-				{/* The only formatting surface: it follows the text selection. */}
-				{!readOnly && <EditorFloatingToolbar />}
-			</Plate>
-		</BlockMenuProvider>
+	function handleChange(value: unknown[]) {
+		onChange(value);
+
+		const next = extractLinkUrls(value);
+		setPreviewUrls((current) => {
+			if (current.length === next.length) {
+				let same = true;
+
+				for (let index = 0; index < current.length; index += 1) {
+					if (current[index] !== next[index]) {
+						same = false;
+						break;
+					}
+				}
+
+				if (same) return current;
+			}
+
+			return next;
+		});
+	}
+
+	return (
+		<LinkPreviewProvider orgSlug={organizationSlug ?? ""} urls={previewUrls}>
+			<BlockMenuProvider
+				organizationId={organizationId}
+				organizationSlug={organizationSlug}
+			>
+				<Plate
+					editor={editor}
+					readOnly={readOnly}
+					onChange={({ value }) => handleChange(value as unknown[])}
+				>
+					<PlateContent
+						aria-label={ariaLabel}
+						onKeyDown={handleEditorKeyDown}
+						placeholder="Write the details, the expected outcome, or anything the assignee needs."
+						// `disableDefaultStyles` removes Slate's `white-space: pre-wrap`, so
+						// the editor has to restate it. Without it the browser collapses
+						// spaces as they are typed and the text looks trimmed on screen.
+						//
+						// The left padding is the block gutter: 44px holds the insert
+						// button and the drag handle.
+						className="min-h-40 w-full cursor-text pl-11 pr-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
+						disableDefaultStyles
+					/>
+
+					{/* The only formatting surface: it follows the text selection. */}
+					{!readOnly && <EditorFloatingToolbar />}
+				</Plate>
+			</BlockMenuProvider>
+		</LinkPreviewProvider>
 	);
 }
 
@@ -129,25 +163,31 @@ export function MilestoneEditor({
 export function MilestoneEditorStatic({
 	value,
 	ariaLabel,
+	organizationSlug,
 }: {
 	value: unknown[];
 	ariaLabel: string;
+	/** Where the previews are read from. Omit to render links without cards. */
+	organizationSlug?: string;
 }) {
 	const [initialValue] = useState(() => toEditorValue(value));
+	const [previewUrls] = useState(() => extractLinkUrls(value));
 	const editor = usePlateEditor({
 		plugins: milestoneStaticEditorPlugins,
 		value: initialValue,
 	});
 
 	return (
-		<EditorStaticProvider>
-			<PlateStatic
-				editor={editor}
-				aria-label={ariaLabel}
-				// Match the editable surface, so a body with deliberate spacing is
-				// shown exactly as it was written.
-				className="px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text"
-			/>
-		</EditorStaticProvider>
+		<LinkPreviewProvider orgSlug={organizationSlug ?? ""} urls={previewUrls}>
+			<EditorStaticProvider>
+				<PlateStatic
+					editor={editor}
+					aria-label={ariaLabel}
+					// Match the editable surface, so a body with deliberate spacing is
+					// shown exactly as it was written.
+					className="px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text"
+				/>
+			</EditorStaticProvider>
+		</LinkPreviewProvider>
 	);
 }

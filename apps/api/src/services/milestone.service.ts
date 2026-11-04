@@ -42,6 +42,7 @@ import { type TenantTx, withTenant } from "../db/tenant";
 import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
+import { queueDocumentPreviews } from "./link-preview.service";
 import { listOrganizationOwners } from "./organization.service";
 import {
 	loadProjectAccess,
@@ -749,7 +750,7 @@ export async function createMilestone(
 	const description = sanitizeRichText(input.description);
 	const milestoneId = randomUUID();
 
-	return withTenant(
+	const result = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
@@ -793,6 +794,14 @@ export async function createMilestone(
 			);
 		},
 	);
+
+	// Enrichment only. A queue or Redis failure must never fail the save, so
+	// this runs after the transaction commits and its rejection is swallowed.
+	void queueDocumentPreviews(tenant, result.milestone.description).catch(
+		() => undefined,
+	);
+
+	return result;
 }
 
 /** Update any subset of fields. This is the endpoint autosave calls. */
@@ -802,7 +811,7 @@ export async function updateMilestone(
 	milestoneId: string,
 	input: UpdateMilestoneInput,
 ): Promise<MilestoneDetailResult> {
-	return withTenant(
+	const result = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
@@ -895,6 +904,16 @@ export async function updateMilestone(
 			);
 		},
 	);
+
+	// Only a body change can introduce a new link. Every other patch skips the
+	// queue entirely, which keeps status and date edits free.
+	if (input.description !== undefined) {
+		void queueDocumentPreviews(tenant, result.milestone.description).catch(
+			() => undefined,
+		);
+	}
+
+	return result;
 }
 
 /**

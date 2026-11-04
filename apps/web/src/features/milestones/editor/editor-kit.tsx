@@ -57,7 +57,7 @@ import { KEYS, PathApi } from "platejs";
 import { createPlatePlugin, ParagraphPlugin } from "platejs/react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
-
+import { BookmarkElementStatic, BookmarkPlugin } from "./editor-bookmark";
 import { BlockDraggable } from "./editor-draggable";
 import {
 	BlockquoteElement,
@@ -68,6 +68,7 @@ import {
 	H3Element,
 	ItalicLeaf,
 	LinkElement,
+	LinkElementStatic,
 	ListItemContentElement,
 	ListItemElement,
 	NumberedListElement,
@@ -77,6 +78,7 @@ import {
 	UnderlineLeaf,
 } from "./editor-elements";
 import { ImageElement, ImageElementStatic } from "./editor-image";
+import { EditorFloatingLinkToolbar } from "./editor-link-toolbar";
 import { MediaPreviewDialog } from "./editor-media-preview";
 import {
 	TableCellElement,
@@ -225,6 +227,10 @@ export const milestoneEditorPlugins = [
 	TableCellHeaderPlugin.withComponent(TableCellHeaderElement),
 	TrailingParagraphPlugin,
 
+	// Bookmarks. A void block that renders the cached preview of one URL.
+	// The URL is the only stored value, so the card can never go stale.
+	BookmarkPlugin,
+
 	// Drag and drop. The provider must wrap the Slate surface, which is what
 	// `aboveSlate` does. The plugin is edit only, so the static viewer and
 	// clients never see drag handles.
@@ -247,6 +253,11 @@ export const milestoneEditorPlugins = [
 	// Links. The autolink rules turn a pasted or typed URL into a link as soon
 	// as the action completes, so the writer never has to open the link prompt
 	// to confirm what the browser already treats as a URL.
+	//
+	// `keepSelectedTextOnPaste` makes a URL pasted over selected text link that
+	// text instead of replacing it, which is the behaviour every modern editor
+	// has. The floating toolbar is registered as `afterEditable` so Cmd/Ctrl+K
+	// works without an extra listener.
 	LinkPlugin.configure({
 		inputRules: [
 			LinkRules.markdown(),
@@ -254,7 +265,17 @@ export const milestoneEditorPlugins = [
 			LinkRules.autolink({ variant: "space" }),
 			LinkRules.autolink({ variant: "break" }),
 		],
-		options: { getUrlHref: autolinkHref },
+		options: {
+			getUrlHref: autolinkHref,
+			keepSelectedTextOnPaste: true,
+			defaultLinkAttributes: {
+				target: "_blank",
+				rel: "noopener noreferrer",
+			},
+		},
+		render: {
+			afterEditable: EditorFloatingLinkToolbar,
+		},
 	}).withComponent(LinkElement),
 ];
 
@@ -280,9 +301,15 @@ export const milestoneStaticEditorPlugins = [
 		(plugin) =>
 			plugin.key !== "dnd" &&
 			plugin.key !== KEYS.img &&
-			plugin.key !== KEYS.caption,
+			plugin.key !== KEYS.caption &&
+			plugin.key !== KEYS.link &&
+			plugin.key !== "bookmark",
 	),
 	// The static image node renders the stored width and caption directly.
 	// It never mounts the resize handles or the preview dialog.
 	BaseImagePlugin.withComponent(ImageElementStatic),
+	// The static link keeps the hover card but never intercepts a click.
+	LinkPlugin.withComponent(LinkElementStatic),
+	// The static bookmark keeps the card and opens the link on click.
+	BookmarkPlugin.withComponent(BookmarkElementStatic),
 ];

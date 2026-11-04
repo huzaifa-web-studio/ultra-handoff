@@ -334,3 +334,75 @@ export const milestoneAssignee = pgTable(
 		tenantIsolation(table.organizationId),
 	],
 ).enableRLS();
+
+/**
+ * Cached link previews for one workspace.
+ *
+ * Why a table and not a live fetch: a hover card must never wait on somebody
+ * else's website, and an endpoint that fetches arbitrary URLs on demand is an
+ * SSRF proxy. Previews are resolved once by a background worker and read from
+ * here afterwards.
+ *
+ * Why organization scoped: the existence of a URL inside a workspace is
+ * business data, so the same URL pasted by two tenants produces two rows. That
+ * costs a little duplication and keeps the row level security boundary
+ * consistent with every other business table.
+ *
+ * `url_hash` is a SHA-256 of the canonical URL and is the cache key. The
+ * canonical form drops the fragment, lowercases the host and removes the
+ * default port, so the same page does not produce two rows.
+ *
+ * `image_key` and `favicon_key` are storage keys, never remote URLs. The
+ * browser only ever loads assets we validated and serve ourselves, which is
+ * what prevents tracking pixels and mixed content.
+ *
+ * `status` is derived from the fetch outcome, not chosen by a client.
+ */
+export const linkPreview = pgTable(
+	"link_preview",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		/** Canonical URL, the value used for cache keys and safe to re-fetch. */
+		url: text("url").notNull(),
+		/** SHA-256 of `url`, so a long URL never becomes an index key. */
+		urlHash: text("url_hash").notNull(),
+		/** pending | ready | unavailable | blocked, checked below. */
+		status: text("status").notNull().default("pending"),
+		title: text("title"),
+		description: text("description"),
+		siteName: text("site_name"),
+		imageKey: text("image_key"),
+		imageWidth: integer("image_width"),
+		imageHeight: integer("image_height"),
+		faviconKey: text("favicon_key"),
+		/** Stable reason code, never the target's own error text. */
+		errorCode: text("error_code"),
+		fetchedAt: timestamp("fetched_at"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// One row per URL per workspace. The worker upserts on this pair.
+		uniqueIndex("link_preview_organization_url_idx").on(
+			table.organizationId,
+			table.urlHash,
+		),
+		index("link_preview_organization_idx").on(table.organizationId),
+		// The refresh job reads the oldest rows of one organization.
+		index("link_preview_organization_fetched_idx").on(
+			table.organizationId,
+			table.fetchedAt,
+		),
+		check(
+			"link_preview_status_check",
+			sql`${table.status} in ('pending', 'ready', 'unavailable', 'blocked')`,
+		),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();

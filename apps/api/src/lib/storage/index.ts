@@ -16,6 +16,7 @@ export {
 	keyFromFileUrl,
 	objectUrl,
 	openObject,
+	putObject,
 	readHeadBytes,
 	signPutUrl,
 } from "./client";
