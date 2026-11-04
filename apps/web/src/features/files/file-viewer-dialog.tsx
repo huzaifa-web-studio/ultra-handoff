@@ -21,10 +21,11 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@org/ui/components/dialog";
-import { DownloadIcon, FileIcon } from "lucide-react";
+import { DownloadIcon } from "lucide-react";
 import { type ComponentType, useEffect, useState } from "react";
 
 import { fileDownloadUrl } from "./download-url";
+import { FileTypeIcon } from "./file-type-icon";
 import { formatFileSize } from "./format";
 import { type ViewerKind, viewerKindFor } from "./viewer-kind";
 import type { ViewerProps } from "./viewer-types";
@@ -78,10 +79,10 @@ function ImagePreview({ src, name }: ViewerProps) {
 }
 
 /** A type the browser cannot render without a dedicated converter. */
-function UnsupportedPreview() {
+function UnsupportedPreview({ file }: { file: ViewerFile }) {
 	return (
 		<div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-			<FileIcon className="size-10 text-app-text-muted" aria-hidden />
+			<FileTypeIcon name={file.name} mime={file.mime} size="lg" />
 			<p className="text-sm font-medium text-app-text">
 				No preview for this file type
 			</p>
@@ -139,7 +140,7 @@ export function FileViewerDialog({
 		.join(" · ");
 
 	function renderBody() {
-		if (kind === "unsupported") return <UnsupportedPreview />;
+		if (kind === "unsupported") return <UnsupportedPreview file={file} />;
 		if (kind === "text") return <TextViewer src={file.src} name={file.name} />;
 		if (kind === "csv") return <CsvViewer src={file.src} name={file.name} />;
 		if (kind === "image")
@@ -161,10 +162,16 @@ export function FileViewerDialog({
 			className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-5xl"
 		>
 			<DialogHeader className="min-w-0 pr-12">
-				<DialogTitle className="truncate normal-case tracking-normal">
-					{file.name}
-				</DialogTitle>
-				<DialogDescription className="truncate">{meta}</DialogDescription>
+				<div className="flex min-w-0 items-center gap-3">
+					<FileTypeIcon name={file.name} mime={file.mime} size="md" />
+
+					<div className="flex min-w-0 flex-1 flex-col gap-1">
+						<DialogTitle className="truncate normal-case tracking-normal">
+							{file.name}
+						</DialogTitle>
+						<DialogDescription className="truncate">{meta}</DialogDescription>
+					</div>
+				</div>
 			</DialogHeader>
 
 			<div className="flex h-[55vh] min-h-0 flex-col overflow-hidden border border-app-border bg-app-panel sm:h-[65vh]">

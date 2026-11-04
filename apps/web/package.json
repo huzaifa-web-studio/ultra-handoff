@@ -29,6 +29,7 @@
     "@platejs/media": "^53.0.0",
     "@platejs/resizable": "^53.0.0",
     "@platejs/table": "^53.0.9",
+    "@react-symbols/icons": "1.4.1",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "0.10.13",
     "@tanstack/react-form": "^1.33.5",

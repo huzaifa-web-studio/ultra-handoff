@@ -19,15 +19,7 @@
 
 import { Button } from "@org/ui/components/button";
 import { cn } from "cn";
-import {
-	DownloadIcon,
-	FileArchiveIcon,
-	FileIcon,
-	FileSpreadsheetIcon,
-	FileTextIcon,
-	PresentationIcon,
-	XIcon,
-} from "lucide-react";
+import { DownloadIcon, XIcon } from "lucide-react";
 import {
 	createPlatePlugin,
 	PlateElement,
@@ -38,6 +30,7 @@ import {
 import { SlateElement, type SlateElementProps } from "platejs/static";
 import type { ReactNode } from "react";
 import { fileDownloadUrl } from "#/features/files/download-url";
+import { FileTypeIcon } from "#/features/files/file-type-icon";
 import { useFileViewer } from "#/features/files/file-viewer-provider";
 import { formatFileSize } from "#/features/files/format";
 import { resolveAssetUrl } from "#/lib/files";
@@ -72,43 +65,6 @@ function fileSize(element: unknown): number | undefined {
 	return typeof size === "number" && Number.isFinite(size) && size >= 0
 		? size
 		: undefined;
-}
-
-/** Pick an icon from the MIME type, falling back to a generic file. */
-function FileTypeIcon({
-	mime,
-	className = "size-5",
-}: {
-	mime: string;
-	className?: string;
-}) {
-	// CSV is a text type but reads better with the sheet icon, so the more
-	// specific check comes first.
-	if (
-		mime.includes("spreadsheet") ||
-		mime.includes("excel") ||
-		mime === "text/csv"
-	) {
-		return <FileSpreadsheetIcon className={className} aria-hidden />;
-	}
-
-	if (mime === "application/pdf" || mime.startsWith("text/")) {
-		return <FileTextIcon className={className} aria-hidden />;
-	}
-
-	if (mime.includes("presentation") || mime.includes("powerpoint")) {
-		return <PresentationIcon className={className} aria-hidden />;
-	}
-
-	if (mime.includes("zip") || mime.includes("compressed")) {
-		return <FileArchiveIcon className={className} aria-hidden />;
-	}
-
-	if (mime.includes("word") || mime.includes("document")) {
-		return <FileTextIcon className={className} aria-hidden />;
-	}
-
-	return <FileIcon className={className} aria-hidden />;
 }
 
 /**
@@ -148,7 +104,7 @@ function FileChip({
 				onMouseDown={(event) => event.stopPropagation()}
 				className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 px-1.5 py-0.5 text-left text-app-text transition-colors hover:text-app-focus"
 			>
-				<FileTypeIcon mime={mime} className="size-3.5 shrink-0" />
+				<FileTypeIcon name={name} mime={mime} />
 				<span className="truncate font-medium">{name}</span>
 			</button>
 
