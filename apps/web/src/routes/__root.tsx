@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { GlobalLoadingScreen } from "#/components/global-loading";
 import { authClient } from "#/features/auth/client";
 import { useAuthBroadcast } from "#/features/auth/sync";
+import { FileViewerProvider } from "#/features/files/file-viewer-provider";
 import { SwitchBlockedDialog } from "#/features/organization/switch-blocked-dialog";
 
 export const Route = createRootRoute({
@@ -90,15 +91,17 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body>
 				<QueryClientProvider client={queryClient}>
-					<AuthBroadcastSync />
-					<Toaster position="top-right" />
-					{/*
-					 * Mounted at the root so the same blocked switch dialog is
-					 * available in the app shell and on the create-organization
-					 * flow outside it.
-					 */}
-					<SwitchBlockedDialog />
-					{children}
+					<FileViewerProvider>
+						<AuthBroadcastSync />
+						<Toaster position="top-right" />
+						{/*
+						 * Mounted at the root so the same blocked switch dialog is
+						 * available in the app shell and on the create-organization
+						 * flow outside it.
+						 */}
+						<SwitchBlockedDialog />
+						{children}
+					</FileViewerProvider>
 				</QueryClientProvider>
 				<TanStackDevtools
 					config={{

@@ -19,7 +19,7 @@ import { isPublicFileKey } from "../lib/storage/config";
 
 export const fileRoutes = new Elysia().get(
 	"/files/*",
-	async ({ params, status }) => {
+	async ({ params, request, status }) => {
 		let key: string;
 
 		try {
@@ -47,7 +47,12 @@ export const fileRoutes = new Elysia().get(
 			// API origin. Images and logos stay inline. The allowlist already
 			// excludes HTML and SVG, so this is about a clean hand off, not the
 			// only line of defence.
-			const download = key.includes("/comments/files/");
+			//
+			// The viewer asks for `?download=1` when the person presses Download,
+			// which covers milestone attachments that would otherwise open inline.
+			const wantsDownload =
+				new URL(request.url).searchParams.get("download") === "1";
+			const download = wantsDownload || key.includes("/comments/files/");
 
 			return new Response(object.body, {
 				headers: {

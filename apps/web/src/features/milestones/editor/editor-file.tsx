@@ -37,7 +37,9 @@ import {
 } from "platejs/react";
 import { SlateElement, type SlateElementProps } from "platejs/static";
 import type { ReactNode } from "react";
-
+import { fileDownloadUrl } from "#/features/files/download-url";
+import { useFileViewer } from "#/features/files/file-viewer-provider";
+import { formatFileSize } from "#/features/files/format";
 import { resolveAssetUrl } from "#/lib/files";
 
 /** Read the stored URL, if any. */
@@ -70,14 +72,6 @@ function fileSize(element: unknown): number | undefined {
 	return typeof size === "number" && Number.isFinite(size) && size >= 0
 		? size
 		: undefined;
-}
-
-/** Human readable size, matching the upload labels elsewhere. */
-function formatSize(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** Pick an icon from the MIME type, falling back to a generic file. */
@@ -120,43 +114,52 @@ function FileTypeIcon({
 /**
  * The visible chip, shared by both renderers.
  *
- * The anchor is the whole body so a click downloads, and the optional trailing
- * control is a sibling rather than a child, because a button cannot live inside
- * an anchor.
+ * The name opens the preview dialog and the download icon downloads the file.
+ * They are separate controls because an anchor cannot contain a button, and
+ * the trailing remove control is a third sibling for the same reason.
  */
 function FileChip({
 	name,
 	mime,
 	size,
-	href,
+	src,
 	trailing,
 }: {
 	name: string;
 	mime: string;
 	size: number | undefined;
-	href: string;
+	src: string;
 	trailing?: ReactNode;
 }) {
-	const meta = size ? formatSize(size) : "Attachment";
+	const viewer = useFileViewer();
+	const meta = formatFileSize(size) ?? "Attachment";
 
 	return (
 		<span
 			contentEditable={false}
 			className="group/file inline-flex max-w-64 items-center border border-app-border bg-app-panel-subtle align-middle text-xs"
 		>
-			<a
-				href={href}
-				target="_blank"
-				rel="noreferrer noopener"
-				title={`${name} (${meta})`}
-				className="inline-flex min-w-0 items-center gap-1.5 px-1.5 py-0.5 text-app-text transition-colors hover:text-app-focus"
+			<button
+				type="button"
+				aria-haspopup="dialog"
+				aria-label={`Preview ${name}`}
+				title={`Preview ${name} (${meta})`}
+				onClick={() => viewer.open({ name, mime, size, src })}
+				onMouseDown={(event) => event.stopPropagation()}
+				className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 px-1.5 py-0.5 text-left text-app-text transition-colors hover:text-app-focus"
 			>
 				<FileTypeIcon mime={mime} className="size-3.5 shrink-0" />
 				<span className="truncate font-medium">{name}</span>
-				<DownloadIcon
-					className="size-3 shrink-0 text-app-text-muted"
-					aria-hidden
-				/>
+			</button>
+
+			<a
+				href={fileDownloadUrl(src)}
+				aria-label={`Download ${name}`}
+				title={`Download ${name}`}
+				onMouseDown={(event) => event.stopPropagation()}
+				className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center text-app-text-muted transition-colors hover:text-app-focus"
+			>
+				<DownloadIcon className="size-3" aria-hidden />
 			</a>
 
 			{trailing}
@@ -192,7 +195,7 @@ export function FileElement(props: PlateElementProps) {
 				name={fileName(props.element)}
 				mime={fileMime(props.element)}
 				size={fileSize(props.element)}
-				href={src}
+				src={src}
 				trailing={
 					/*
 					 * Reveal the remove control on hover or keyboard focus, not only
@@ -242,7 +245,7 @@ export function FileElementStatic(props: SlateElementProps) {
 				name={fileName(props.element)}
 				mime={fileMime(props.element)}
 				size={fileSize(props.element)}
-				href={src}
+				src={src}
 			/>
 			{props.children}
 		</SlateElement>
