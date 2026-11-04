@@ -21,11 +21,7 @@
  */
 
 import { Button } from "@org/ui/components/button";
-import {
-	Caption,
-	CaptionPlugin,
-	CaptionTextarea,
-} from "@platejs/caption/react";
+import { CaptionTextarea } from "@platejs/caption/react";
 import { ImagePreviewStore, useMediaState } from "@platejs/media/react";
 import {
 	Resizable as ResizablePrimitive,
@@ -55,7 +51,7 @@ import {
 	withHOC,
 } from "platejs/react";
 import { SlateElement, type SlateElementProps } from "platejs/static";
-import { type ComponentProps, useEffect } from "react";
+import type { ComponentProps } from "react";
 
 import { resolveAssetUrl } from "#/lib/files";
 
@@ -178,13 +174,6 @@ export const ImageElement = withHOC(
 		const src = resolveAssetUrl(element.url);
 		const alt = imageAlt(element);
 
-		useEffect(() => {
-			if (!selected || !element.id) return;
-			if (editor.getOption(CaptionPlugin, "visibleId") === element.id) return;
-
-			editor.setOption(CaptionPlugin, "visibleId", element.id);
-		}, [selected, editor, element.id]);
-
 		// A document written by an older build can carry an unusable URL. The
 		// sanitizer drops those, so this is only a defensive fallback.
 		if (!src) {
@@ -233,24 +222,37 @@ export const ImageElement = withHOC(
 						</Button>
 					)}
 
-					<Caption
-						style={{ width }}
-						className={cn(
-							"mt-2 max-w-full",
-							alignmentClass(align),
-							align === "left"
-								? "text-left"
-								: align === "right"
-									? "text-right"
-									: "text-center",
-						)}
-					>
-						<CaptionTextarea
-							readOnly={readOnly}
-							placeholder="Add a caption..."
-							className="w-full resize-none border-0 bg-transparent p-0 text-xs text-app-text-muted outline-none placeholder:text-app-text-muted/70"
-						/>
-					</Caption>
+					{/*
+					 * Always rendered, never gated on selection.
+					 *
+					 * The official `Caption` component hides itself until the
+					 * image is selected, which made the field appear only
+					 * after the click that selected the image. The writer then
+					 * had to click a second time, and often the focus landed
+					 * on the block instead. A permanently mounted field can be
+					 * clicked once and focused immediately.
+					 */}
+					{!readOnly && (
+						<figcaption
+							style={{ width }}
+							className={cn(
+								"mt-2 max-w-full",
+								alignmentClass(align),
+								align === "left"
+									? "text-left"
+									: align === "right"
+										? "text-right"
+										: "text-center",
+							)}
+						>
+							<CaptionTextarea
+								readOnly={readOnly}
+								aria-label="Image caption"
+								placeholder="Add a caption..."
+								className="w-full resize-none border-0 bg-transparent p-0 text-xs text-app-text-muted outline-none placeholder:text-app-text-muted/70"
+							/>
+						</figcaption>
+					)}
 				</figure>
 
 				{props.children}

@@ -112,13 +112,21 @@ function autolinkHref(text: string): string | undefined {
 }
 
 /**
- * Keeps an empty paragraph after a table that ends the document.
+ * Keeps an empty paragraph after a block that ends the document.
  *
- * Without it, a table is the final block and clicking in the empty space below
- * it has nowhere to place the caret. The paragraph gives the writer a normal
- * line to click or type on, and it is also the line the cursor lands on after
- * tabbing out of the last cell.
+ * Why: a void block at the end has nowhere for the caret. Clicking the empty
+ * space below a table, an image or a bookmark cannot focus an editor that has
+ * nothing there, so the writer gets stuck and has to use the arrow keys.
+ *
+ * Tables were the original case. Images and bookmarks have the same shape, and
+ * a bookmark moved to the end by drag or by deleting the paragraph below it
+ * reproduced the same dead end, so all three are covered.
+ *
+ * The paragraph is only inserted when there is no node below, so real content
+ * is never replaced.
  */
+const TRAILING_PARAGRAPH_TYPES = new Set(["table", "img", "bookmark"]);
+
 const TrailingParagraphPlugin = createPlatePlugin({
 	key: "milestoneTrailingParagraph",
 }).overrideEditor(({ editor, tf: { normalizeNode } }) => ({
@@ -129,7 +137,8 @@ const TrailingParagraphPlugin = createPlatePlugin({
 			if (
 				path.length === 1 &&
 				"type" in node &&
-				node.type === editor.getType("table")
+				typeof node.type === "string" &&
+				TRAILING_PARAGRAPH_TYPES.has(node.type)
 			) {
 				const nextPath = PathApi.next(path);
 
