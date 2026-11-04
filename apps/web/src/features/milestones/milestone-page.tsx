@@ -35,7 +35,10 @@ import { useDebouncedValue } from "#/hooks/use-debounced-value";
 import { useMediaQuery } from "#/hooks/use-media-query";
 import type { MilestoneDetail } from "./api";
 import { milestonesKey, useMilestones } from "./hooks";
-import { MilestoneDetailPanel } from "./milestone-detail-panel";
+import {
+	MilestoneDetailPanel,
+	type MilestoneTabKey,
+} from "./milestone-detail-panel";
 import { MilestoneListPanel } from "./milestone-list-panel";
 import {
 	MILESTONE_PAGE_SIZE,
@@ -54,12 +57,16 @@ export function MilestonePage({
 	orgSlug,
 	projectSlug,
 	selectedId,
+	selectedTab,
 	onSelect,
+	onTabChange,
 }: {
 	orgSlug: string;
 	projectSlug: string;
 	selectedId: string | null;
+	selectedTab: MilestoneTabKey;
 	onSelect: MilestoneSelectionHandler;
+	onTabChange: (tab: MilestoneTabKey) => void;
 }) {
 	const projectQuery = useProjectDetailBySlug(orgSlug, projectSlug);
 	const projectId = projectQuery.data?.project.id ?? "";
@@ -224,6 +231,8 @@ export function MilestonePage({
 									projectId={projectId}
 									milestoneId={selectedId}
 									members={members}
+									selectedTab={selectedTab}
+									onTabChange={onTabChange}
 									onReload={() => void reloadDetail()}
 									onDeleted={handleDeleted}
 								/>
@@ -259,6 +268,8 @@ export function MilestonePage({
 							projectId={projectId}
 							milestoneId={selectedId}
 							members={members}
+							selectedTab={selectedTab}
+							onTabChange={onTabChange}
 							onClose={closeDetail}
 							onReload={() => void reloadDetail()}
 							onDeleted={handleDeleted}

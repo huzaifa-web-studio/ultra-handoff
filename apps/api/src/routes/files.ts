@@ -43,6 +43,11 @@ export const fileRoutes = new Elysia().get(
 
 		try {
 			const object = await openObject(key);
+			// Discussion attachments are downloaded rather than rendered in the
+			// API origin. Images and logos stay inline. The allowlist already
+			// excludes HTML and SVG, so this is about a clean hand off, not the
+			// only line of defence.
+			const download = key.includes("/comments/files/");
 
 			return new Response(object.body, {
 				headers: {
@@ -54,14 +59,13 @@ export const fileRoutes = new Elysia().get(
 					// Keys are content addressed by a UUID, so the bytes behind a
 					// URL never change and the response can be cached forever.
 					"Cache-Control": "public, max-age=31536000, immutable",
-					// The served types are images, but nosniff removes any chance
-					// of a browser treating a mislabelled object as HTML.
+					// nosniff removes any chance of a browser treating a
+					// mislabelled object as HTML.
 					"X-Content-Type-Options": "nosniff",
-					// Belt and braces for the same concern. A fetched preview asset
-					// is attacker influenced, so the response is locked to an
-					// inline image that cannot load anything or run a script even
-					// if a browser ever disagreed with the declared type.
-					"Content-Disposition": "inline",
+					// Belt and braces for the same concern. Anything fetched from
+					// this route is attacker influenced, so the response cannot
+					// run a script even if a browser disagreed with the type.
+					"Content-Disposition": download ? "attachment" : "inline",
 					"Content-Security-Policy":
 						"default-src 'none'; style-src 'none'; sandbox",
 					"Cross-Origin-Resource-Policy": "same-site",

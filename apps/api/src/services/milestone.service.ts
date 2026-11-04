@@ -23,8 +23,9 @@
 
 import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
-import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 
+import { canCommentOnProject } from "../auth/comment-permissions";
 import {
 	ACTIVE_MILESTONE_STATUSES,
 	canWriteMilestones,
@@ -37,7 +38,12 @@ import {
 	validateMilestoneTitle,
 } from "../auth/milestone-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
-import { milestone, milestoneAssignee, projectMember } from "../db/schema";
+import {
+	comment,
+	milestone,
+	milestoneAssignee,
+	projectMember,
+} from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
@@ -81,9 +87,11 @@ export type MilestoneSummary = {
 	updatedAt: string;
 };
 
-/** The summary plus the full editor document. */
+/** The summary plus the full editor document and its discussion size. */
 export type MilestoneDetail = MilestoneSummary & {
 	description: unknown[];
+	/** Non-deleted comments in this milestone, used by the tab badge. */
+	commentCount: number;
 };
 
 /** Capabilities of the caller, so the UI never guesses from a role string. */
@@ -92,6 +100,13 @@ export type MilestoneViewer = {
 	userId: string;
 	/** True when the caller may create, edit, assign and delete. */
 	canWrite: boolean;
+	/**
+	 * True when the caller may post in the discussion.
+	 *
+	 * Deliberately separate from `canWrite`: a client cannot author milestones
+	 * but is a full participant in the conversation about them.
+	 */
+	canComment: boolean;
 	/** True when the project is archived and every write is refused. */
 	locked: boolean;
 };
@@ -169,7 +184,7 @@ export type UpdateMilestoneInput = {
 };
 
 /** A database row, before it is mapped to the wire shape. */
-type MilestoneRecord = typeof milestone.$inferSelect;
+export type MilestoneRecord = typeof milestone.$inferSelect;
 
 /**
  * Read a `date` column as the ISO day the client expects.
@@ -195,6 +210,7 @@ function toViewer(
 	return {
 		userId: tenant.userId,
 		canWrite: !locked && canWriteMilestones(tenant.role, access.role),
+		canComment: !locked && canCommentOnProject(tenant.role, access.role),
 		locked,
 	};
 }
@@ -264,6 +280,31 @@ async function requireMilestoneRecord(
 	}
 
 	return record;
+}
+
+/**
+ * Load the project access and the milestone in one call.
+ *
+ * Why exported: the comment service needs exactly the same two answers before
+ * it may touch a thread. Sharing the helper means a comment can never be
+ * reachable through a milestone the caller cannot open, and the 404 wording is
+ * identical on both surfaces.
+ */
+export async function requireMilestoneAccess(
+	tx: TenantTx,
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+): Promise<{ access: ProjectAccess; milestone: MilestoneRecord }> {
+	const access = await requireProject(tx, tenant, projectId);
+	const record = await requireMilestoneRecord(
+		tx,
+		tenant,
+		projectId,
+		milestoneId,
+	);
+
+	return { access, milestone: record };
 }
 
 /**
@@ -566,9 +607,26 @@ async function loadDetail(
 	);
 	const [summary] = await toSummaries(tx, tenant, [record]);
 
+	// One count for the tab badge. Deleted comments are excluded because the
+	// badge should describe what a reader can actually see.
+	const [countRow] = await tx
+		.select({ count: sql<number>`count(*)`.mapWith(Number) })
+		.from(comment)
+		.where(
+			and(
+				eq(comment.organizationId, tenant.organizationId),
+				eq(comment.milestoneId, milestoneId),
+				isNull(comment.deletedAt),
+			),
+		);
+
 	return {
 		projectId,
-		milestone: { ...summary, description: record.description },
+		milestone: {
+			...summary,
+			description: record.description,
+			commentCount: countRow?.count ?? 0,
+		},
 		viewer,
 	};
 }

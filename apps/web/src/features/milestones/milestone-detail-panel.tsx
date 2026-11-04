@@ -23,6 +23,12 @@
 import { Button } from "@org/ui/components/button";
 import { Input } from "@org/ui/components/input";
 import { ScrollArea } from "@org/ui/components/scroll-area";
+import {
+	Tabs,
+	TabsContent,
+	TabsList,
+	TabsTrigger,
+} from "@org/ui/components/tabs";
 import { cn } from "cn";
 import {
 	AlertTriangleIcon,
@@ -36,6 +42,7 @@ import { UserAvatar } from "#/components/user-avatar";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
 import { formatRelativeTime } from "#/lib/date";
 import type { MilestoneDetail, MilestoneViewer } from "./api";
+import { CommentTab } from "./comments/comment-tab";
 import {
 	MilestoneEditor,
 	MilestoneEditorStatic,
@@ -62,6 +69,9 @@ import {
 
 /** Save indicator states. */
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+/** The two sections of the milestone detail pane. */
+export type MilestoneTabKey = "overview" | "comments";
 
 /** A small labelled cell in the metadata grid. */
 function MetaField({
@@ -95,6 +105,8 @@ export function MilestoneDetailPanel({
 	projectId,
 	milestoneId,
 	members,
+	selectedTab,
+	onTabChange,
 	onClose,
 	onReload,
 	onDeleted,
@@ -104,6 +116,8 @@ export function MilestoneDetailPanel({
 	projectId: string;
 	milestoneId: string | null;
 	members: AssignableMember[];
+	selectedTab: MilestoneTabKey;
+	onTabChange: (tab: MilestoneTabKey) => void;
 	onClose?: () => void;
 	onReload: () => void;
 	onDeleted: () => void;
@@ -173,6 +187,8 @@ export function MilestoneDetailPanel({
 			milestone={query.data.milestone}
 			viewer={query.data.viewer}
 			members={members}
+			selectedTab={selectedTab}
+			onTabChange={onTabChange}
 			onClose={onClose}
 			onReload={onReload}
 			onDeleted={onDeleted}
@@ -188,6 +204,8 @@ function MilestoneDetailContent({
 	milestone,
 	viewer,
 	members,
+	selectedTab,
+	onTabChange,
 	onClose,
 	onReload,
 	onDeleted,
@@ -198,6 +216,8 @@ function MilestoneDetailContent({
 	milestone: MilestoneDetail;
 	viewer: MilestoneViewer;
 	members: AssignableMember[];
+	selectedTab: MilestoneTabKey;
+	onTabChange: (tab: MilestoneTabKey) => void;
 	onClose?: () => void;
 	onReload: () => void;
 	onDeleted: () => void;
@@ -218,6 +238,12 @@ function MilestoneDetailContent({
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
 	const [externalUpdate, setExternalUpdate] = useState(false);
+	// The Comments panel is only mounted after its first visit. Once open it
+	// stays mounted, so a draft and the list position survive a tab switch
+	// without paying for an editor on every milestone that is only read.
+	const [commentsOpened, setCommentsOpened] = useState(
+		selectedTab === "comments",
+	);
 
 	const retryRef = useRef<(() => Promise<unknown>) | null>(null);
 	const lastSeenVersion = useRef(milestone.updatedAt);
@@ -238,6 +264,11 @@ function MilestoneDetailContent({
 			setExternalUpdate(true);
 		}
 	}, [milestone.updatedAt, milestone.updatedBy, viewer.userId]);
+
+	// Remember the first visit so the panel is never torn down afterwards.
+	useEffect(() => {
+		if (selectedTab === "comments") setCommentsOpened(true);
+	}, [selectedTab]);
 
 	/**
 	 * Run one save and keep the indicator honest.
@@ -438,131 +469,188 @@ function MilestoneDetailContent({
 				</div>
 			</header>
 
-			<ScrollArea className="min-h-0 flex-1">
-				<div className="flex flex-col gap-6 p-4">
-					{externalUpdate && (
-						<div
-							aria-live="polite"
-							className="flex flex-wrap items-center gap-2 border border-warning bg-warning-bg p-3 text-xs text-warning"
-						>
-							<AlertTriangleIcon className="size-4 shrink-0" aria-hidden />
-							<span className="flex-1">
-								Someone else updated this milestone while you had it open.
+			{/*
+			 * Both panels are force mounted. Switching to Comments must not
+			 * unmount the milestone editor, because its body save is debounced
+			 * and an unmount would drop the last keystrokes. The inactive panel
+			 * is marked inert by react-aria and hidden here.
+			 */}
+			<Tabs
+				selectedKey={selectedTab}
+				onSelectionChange={(key) =>
+					onTabChange(key === "comments" ? "comments" : "overview")
+				}
+				className="flex min-h-0 flex-1 flex-col gap-0"
+			>
+				<TabsList
+					variant="line"
+					aria-label="Milestone sections"
+					className="w-full justify-start border-b border-app-border px-2"
+				>
+					<TabsTrigger id="overview" className="flex-none">
+						Overview
+					</TabsTrigger>
+					<TabsTrigger id="comments" className="flex-none">
+						Comments
+						{milestone.commentCount > 0 && (
+							<span className="inline-flex h-4 min-w-4 items-center justify-center border border-current px-1 text-[0.6rem] tabular-nums">
+								{milestone.commentCount > 99 ? "99+" : milestone.commentCount}
 							</span>
-							<Button size="xs" variant="surface" onPress={onReload}>
-								Reload
-							</Button>
-						</div>
-					)}
+						)}
+					</TabsTrigger>
+				</TabsList>
 
-					{/* Metadata */}
-					<div className="grid gap-4 sm:grid-cols-2">
-						<MetaField label="Status">
-							<MilestoneStatusSelect
-								status={status}
-								onChange={changeStatus}
-								readOnly={!canWrite}
-							/>
-						</MetaField>
-
-						<MetaField label="Estimate">
-							<MilestoneEstimateField
-								minutes={milestone.estimateMinutes}
-								onCommit={changeEstimate}
-								readOnly={!canWrite}
-							/>
-						</MetaField>
-
-						<MetaField label="Dates" className="sm:col-span-2">
-							<MilestoneDateRangeField
-								startDate={dates.startDate}
-								dueDate={dates.dueDate}
-								onChange={changeDates}
-								readOnly={!canWrite}
-							/>
-						</MetaField>
-
-						<MetaField label="Assignees" className="sm:col-span-2">
-							<MilestoneAssigneeField
-								members={members}
-								selected={assigneeIds}
-								assignees={milestone.assignees}
-								onChange={changeAssignees}
-								readOnly={!canWrite}
-							/>
-						</MetaField>
-					</div>
-
-					{/* Body */}
-					<section className="flex flex-col gap-2">
-						<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
-							Details
-						</h3>
-
-						<div className="border-y border-app-border">
-							{canWrite ? (
-								<MilestoneEditor
-									key={milestone.id}
-									initialValue={milestone.description}
-									onChange={(value) => saveBody.schedule(value)}
-									ariaLabel="Milestone details"
-									organizationId={organizationId}
-									organizationSlug={orgSlug}
-								/>
-							) : milestone.description.length > 0 ? (
-								<MilestoneEditorStatic
-									value={milestone.description}
-									ariaLabel="Milestone details"
-									organizationSlug={orgSlug}
-								/>
-							) : (
-								<p className="p-3 text-sm text-app-text-muted">
-									No details yet.
-								</p>
+				<TabsContent
+					id="overview"
+					shouldForceMount
+					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
+				>
+					<ScrollArea className="min-h-0 flex-1">
+						<div className="flex flex-col gap-6 p-4">
+							{externalUpdate && (
+								<div
+									aria-live="polite"
+									className="flex flex-wrap items-center gap-2 border border-warning bg-warning-bg p-3 text-xs text-warning"
+								>
+									<AlertTriangleIcon className="size-4 shrink-0" aria-hidden />
+									<span className="flex-1">
+										Someone else updated this milestone while you had it open.
+									</span>
+									<Button size="xs" variant="surface" onPress={onReload}>
+										Reload
+									</Button>
+								</div>
 							)}
-						</div>
-					</section>
 
-					{/* Authorship */}
-					<div className="flex flex-wrap items-center gap-2 text-xs text-app-text-muted">
-						{milestone.createdByName && (
-							<>
-								<UserAvatar
-									size="sm"
-									name={milestone.createdByName}
-									className="size-5"
-								/>
-								<span>Created by {milestone.createdByName}</span>
-							</>
+							{/* Metadata */}
+							<div className="grid gap-4 sm:grid-cols-2">
+								<MetaField label="Status">
+									<MilestoneStatusSelect
+										status={status}
+										onChange={changeStatus}
+										readOnly={!canWrite}
+									/>
+								</MetaField>
+
+								<MetaField label="Estimate">
+									<MilestoneEstimateField
+										minutes={milestone.estimateMinutes}
+										onCommit={changeEstimate}
+										readOnly={!canWrite}
+									/>
+								</MetaField>
+
+								<MetaField label="Dates" className="sm:col-span-2">
+									<MilestoneDateRangeField
+										startDate={dates.startDate}
+										dueDate={dates.dueDate}
+										onChange={changeDates}
+										readOnly={!canWrite}
+									/>
+								</MetaField>
+
+								<MetaField label="Assignees" className="sm:col-span-2">
+									<MilestoneAssigneeField
+										members={members}
+										selected={assigneeIds}
+										assignees={milestone.assignees}
+										onChange={changeAssignees}
+										readOnly={!canWrite}
+									/>
+								</MetaField>
+							</div>
+
+							{/* Body */}
+							<section className="flex flex-col gap-2">
+								<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
+									Details
+								</h3>
+
+								<div className="border-y border-app-border">
+									{canWrite ? (
+										<MilestoneEditor
+											key={milestone.id}
+											initialValue={milestone.description}
+											onChange={(value) => saveBody.schedule(value)}
+											ariaLabel="Milestone details"
+											organizationId={organizationId}
+											organizationSlug={orgSlug}
+										/>
+									) : milestone.description.length > 0 ? (
+										<MilestoneEditorStatic
+											value={milestone.description}
+											ariaLabel="Milestone details"
+											organizationSlug={orgSlug}
+										/>
+									) : (
+										<p className="p-3 text-sm text-app-text-muted">
+											No details yet.
+										</p>
+									)}
+								</div>
+							</section>
+
+							{/* Authorship */}
+							<div className="flex flex-wrap items-center gap-2 text-xs text-app-text-muted">
+								{milestone.createdByName && (
+									<>
+										<UserAvatar
+											size="sm"
+											name={milestone.createdByName}
+											className="size-5"
+										/>
+										<span>Created by {milestone.createdByName}</span>
+									</>
+								)}
+							</div>
+						</div>
+					</ScrollArea>
+
+					{/* Save state. A live region, so a screen reader hears the
+					    result without the visual line having to move. */}
+					<div className="flex min-h-9 items-center justify-between gap-2 border-t border-app-border px-4 py-1.5 text-xs">
+						<span
+							aria-live="polite"
+							className={cn(
+								saveState === "error" ? "text-danger" : "text-app-text-muted",
+							)}
+						>
+							{saveState === "saving" && "Saving..."}
+							{saveState === "saved" && "Saved"}
+							{saveState === "error" && (saveError ?? "Could not save.")}
+						</span>
+
+						{saveState === "error" && retryRef.current && (
+							<Button
+								size="xs"
+								variant="outline"
+								onPress={() => void retryFailedSave()}
+							>
+								Retry
+							</Button>
 						)}
 					</div>
-				</div>
-			</ScrollArea>
+				</TabsContent>
 
-			{/* Save state. A live region, so a screen reader hears the result
-			    without the visual line having to move. */}
-			<div className="flex min-h-9 items-center justify-between gap-2 border-t border-app-border px-4 py-1.5 text-xs">
-				<span
-					aria-live="polite"
-					className={cn(
-						saveState === "error" ? "text-danger" : "text-app-text-muted",
-					)}
+				<TabsContent
+					id="comments"
+					shouldForceMount
+					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
 				>
-					{saveState === "saving" && "Saving..."}
-					{saveState === "saved" && "Saved"}
-					{saveState === "error" && (saveError ?? "Could not save.")}
-				</span>
-
-				{saveState === "error" && retryRef.current && (
-					<Button
-						size="xs"
-						variant="outline"
-						onPress={() => void retryFailedSave()}
-					>
-						Retry
-					</Button>
-				)}
-			</div>
+					{commentsOpened && (
+						<CommentTab
+							orgSlug={orgSlug}
+							organizationId={organizationId}
+							projectId={projectId}
+							milestoneId={milestone.id}
+							viewerId={viewer.userId}
+							canComment={viewer.canComment}
+							locked={viewer.locked}
+							active={selectedTab === "comments"}
+						/>
+					)}
+				</TabsContent>
+			</Tabs>
 
 			{canWrite && (
 				<MilestoneDeleteDialog

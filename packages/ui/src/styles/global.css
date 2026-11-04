@@ -6,6 +6,31 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Orientation variants used by the shadcn aria-sera components (the tabs
+ * component today). The registry ships these in `shadcn/tailwind.css`, which
+ * this project does not import, so the two variants the component relies on are
+ * declared here. Both match the data attribute react-aria already sets.
+ */
+@custom-variant data-horizontal {
+	&:where([data-orientation="horizontal"]) {
+		@slot;
+	}
+}
+
+@custom-variant data-vertical {
+	&:where([data-orientation="vertical"]) {
+		@slot;
+	}
+}
+
+/*
+ * True only on a device with a real hover capable pointer. Used to tuck
+ * secondary actions away on a desktop without hiding them from a touch device,
+ * where there is no hover to reveal them.
+ */
+@custom-variant pointer-fine (@media (hover: hover) and (pointer: fine));
+
 @theme inline {
 	--font-sans: var(--font-sans);
 	--font-display: var(--font-display);

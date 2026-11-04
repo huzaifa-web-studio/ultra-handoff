@@ -15,6 +15,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+	type AnyPgColumn,
 	boolean,
 	check,
 	date,
@@ -331,6 +332,88 @@ export const milestoneAssignee = pgTable(
 		index("milestone_assignee_milestone_idx").on(table.milestoneId),
 		// Supports "my milestones" style reads and the member removal cascade.
 		index("milestone_assignee_member_idx").on(table.projectMemberId),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();
+
+/**
+ * A comment in a discussion thread attached to a piece of work.
+ *
+ * Why one generic table instead of a milestone specific one: comments are the
+ * same concept on every surface the product will grow (milestones now,
+ * deliverables and scope items later). One table keeps one service, one route
+ * shape and one UI, and the thread features that follow (reactions,
+ * attachments, resolve) only need child tables keyed by comment id.
+ *
+ * Why typed target columns instead of an `entity_type` + `entity_id` pair: the
+ * foreign key is what makes deletion safe. Deleting a milestone, or a project
+ * that owns it, removes its comments inside the database, including on cascade
+ * paths no service code runs through. An untyped id would leave orphan rows
+ * behind. The check keeps the target exclusive, so a row can never point at two
+ * entities at once. Adding the next entity means one column, one check update
+ * and one index.
+ *
+ * `parent_id` is a self reference. A reply points at a root comment whose own
+ * parent is null; the service enforces that, so the depth stays one level and
+ * the schema does not need to encode it.
+ *
+ * `body` holds the Plate value and `body_text` the plain text mirror, exactly
+ * like a milestone description, so search, previews and validation never have
+ * to walk JSON.
+ *
+ * Deleting is soft. `deleted_at` keeps the row so replies keep their thread and
+ * the record of who said something remains, while the service blanks `body` and
+ * `body_text` so the content itself is gone.
+ *
+ * `author_id` is nullable and uses `set null`, so removing an account keeps the
+ * discussion history as "Former member" instead of deleting it.
+ */
+export const comment = pgTable(
+	"comment",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		/** The milestone this thread belongs to. Null for future targets. */
+		milestoneId: text("milestone_id").references(() => milestone.id, {
+			onDelete: "cascade",
+		}),
+		/** The root comment this row replies to. Null for a root. */
+		parentId: text("parent_id").references((): AnyPgColumn => comment.id, {
+			onDelete: "cascade",
+		}),
+		authorId: text("author_id").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		/** Plate value. Always an array; the service validates before writing. */
+		body: jsonb("body").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+		/** Plain text mirror used by previews, search and validation. */
+		bodyText: text("body_text").notNull().default(""),
+		/** Set the first time the author saves an edit. */
+		editedAt: timestamp("edited_at"),
+		/** Set when the author deletes. The body is blanked at the same time. */
+		deletedAt: timestamp("deleted_at"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// The thread read: roots and their replies inside one milestone.
+		index("comment_milestone_created_idx").on(
+			table.milestoneId,
+			table.parentId,
+			table.createdAt,
+			table.id,
+		),
+		index("comment_parent_idx").on(table.parentId),
+		index("comment_organization_idx").on(table.organizationId),
+		// Supports the author permission check and a future "my comments" view.
+		index("comment_author_idx").on(table.authorId),
+		// Exactly one target. Adding the next entity extends this list.
+		check("comment_target_check", sql`num_nonnulls(${table.milestoneId}) = 1`),
 		tenantIsolation(table.organizationId),
 	],
 ).enableRLS();

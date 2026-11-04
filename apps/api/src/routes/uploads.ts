@@ -148,12 +148,14 @@ export const uploadRoutes = new Elysia()
 			}
 
 			// The upload was authorized when it was created. Membership may have
-			// changed since then, so project and milestone images are re-checked
-			// here. The URL itself grants nothing: attaching it to a milestone
-			// still requires edit permission on the milestone route.
+			// changed since then, so organization scoped content is re-checked
+			// here. The URL itself grants nothing: attaching it to a comment or a
+			// milestone still requires permission on that route.
 			if (
 				latest.purpose === "project-logo" ||
-				latest.purpose === "milestone-image"
+				latest.purpose === "milestone-image" ||
+				latest.purpose === "comment-image" ||
+				latest.purpose === "comment-file"
 			) {
 				const organizationId = latest.organizationId;
 

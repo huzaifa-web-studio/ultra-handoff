@@ -6,6 +6,7 @@ import { isDevelopment, serverEnv } from "./lib/env";
 import { tenantPlugin } from "./middleware/tenant";
 import { queues } from "./queues";
 import { accountRoutes } from "./routes/account";
+import { commentRoutes } from "./routes/comments";
 import { fileRoutes } from "./routes/files";
 import { publicInvitationRoutes } from "./routes/invitations";
 import { linkPreviewRoutes } from "./routes/link-previews";
@@ -46,6 +47,8 @@ async function buildApp() {
 		.use(projectRoutes)
 		// Milestones inside a project (tenant scoped).
 		.use(milestoneRoutes)
+		// Discussion threads on a milestone (tenant scoped).
+		.use(commentRoutes)
 		// Cached link previews for the milestone editor (tenant scoped).
 		.use(linkPreviewRoutes)
 		// Invitation preview and magic link request for the public accept page.

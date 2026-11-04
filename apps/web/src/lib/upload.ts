@@ -22,7 +22,9 @@ export type UploadPurpose =
 	| "avatar"
 	| "organization-logo"
 	| "project-logo"
-	| "milestone-image";
+	| "milestone-image"
+	| "comment-image"
+	| "comment-file";
 
 export type FilePolicy = {
 	maxBytes: number;
@@ -58,6 +60,30 @@ export const FILE_POLICIES: Record<UploadPurpose, FilePolicy> = {
 		accept: "image/png,image/jpeg",
 		label: "PNG or JPG up to 5 MB",
 	},
+	"comment-image": {
+		maxBytes: 5 * 1024 * 1024,
+		mime: ["image/png", "image/jpeg"],
+		accept: "image/png,image/jpeg",
+		label: "PNG or JPG up to 5 MB",
+	},
+	"comment-file": {
+		maxBytes: 10 * 1024 * 1024,
+		mime: [
+			"application/pdf",
+			"text/plain",
+			"text/csv",
+			"application/msword",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			"application/vnd.ms-excel",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			"application/vnd.ms-powerpoint",
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			"application/zip",
+		],
+		accept:
+			"application/pdf,.pdf,text/plain,.txt,text/csv,.csv,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.ms-excel,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.ms-powerpoint,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,application/zip,.zip",
+		label: "PDF, Office, text or ZIP up to 10 MB",
+	},
 };
 
 export type UploadedFile = {
@@ -88,7 +114,7 @@ export function validateUploadFile(
 	const mime = normalizeMime(file);
 
 	if (!mime || !policy.mime.includes(mime)) {
-		return "Only PNG and JPG images are allowed.";
+		return `This file type is not supported. ${policy.label}.`;
 	}
 
 	if (file.size <= 0) {
@@ -96,23 +122,54 @@ export function validateUploadFile(
 	}
 
 	if (file.size > policy.maxBytes) {
-		return `The image must be 5 MB or smaller.`;
+		return `This file is too large. ${policy.label}.`;
 	}
 
 	return null;
 }
 
+/**
+ * Resolve the MIME type the API will sign.
+ *
+ * Some platforms report an empty type, and others report the generic
+ * `application/octet-stream` for a perfectly ordinary document. In both cases
+ * the extension is the better answer, and the server re-checks the declared type
+ * against the purpose policy anyway.
+ */
+const EXTENSION_MIME: Record<string, string> = {
+	png: "image/png",
+	jpg: "image/jpeg",
+	jpeg: "image/jpeg",
+	pdf: "application/pdf",
+	txt: "text/plain",
+	csv: "text/csv",
+	doc: "application/msword",
+	docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	xls: "application/vnd.ms-excel",
+	xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	ppt: "application/vnd.ms-powerpoint",
+	pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	zip: "application/zip",
+};
+
+/** Browser aliases that the API policy already accepts under one name. */
+const MIME_ALIASES: Record<string, string> = {
+	"application/x-zip-compressed": "application/zip",
+};
+
 function normalizeMime(file: File): string | null {
-	if (file.type) {
-		// Some platforms add parameters such as `; charset=binary`.
-		return file.type.split(";")[0]?.trim().toLowerCase() ?? null;
+	// Some platforms add parameters such as `; charset=binary`.
+	const declared = file.type.split(";")[0]?.trim().toLowerCase();
+	const normalized = declared ? (MIME_ALIASES[declared] ?? declared) : null;
+
+	if (normalized && normalized !== "application/octet-stream") {
+		return normalized;
 	}
 
 	const name = file.name.toLowerCase();
-	if (name.endsWith(".png")) return "image/png";
-	if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+	const extension = name.slice(name.lastIndexOf(".") + 1);
 
-	return null;
+	return EXTENSION_MIME[extension] ?? null;
 }
 
 /**
@@ -132,7 +189,11 @@ export async function uploadFile({
 	if (problem) throw new Error(problem);
 
 	const mime = normalizeMime(file);
-	if (!mime) throw new Error("Only PNG and JPG images are allowed.");
+	if (!mime) {
+		throw new Error(
+			`This file type is not supported. ${FILE_POLICIES[purpose].label}.`,
+		);
+	}
 
 	const created = await api.uploads.post({
 		purpose,

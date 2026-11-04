@@ -22,6 +22,18 @@ export const MAX_PROJECT_LOGO_BYTES = 5 * 1024 * 1024;
 /** Images embedded in a milestone description use the same image rules. */
 export const MAX_MILESTONE_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/** Images embedded in a comment use the same image rules. */
+export const MAX_COMMENT_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Documents attached to a comment.
+ *
+ * Larger than an image because a brief, a deck or a zip of assets is a normal
+ * thing to hand over in a discussion. Still bounded, so one message cannot park
+ * an unbounded object in storage.
+ */
+export const MAX_COMMENT_FILE_BYTES = 10 * 1024 * 1024;
+
 /**
  * The set of purposes the API currently accepts.
  *
@@ -33,6 +45,8 @@ export const UPLOAD_PURPOSES = [
 	"organization-logo",
 	"project-logo",
 	"milestone-image",
+	"comment-image",
+	"comment-file",
 ] as const;
 
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];
@@ -54,6 +68,15 @@ export type UploadPolicy = {
 	maxBytes: number;
 	/** MIME types the browser may declare and the worker will accept. */
 	allowedMime: readonly string[];
+	/**
+	 * Whether the bytes must be a real image.
+	 *
+	 * Image purposes are byte sniffed, because a mislabelled image is served
+	 * from our own origin. Document purposes are checked by declared MIME and
+	 * size only; the allowlist excludes HTML and SVG, which is what keeps the
+	 * public `/files` route safe.
+	 */
+	kind: "image" | "file";
 	/** Whether the object is owned by a user or by an organization. */
 	scopedTo: "user" | "organization";
 	/** Build the object key prefix. Never trust a client path. */
@@ -89,6 +112,7 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 		// SVG is deliberately excluded: it can carry script and would be
 		// served from our own origin through /files.
 		allowedMime: ["image/png", "image/jpeg"],
+		kind: "image",
 		scopedTo: "user",
 		prefix: ({ userId }) => `avatars/${userId}`,
 		label: "PNG or JPG up to 5 MB",
@@ -96,6 +120,7 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 	"organization-logo": {
 		maxBytes: MAX_ORGANIZATION_LOGO_BYTES,
 		allowedMime: ["image/png", "image/jpeg"],
+		kind: "image",
 		scopedTo: "organization",
 		prefix: organizationScopePrefix,
 		label: "PNG or JPG up to 5 MB",
@@ -103,6 +128,7 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 	"project-logo": {
 		maxBytes: MAX_PROJECT_LOGO_BYTES,
 		allowedMime: ["image/png", "image/jpeg"],
+		kind: "image",
 		scopedTo: "organization",
 		// Separate from the organization logo so project images can be found
 		// and cleaned up without touching the logo object.
@@ -112,11 +138,43 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 	"milestone-image": {
 		maxBytes: MAX_MILESTONE_IMAGE_BYTES,
 		allowedMime: ["image/png", "image/jpeg"],
+		kind: "image",
 		scopedTo: "organization",
 		// One folder per tenant, separate from logos, so an image that is no
 		// longer referenced by any milestone can be found by prefix later.
 		prefix: (scope) => `${organizationScopePrefix(scope)}/milestones`,
 		label: "PNG or JPG up to 5 MB",
+	},
+	"comment-image": {
+		maxBytes: MAX_COMMENT_IMAGE_BYTES,
+		allowedMime: ["image/png", "image/jpeg"],
+		kind: "image",
+		scopedTo: "organization",
+		// Its own folder, so a discussion attachment can never be confused
+		// with a project or milestone image during a future cleanup pass.
+		prefix: (scope) => `${organizationScopePrefix(scope)}/comments/images`,
+		label: "PNG or JPG up to 5 MB",
+	},
+	"comment-file": {
+		maxBytes: MAX_COMMENT_FILE_BYTES,
+		// No HTML and no SVG: both can execute script from our own origin.
+		// Everything here is either rendered by a fixed viewer or downloaded.
+		allowedMime: [
+			"application/pdf",
+			"text/plain",
+			"text/csv",
+			"application/msword",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			"application/vnd.ms-excel",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			"application/vnd.ms-powerpoint",
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			"application/zip",
+		],
+		kind: "file",
+		scopedTo: "organization",
+		prefix: (scope) => `${organizationScopePrefix(scope)}/comments/files`,
+		label: "PDF, Office, text or ZIP up to 10 MB",
 	},
 };
 
@@ -124,6 +182,18 @@ export const UPLOAD_POLICIES: Record<UploadPurpose, UploadPolicy> = {
 const EXTENSIONS: Record<string, string> = {
 	"image/png": "png",
 	"image/jpeg": "jpg",
+	"application/pdf": "pdf",
+	"text/plain": "txt",
+	"text/csv": "csv",
+	"application/msword": "doc",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		"docx",
+	"application/vnd.ms-excel": "xls",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+	"application/vnd.ms-powerpoint": "ppt",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation":
+		"pptx",
+	"application/zip": "zip",
 };
 
 /** Resolve the storage extension for a MIME type, or null if unsupported. */

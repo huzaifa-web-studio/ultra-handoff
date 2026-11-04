@@ -24,7 +24,6 @@
  * Used by: features/milestones/milestone-detail-panel.tsx.
  */
 
-import type { Value } from "platejs";
 import { Plate, PlateContent, usePlateEditor } from "platejs/react";
 import { PlateStatic } from "platejs/static";
 import { type KeyboardEvent, useState } from "react";
@@ -33,25 +32,12 @@ import { LinkPreviewProvider } from "#/features/link-previews/link-preview-conte
 import { extractLinkUrls } from "#/features/link-previews/utils";
 import { BlockMenuProvider } from "./editor-draggable";
 import {
-	EMPTY_EDITOR_VALUE,
 	milestoneEditorPlugins,
 	milestoneStaticEditorPlugins,
 } from "./editor-kit";
 import { EditorFloatingToolbar } from "./editor-toolbar";
+import { toEditorValue } from "./editor-value";
 import { EditorStaticProvider } from "./editor-view-context";
-
-/**
- * Normalise a stored body into something Slate can mount.
- *
- * The clone is not optional: Slate mutates its `children` array while typing,
- * and the stored value lives in the React Query cache. Handing that array over
- * directly would edit the cache in place and make a discarded draft look saved.
- */
-function toEditorValue(value: unknown[]): Value {
-	if (value.length === 0) return structuredClone(EMPTY_EDITOR_VALUE) as Value;
-
-	return structuredClone(value) as Value;
-}
 
 /**
  * Let keyboard users leave the editor.

@@ -3,9 +3,9 @@
  *
  * Why a worker: the browser uploads straight to SeaweedFS, so the API only
  * sees a declaration of what was uploaded. A background job confirms the
- * object exists, has the expected size, and really is a PNG or JPEG. Doing
- * that inline would make the upload request wait on storage round trips and
- * would lose retries.
+ * object exists, has the expected size, matches the policy MIME type and, for
+ * an image purpose, really is a PNG or JPEG. Doing that inline would make the
+ * upload request wait on storage round trips and would lose retries.
  *
  * Used by: src/index.ts (start and stop), src/routes/uploads.ts (enqueue and
  * wait), and Bull Board in development.
@@ -119,15 +119,20 @@ async function verifyUpload(
 			);
 		}
 
-		const header = await readHeadBytes(session.key, 16);
-		const detected = sniffImageType(header);
+		// Only image purposes are byte sniffed. A document cannot execute in the
+		// browser because HTML and SVG are not in the allowlist, and the public
+		// route serves it with a sandbox CSP and nosniff.
+		if (policy.kind === "image") {
+			const header = await readHeadBytes(session.key, 16);
+			const detected = sniffImageType(header);
 
-		if (!detected || detected !== session.contentType) {
-			await deleteObject(session.key);
-			return reject(
-				session,
-				"The file content is not a valid PNG or JPG image",
-			);
+			if (!detected || detected !== session.contentType) {
+				await deleteObject(session.key);
+				return reject(
+					session,
+					"The file content is not a valid PNG or JPG image",
+				);
+			}
 		}
 
 		const updated = await markUploadVerified(session.id);

@@ -57,6 +57,7 @@ import { ElementApi, KEYS, PathApi } from "platejs";
 import { createPlatePlugin, ParagraphPlugin } from "platejs/react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
+import { autolinkHref } from "./editor-autolink";
 import {
 	BlockSidePlugin,
 	clearBlockSide,
@@ -93,30 +94,6 @@ import {
 } from "./editor-table";
 
 /**
- * Turn a bare domain into an https URL for autolinking.
- *
- * Why: Plate's default `isUrl` requires a scheme, so pasting `example.com`
- * leaves it as plain text. Returning the href here keeps the visible text as
- * typed while the anchor points at the secure URL.
- *
- * Returning undefined means "use the text unchanged", which is what a value
- * that already carries a scheme should do.
- */
-function autolinkHref(text: string): string | undefined {
-	const value = text.trim();
-
-	if (value.length === 0) return undefined;
-	// Already a full URL, mailto or tel. Let Plate validate it as is.
-	if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return undefined;
-	// A host with at least one dot, optionally with a path. No spaces allowed.
-	if (!/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(value)) {
-		return undefined;
-	}
-
-	return `https://${value}`;
-}
-
-/**
  * Keeps an empty paragraph after a block that ends the document.
  *
  * Why: a void block at the end has nowhere for the caret. Clicking the empty
@@ -130,7 +107,7 @@ function autolinkHref(text: string): string | undefined {
  * The paragraph is only inserted when there is no node below, so real content
  * is never replaced.
  */
-const TRAILING_PARAGRAPH_TYPES = new Set(["table", "img", "bookmark"]);
+const TRAILING_PARAGRAPH_TYPES = new Set(["table", "img", "bookmark", "file"]);
 
 const TrailingParagraphPlugin = createPlatePlugin({
 	key: "milestoneTrailingParagraph",
@@ -384,15 +361,6 @@ export const milestoneEditorPlugins = [
 		},
 	}).withComponent(LinkElement),
 ];
-
-/**
- * The empty document.
- *
- * Slate requires at least one text node, so "no details yet" still has a real
- * paragraph to focus. The API stores an empty array for an empty body, and this
- * function is the only place that turns it back into something editable.
- */
-export const EMPTY_EDITOR_VALUE = [{ type: "p", children: [{ text: "" }] }];
 
 /**
  * Plugins for the read-only renderer.

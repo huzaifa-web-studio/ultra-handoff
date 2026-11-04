@@ -1,0 +1,93 @@
+/**
+ * Small helpers shared by the comment composer and the inline editor.
+ *
+ * Why a plain text walk instead of `NodeApi.string`: the comment value can be
+ * any Plate document, and the two things the UI needs are "did the writer type
+ * anything" and "how close to the limit are they". A local walk keeps the
+ * composer independent of the editor package internals.
+ *
+ * Used by: comment-composer.tsx and comment-item.tsx.
+ */
+
+/**
+ * The client mirror of the server text limit.
+ *
+ * Cosmetic only: the server rejects anything longer, and this copy is what lets
+ * the counter and the disabled send button answer before the request is sent.
+ */
+export const COMMENT_TEXT_MAX = 5_000;
+
+/** Walk an editor value and join its text leaves, with block boundaries kept. */
+export function commentText(value: unknown[]): string {
+	const parts: string[] = [];
+
+	function walk(node: unknown): void {
+		if (!node || typeof node !== "object") return;
+
+		const record = node as Record<string, unknown>;
+
+		if (typeof record.text === "string") {
+			parts.push(record.text);
+			return;
+		}
+
+		if (Array.isArray(record.children)) {
+			parts.push("\n");
+			for (const child of record.children) walk(child);
+			parts.push("\n");
+		}
+	}
+
+	for (const node of value) walk(node);
+
+	return parts
+		.join("")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+}
+
+/** Block types that are complete content even without any text of their own. */
+const EMBED_BLOCK_TYPES = new Set(["img", "file", "bookmark"]);
+
+/**
+ * True when the editor value has something worth sending.
+ *
+ * Text is not the only content: an image, an attachment or a bookmark card is a
+ * complete comment on its own. Without this check the Post button stayed
+ * disabled after a file upload, because the plain text walk found nothing.
+ */
+export function commentHasContent(value: unknown[]): boolean {
+	let found = false;
+
+	const walk = (node: unknown): void => {
+		if (found || !node || typeof node !== "object") return;
+
+		const record = node as Record<string, unknown>;
+
+		if (typeof record.text === "string" && record.text.trim().length > 0) {
+			found = true;
+			return;
+		}
+
+		if (typeof record.type === "string" && EMBED_BLOCK_TYPES.has(record.type)) {
+			found = true;
+			return;
+		}
+
+		if (Array.isArray(record.children)) {
+			for (const child of record.children) walk(child);
+		}
+	};
+
+	for (const node of value) walk(node);
+
+	return found;
+}
+
+/** True when the editor value changed in a way worth saving. */
+export function isCommentChanged(
+	next: unknown[],
+	previous: unknown[],
+): boolean {
+	return JSON.stringify(next) !== JSON.stringify(previous);
+}

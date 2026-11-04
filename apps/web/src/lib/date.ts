@@ -87,3 +87,36 @@ export function formatRelativeTime(
 
 	return RELATIVE_FORMAT.format(Math.round(diffSeconds / 86400), "day");
 }
+
+/**
+ * A comment timestamp that stays friendly while it is recent.
+ *
+ * Why not `formatRelativeTime`: a thread that is a month old would read
+ * "30 days ago", which is less useful than the actual day. A comment under a
+ * day old reads as elapsed time ("Just now", "4m ago", "3h ago"), and anything
+ * older falls back to the full day month year and time. The caller keeps the
+ * absolute value in the hover title either way.
+ */
+export function formatCommentTime(
+	value: string | Date,
+	now: Date = new Date(),
+): string {
+	const date = toValidDate(value);
+
+	if (!date) return UNKNOWN_DATE;
+
+	const diffMs = now.getTime() - date.getTime();
+
+	// A future value means a small clock difference between client and server.
+	if (diffMs < 60_000) return "Just now";
+
+	const minutes = Math.floor(diffMs / 60_000);
+
+	if (minutes < 60) return `${minutes}m ago`;
+
+	const hours = Math.floor(minutes / 60);
+
+	if (hours < 24) return `${hours}h ago`;
+
+	return formatDateTime(date);
+}
