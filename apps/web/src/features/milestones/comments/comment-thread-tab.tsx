@@ -19,8 +19,11 @@ import { ScrollArea } from "@org/ui/components/scroll-area";
 import { RefreshCwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useClockTick } from "#/hooks/use-clock-tick";
+import { formatDayHeading } from "#/lib/date";
 import type { Comment } from "./api";
 import { CommentComposer } from "./comment-composer";
+import { CommentDayDivider } from "./comment-day-divider";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
 import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
@@ -66,6 +69,11 @@ export function CommentThreadTab({
 	const [pendingDelete, setPendingDelete] = useState<Comment | null>(null);
 	const [replyFocusToken, setReplyFocusToken] = useState(0);
 	const scrollRef = useRef<HTMLDivElement>(null);
+
+	// A focused thread can span days, so its day headings and relative labels
+	// need the same slow refresh as the main list.
+	useClockTick(active);
+
 	const registerThreadRef = useCallback(
 		(_id: string, _element: HTMLLIElement | null) => undefined,
 		[],
@@ -130,11 +138,24 @@ export function CommentThreadTab({
 	const deleted = thread.comment.deletedAt !== null;
 	const canWrite = canComment && !locked;
 
+	/*
+	 * The root's own day heading.
+	 *
+	 * Why here and not inside CommentThread: the main list already renders a
+	 * heading above each card, so the thread must not add a second one there.
+	 * This tab has no outer list, so without this the reader would see a "Today"
+	 * divider halfway down a thread that started yesterday and never see the
+	 * starting day at all.
+	 */
+	const rootHeading = formatDayHeading(thread.comment.createdAt);
+
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<ScrollArea ref={scrollRef} className="min-h-0 flex-1">
 				<div className="p-4">
-					<ol className="flex flex-col">
+					<ol className="flex flex-col gap-2">
+						<CommentDayDivider heading={rootHeading} />
+
 						<CommentThread
 							orgSlug={orgSlug}
 							organizationId={organizationId}

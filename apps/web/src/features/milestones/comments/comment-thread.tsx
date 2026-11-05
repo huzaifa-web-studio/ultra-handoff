@@ -21,9 +21,11 @@
 import { Button } from "@org/ui/components/button";
 import { cn } from "cn";
 import { ChevronDownIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 
 import type { Comment, CommentThread as CommentThreadType } from "./api";
+import { dayMarkers } from "./comment-day";
+import { CommentDayDivider } from "./comment-day-divider";
 import { CommentItem } from "./comment-item";
 
 /**
@@ -85,6 +87,15 @@ export function CommentThread({
 }) {
 	const replyCount = thread.replies.length;
 	const repliesOverflow = replyCount > REPLY_SCROLL_AFTER;
+
+	// A long thread can cross midnight, so replies get their own dividers. The
+	// root timestamp seeds the first comparison, which keeps a thread that all
+	// happened on one day free of a redundant heading.
+	const replyMarkers = dayMarkers(
+		thread.replies.map((reply) => reply.createdAt),
+		new Date(),
+		thread.comment.createdAt,
+	);
 
 	const repliesRef = useRef<HTMLOListElement>(null);
 	const previousReplyCount = useRef(replyCount);
@@ -179,21 +190,29 @@ export function CommentThread({
 									"max-h-96 overflow-y-auto overscroll-contain",
 							)}
 						>
-							{thread.replies.map((reply) => (
-								<li key={reply.id}>
-									<CommentItem
-										orgSlug={orgSlug}
-										organizationId={organizationId}
-										projectId={projectId}
-										milestoneId={milestoneId}
-										viewerId={viewerId}
-										comment={reply}
-										isReply
-										canComment={canComment}
-										onRequestDelete={onRequestDelete}
-									/>
-								</li>
-							))}
+							{thread.replies.map((reply, index) => {
+								const marker = replyMarkers[index];
+
+								return (
+									<Fragment key={reply.id}>
+										{marker ? <CommentDayDivider heading={marker} /> : null}
+
+										<li>
+											<CommentItem
+												orgSlug={orgSlug}
+												organizationId={organizationId}
+												projectId={projectId}
+												milestoneId={milestoneId}
+												viewerId={viewerId}
+												comment={reply}
+												isReply
+												canComment={canComment}
+												onRequestDelete={onRequestDelete}
+											/>
+										</li>
+									</Fragment>
+								);
+							})}
 						</ol>
 					)}
 				</>

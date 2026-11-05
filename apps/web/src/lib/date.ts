@@ -20,6 +20,17 @@ const DATE_FORMAT = new Intl.DateTimeFormat(DATE_LOCALE, {
 	dateStyle: "medium",
 });
 
+/*
+ * Built once, next to DATE_FORMAT. An Intl formatter costs roughly a hundred
+ * times a format call to construct, and comments format a timestamp for every
+ * row on every render, so constructing this inside the helper is the one change
+ * that turns a free list into a slow one.
+ */
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat(DATE_LOCALE, {
+	dateStyle: "medium",
+	timeStyle: "short",
+});
+
 const RELATIVE_FORMAT = new Intl.RelativeTimeFormat(DATE_LOCALE, {
 	numeric: "auto",
 });
@@ -48,16 +59,92 @@ export function formatDate(value: string | Date): string {
 	return date ? DATE_FORMAT.format(date) : UNKNOWN_DATE;
 }
 
+/**
+ * A stable key for one local calendar day, for example "2026-11-05".
+ *
+ * Why the local parts and not `toISOString`: `toISOString` is UTC. A comment
+ * written at 23:30 in a zone west of UTC would carry the next UTC date, so two
+ * comments either side of local midnight would fall into the same bucket and the
+ * divider between them would be missing. Reading the local parts is the only
+ * way to get the day the reader actually experienced.
+ *
+ * Returns null for a value that cannot be parsed, so a malformed row is grouped
+ * under its own heading instead of breaking the list.
+ */
+export function localDayKey(value: string | Date): string | null {
+	const date = toValidDate(value);
+
+	return date ? dayKeyOf(date) : null;
+}
+
+/** Shared key builder for an already valid Date. */
+function dayKeyOf(date: Date): string {
+	const year = date.getFullYear();
+	const month = `${date.getMonth() + 1}`.padStart(2, "0");
+	const day = `${date.getDate()}`.padStart(2, "0");
+
+	return `${year}-${month}-${day}`;
+}
+
+/**
+ * The heading shown above a run of comments from one day.
+ *
+ * Why a key as well as a label: the list is rendered from a merge of paged
+ * responses, and the key is what lets the divider appear once per day even when
+ * a newer page and an older page both contain comments from that same day.
+ *
+ * `label` is set for today and yesterday only, because those two read faster
+ * than a date. `absolute` is always the day month year form, so a heading is
+ * never ambiguous and never relies on the reader knowing today's date.
+ */
+export type DayHeading = {
+	key: string;
+	label: "Today" | "Yesterday" | null;
+	absolute: string;
+};
+
+/** Shown for a day whose source value could not be parsed. */
+const UNKNOWN_DAY_KEY = "unknown";
+
+/**
+ * Build the heading for one timestamp.
+ *
+ * `now` is a parameter rather than an implicit `new Date()` so the caller can
+ * render a whole page against one instant, and so the result is testable. The
+ * relative part is derived from local date arithmetic, not from subtracting
+ * 86400000 ms, which would be wrong on a daylight saving change.
+ */
+export function formatDayHeading(
+	value: string | Date,
+	now: Date = new Date(),
+): DayHeading {
+	const date = toValidDate(value);
+
+	if (!date) {
+		return { key: UNKNOWN_DAY_KEY, label: null, absolute: UNKNOWN_DATE };
+	}
+
+	const key = dayKeyOf(date);
+	const todayKey = dayKeyOf(now);
+	const yesterday = new Date(now);
+	yesterday.setDate(yesterday.getDate() - 1);
+
+	let label: DayHeading["label"] = null;
+
+	if (key === todayKey) {
+		label = "Today";
+	} else if (key === dayKeyOf(yesterday)) {
+		label = "Yesterday";
+	}
+
+	return { key, label, absolute: DATE_FORMAT.format(date) };
+}
+
 /** Full local date and time, used as the title of a relative label. */
 export function formatDateTime(value: string | Date): string {
 	const date = toValidDate(value);
 
-	if (!date) return UNKNOWN_DATE;
-
-	return new Intl.DateTimeFormat(DATE_LOCALE, {
-		dateStyle: "medium",
-		timeStyle: "short",
-	}).format(date);
+	return date ? DATE_TIME_FORMAT.format(date) : UNKNOWN_DATE;
 }
 
 /**

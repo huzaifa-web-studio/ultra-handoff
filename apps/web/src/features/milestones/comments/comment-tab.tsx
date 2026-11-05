@@ -24,6 +24,7 @@ import { Button } from "@org/ui/components/button";
 import { ScrollArea } from "@org/ui/components/scroll-area";
 import { RefreshCwIcon } from "lucide-react";
 import {
+	Fragment,
 	useCallback,
 	useEffect,
 	useLayoutEffect,
@@ -31,8 +32,11 @@ import {
 	useState,
 } from "react";
 
+import { useClockTick } from "#/hooks/use-clock-tick";
 import type { Comment } from "./api";
 import { CommentComposer } from "./comment-composer";
+import { dayMarkers } from "./comment-day";
+import { CommentDayDivider } from "./comment-day-divider";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
 import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
@@ -119,11 +123,12 @@ export function CommentTab({
 
 	const [pendingDelete, setPendingDelete] = useState<Comment | null>(null);
 	const [announcement, setAnnouncement] = useState("");
-	// Ticks while the tab is visible so an open thread keeps its relative labels
-	// honest. The value is never read; the re-render is the point.
-	const [, setClockTick] = useState(0);
 	// Bumped after a root post so the effect below scrolls once the row is in.
 	const [scrollToken, setScrollToken] = useState(0);
+
+	// Keeps the relative labels and the day headings honest while the tab is
+	// visible. One timer for the whole list, none while the tab is hidden.
+	useClockTick(active);
 
 	// The one reply target. The composer at the bottom renders the banner and
 	// sends with this id as the parent, so a thread is one level and one draft.
@@ -151,18 +156,6 @@ export function CommentTab({
 	const threads = [...(query.data?.pages ?? [])]
 		.reverse()
 		.flatMap((page) => page.threads);
-
-	// One timer for the whole list is cheaper than a timer per comment, and it
-	// only runs while the tab is actually visible.
-	useEffect(() => {
-		if (!active) return;
-
-		const id = window.setInterval(() => {
-			setClockTick((current) => current + 1);
-		}, 30_000);
-
-		return () => window.clearInterval(id);
-	}, [active]);
 
 	// First open shows the newest comment, which is where a returning reader
 	// expects to land.
@@ -356,27 +349,43 @@ export function CommentTab({
 			);
 		}
 
+		// One heading per day, computed over the merged pages so a day that
+		// straddles a page boundary gets one divider, not two. The list is
+		// already rebuilt on every render, so this is a single extra pass over
+		// rows that are in memory, with no request and no query.
+		const markers = dayMarkers(
+			threads.map((thread) => thread.comment.createdAt),
+			new Date(),
+		);
+
 		return (
 			<ol className="flex flex-col gap-4">
-				{threads.map((thread) => (
-					<CommentThread
-						key={thread.comment.id}
-						orgSlug={orgSlug}
-						organizationId={organizationId}
-						projectId={projectId}
-						milestoneId={milestoneId}
-						viewerId={viewerId}
-						thread={thread}
-						canComment={canComment && !locked}
-						collapsed={!expandedThreads.has(thread.comment.id)}
-						isReplyTarget={replyingTo?.id === thread.comment.id}
-						onToggle={() => toggleThread(thread.comment.id)}
-						onReply={handleReply}
-						onOpenTab={onOpenCommentTab}
-						onRequestDelete={setPendingDelete}
-						registerRef={registerThreadRef}
-					/>
-				))}
+				{threads.map((thread, index) => {
+					const marker = markers[index];
+
+					return (
+						<Fragment key={thread.comment.id}>
+							{marker ? <CommentDayDivider heading={marker} /> : null}
+
+							<CommentThread
+								orgSlug={orgSlug}
+								organizationId={organizationId}
+								projectId={projectId}
+								milestoneId={milestoneId}
+								viewerId={viewerId}
+								thread={thread}
+								canComment={canComment && !locked}
+								collapsed={!expandedThreads.has(thread.comment.id)}
+								isReplyTarget={replyingTo?.id === thread.comment.id}
+								onToggle={() => toggleThread(thread.comment.id)}
+								onReply={handleReply}
+								onOpenTab={onOpenCommentTab}
+								onRequestDelete={setPendingDelete}
+								registerRef={registerThreadRef}
+							/>
+						</Fragment>
+					);
+				})}
 			</ol>
 		);
 	}
