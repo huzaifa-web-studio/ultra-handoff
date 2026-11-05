@@ -339,7 +339,7 @@ function myProjectRoleSql(tenant: TenantContext): SQL<string | null> {
  * member loses it. The condition lives here so the list, the sidebar, pin and
  * visit cannot drift apart on the two rules that decide visibility.
  */
-function projectVisibility(tx: TenantTx, tenant: TenantContext): SQL {
+export function projectVisibility(tx: TenantTx, tenant: TenantContext): SQL {
 	if (isOrganizationOwner(tenant.role)) return sql`true`;
 
 	const membership = exists(
@@ -833,6 +833,56 @@ export async function loadUserMap(
 			{ name: row.name, email: row.email, image: row.image },
 		]),
 	);
+}
+
+/** One Better Auth user row, in the shape the mention picker needs. */
+export type UserProfile = {
+	id: string;
+	name: string;
+	email: string;
+	image: string | null;
+};
+
+/**
+ * Search a bounded set of users by name or email.
+ *
+ * Why SQL instead of loading every profile: the mention picker only shows a few
+ * rows, but a project may have thousands of members. Filtering their names in
+ * memory meant transferring every profile on each keystroke. This query stays on
+ * the privileged client (Better Auth tables are never joined into a tenant
+ * query) and stops at `limit + 1`, which also answers "is there more".
+ *
+ * The caller passes the member ids it already read through the tenant client.
+ * That keeps project membership enforced by the existing scope.
+ */
+export async function searchUserProfiles(
+	userIds: string[],
+	search: string,
+	limit: number,
+): Promise<UserProfile[]> {
+	if (userIds.length === 0) return [];
+
+	const term = search.trim();
+	const pattern = term.length > 0 ? `%${escapeLike(term)}%` : null;
+
+	return adminDb
+		.select({
+			id: user.id,
+			name: user.name,
+			email: user.email,
+			image: user.image,
+		})
+		.from(user)
+		.where(
+			and(
+				inArray(user.id, userIds),
+				...(pattern
+					? [or(ilike(user.name, pattern), ilike(user.email, pattern))]
+					: []),
+			),
+		)
+		.orderBy(asc(user.name))
+		.limit(limit);
 }
 
 /** Build the member list, merging organization owners who are always owners. */

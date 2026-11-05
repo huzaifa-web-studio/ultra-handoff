@@ -35,6 +35,13 @@ import {
 	MILESTONE_DESCRIPTION_MAX,
 	MILESTONE_TEXT_MAX,
 } from "../auth/milestone-permissions";
+import {
+	MAX_MENTION_NAME,
+	MENTION_SLUG_MAX,
+	MENTION_SLUG_PATTERN,
+	mentionKey,
+	parseMentionKey,
+} from "./mentions";
 import { MAX_ATTACHMENT_BYTES } from "./storage/config";
 
 /** Block types the editor is allowed to produce. */
@@ -127,6 +134,7 @@ const COMMENT_BLOCK_TYPES = new Set([
 	"img",
 	"bookmark",
 	"file",
+	"mention",
 ]);
 
 /** Longest attachment name stored on a file node. */
@@ -340,10 +348,14 @@ function sanitizeNode(
 
 	// A void block this profile does not allow has no text to keep, so it is
 	// dropped instead of becoming an empty paragraph. This is what stops a
-	// crafted request from putting an image or a bookmark into a comment.
+	// crafted request from putting an image, an attachment, a bookmark or a
+	// mention into a surface that does not offer it.
 	if (
 		!profile.allowedBlocks.has(rawType) &&
-		(rawType === "img" || rawType === "bookmark" || rawType === "file")
+		(rawType === "img" ||
+			rawType === "bookmark" ||
+			rawType === "file" ||
+			rawType === "mention")
 	) {
 		return null;
 	}
@@ -351,6 +363,50 @@ function sanitizeNode(
 	// An unknown type is downgraded rather than dropped, so a plugin that is
 	// added later and then removed cannot silently eat a document.
 	const type = profile.allowedBlocks.has(rawType) ? rawType : "p";
+
+	/**
+	 * A mention is an inline void node carrying a target and its display name.
+	 *
+	 * The key is canonicalised and the name bounded, so the stored node is
+	 * always a shape the renderer understands. Access is checked later by the
+	 * service, because the sanitizer has no database.
+	 */
+	if (type === "mention") {
+		const parsed = parseMentionKey(node.key);
+		if (!parsed) return null;
+
+		const rawValue = typeof node.value === "string" ? node.value.trim() : "";
+		if (rawValue.length === 0) return null;
+
+		const value = rawValue.slice(0, MAX_MENTION_NAME);
+		const mention: Record<string, unknown> = {
+			type: "mention",
+			key: mentionKey(parsed.type, parsed.id),
+			value,
+			// Plate requires every element to have a child, even when it renders
+			// as void. The renderer keeps it invisible.
+			children: [{ text: "" }],
+		};
+
+		// A project or milestone chip links through a project slug. Storing it
+		// on the node means a reader needs no extra lookup to build the URL.
+		if (parsed.type !== "user") {
+			const rawSlug = typeof node.slug === "string" ? node.slug.trim() : "";
+
+			if (
+				rawSlug.length <= MENTION_SLUG_MAX &&
+				MENTION_SLUG_PATTERN.test(rawSlug)
+			) {
+				mention.slug = rawSlug;
+			}
+		}
+
+		// Keep the mention readable in the plain text copy used by previews and
+		// search. People read as `@Name`, projects and milestones as `#Name`.
+		state.text.push(`${parsed.type === "user" ? "@" : "#"}${value}`);
+
+		return mention;
+	}
 
 	// A bookmark is a void block that only carries a URL. The preview itself is
 	// looked up by that URL, so no metadata is stored in the document and a
@@ -635,10 +691,11 @@ export function sanitizeRichText(value: unknown): SanitizedRichText {
 /**
  * Block types that count as content even with no text of their own.
  *
- * An image, an attachment and a bookmark card are complete messages. A table or
- * an empty list is structural, so it still needs a word to be worth sending.
+ * An image, an attachment, a bookmark card and a mention are complete messages.
+ * A table or an empty list is structural, so it still needs a word to be worth
+ * sending.
  */
-const COMMENT_EMBED_TYPES = new Set(["img", "file", "bookmark"]);
+const COMMENT_EMBED_TYPES = new Set(["img", "file", "bookmark", "mention"]);
 
 /**
  * True when a cleaned comment has text or a self-contained embed.

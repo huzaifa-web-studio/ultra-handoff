@@ -10,6 +10,7 @@
  */
 
 import type { Comment } from "./api";
+import { mentionPrefix, parseMentionKey } from "./editor/mention-key";
 
 /**
  * The client mirror of the server text limit.
@@ -27,6 +28,19 @@ export function commentText(value: unknown[]): string {
 		if (!node || typeof node !== "object") return;
 
 		const record = node as Record<string, unknown>;
+
+		// A mention is an inline void node. Its display name is the only text
+		// that should count toward the preview and the character limit.
+		if (record.type === "mention") {
+			const target = parseMentionKey(record.key);
+			const value = typeof record.value === "string" ? record.value : "";
+
+			if (target && value) {
+				parts.push(`${mentionPrefix(target.type)}${value}`);
+			}
+
+			return;
+		}
 
 		if (typeof record.text === "string") {
 			parts.push(record.text);
@@ -49,7 +63,7 @@ export function commentText(value: unknown[]): string {
 }
 
 /** Node types that are complete content even without any text of their own. */
-const EMBED_TYPES = new Set(["img", "file", "bookmark"]);
+const EMBED_TYPES = new Set(["img", "file", "bookmark", "mention"]);
 
 /**
  * True when the editor value has something worth sending.

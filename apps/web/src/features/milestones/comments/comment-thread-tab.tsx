@@ -27,6 +27,7 @@ import { CommentDayDivider } from "./comment-day-divider";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
 import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
+import { MentionProvider } from "./editor/mention-context";
 import { useCommentThread } from "./hooks";
 
 export function CommentThreadTab({
@@ -150,70 +151,72 @@ export function CommentThreadTab({
 	const rootHeading = formatDayHeading(thread.comment.createdAt);
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
-			<ScrollArea ref={scrollRef} className="min-h-0 flex-1">
-				<div className="p-4">
-					<ol className="flex flex-col gap-2">
-						<CommentDayDivider heading={rootHeading} />
+		<MentionProvider value={{ orgSlug, projectId }}>
+			<div className="flex min-h-0 flex-1 flex-col">
+				<ScrollArea ref={scrollRef} className="min-h-0 flex-1">
+					<div className="p-4">
+						<ol className="flex flex-col gap-2">
+							<CommentDayDivider heading={rootHeading} />
 
-						<CommentThread
+							<CommentThread
+								orgSlug={orgSlug}
+								organizationId={organizationId}
+								projectId={projectId}
+								milestoneId={milestoneId}
+								viewerId={viewerId}
+								thread={thread}
+								canComment={canWrite}
+								collapsed={false}
+								collapsible={false}
+								frameless
+								replyScroll={false}
+								isReplyTarget={false}
+								onToggle={() => undefined}
+								onReply={() => setReplyFocusToken((current) => current + 1)}
+								onRequestDelete={setPendingDelete}
+								registerRef={registerThreadRef}
+							/>
+						</ol>
+					</div>
+				</ScrollArea>
+
+				{deleted ? (
+					<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
+						This discussion was deleted. The replies remain for context.
+					</p>
+				) : canWrite ? (
+					<div className="border-t border-app-border p-3">
+						<CommentComposer
 							orgSlug={orgSlug}
 							organizationId={organizationId}
 							projectId={projectId}
 							milestoneId={milestoneId}
-							viewerId={viewerId}
-							thread={thread}
-							canComment={canWrite}
-							collapsed={false}
-							collapsible={false}
-							frameless
-							replyScroll={false}
-							isReplyTarget={false}
-							onToggle={() => undefined}
-							onReply={() => setReplyFocusToken((current) => current + 1)}
-							onRequestDelete={setPendingDelete}
-							registerRef={registerThreadRef}
+							parentId={thread.comment.id}
+							replyingToName={authorName}
+							focusToken={replyFocusToken}
+							onPosted={handlePosted}
 						/>
-					</ol>
-				</div>
-			</ScrollArea>
+					</div>
+				) : (
+					<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
+						{locked
+							? "This project is archived, so the discussion is read only."
+							: "You can read this discussion but not take part in it."}
+					</p>
+				)}
 
-			{deleted ? (
-				<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
-					This discussion was deleted. The replies remain for context.
-				</p>
-			) : canWrite ? (
-				<div className="border-t border-app-border p-3">
-					<CommentComposer
-						orgSlug={orgSlug}
-						organizationId={organizationId}
-						projectId={projectId}
-						milestoneId={milestoneId}
-						parentId={thread.comment.id}
-						replyingToName={authorName}
-						focusToken={replyFocusToken}
-						onPosted={handlePosted}
-					/>
-				</div>
-			) : (
-				<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
-					{locked
-						? "This project is archived, so the discussion is read only."
-						: "You can read this discussion but not take part in it."}
-				</p>
-			)}
-
-			<CommentDeleteDialog
-				orgSlug={orgSlug}
-				projectId={projectId}
-				milestoneId={milestoneId}
-				comment={pendingDelete}
-				isOpen={pendingDelete !== null}
-				onOpenChange={(open) => {
-					if (!open) setPendingDelete(null);
-				}}
-				onDeleted={() => setPendingDelete(null)}
-			/>
-		</div>
+				<CommentDeleteDialog
+					orgSlug={orgSlug}
+					projectId={projectId}
+					milestoneId={milestoneId}
+					comment={pendingDelete}
+					isOpen={pendingDelete !== null}
+					onOpenChange={(open) => {
+						if (!open) setPendingDelete(null);
+					}}
+					onDeleted={() => setPendingDelete(null)}
+				/>
+			</div>
+		</MentionProvider>
 	);
 }

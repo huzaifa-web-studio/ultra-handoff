@@ -42,6 +42,7 @@ import { type TenantTx, withTenant } from "../db/tenant";
 import { consumeRateLimit } from "../lib/rate-limit";
 import { sanitizeCommentBody } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
+import { assertCommentMentions } from "./mention.service";
 import { requireMilestoneAccess } from "./milestone.service";
 import { loadUserMap } from "./project.service";
 
@@ -547,6 +548,11 @@ export async function createMilestoneComment(
 
 			const commentId = randomUUID();
 
+			// Mentions are checked inside the same transaction as the insert, so
+			// a project, milestone or person cannot be removed between the check
+			// and the stored body.
+			await assertCommentMentions(tx, tenant, projectId, body.value);
+
 			await tx.insert(comment).values({
 				id: commentId,
 				organizationId: tenant.organizationId,
@@ -621,6 +627,9 @@ export async function updateMilestoneComment(
 				deletedAt: record.deletedAt,
 				locked: access.row.archivedAt !== null,
 			});
+
+			// An edit can add or remove mentions, so the same guard runs again.
+			await assertCommentMentions(tx, tenant, projectId, body.value);
 
 			await tx
 				.update(comment)

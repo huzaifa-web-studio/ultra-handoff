@@ -173,6 +173,48 @@ export async function toggleCommentChecklist(
 
 export type CommentChecklistResponse = { comment: Comment };
 
+/**
+ * Read mention suggestions for the comment editor.
+ *
+ * One request returns the three groups, because the popup shows people,
+ * projects and milestones together and a search for "website" may match all
+ * three.
+ */
+export async function fetchMentionCandidates(
+	orgSlug: string,
+	projectId: string,
+	search: string,
+	limit = 6,
+) {
+	const response = await api.orgs({ orgSlug }).mentions.get({
+		query: {
+			projectId,
+			limit: String(limit),
+			...(search ? { search } : {}),
+		},
+	});
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load mention suggestions."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load mention suggestions.", 0);
+	}
+
+	return response.data;
+}
+
+export type MentionCandidates = Awaited<
+	ReturnType<typeof fetchMentionCandidates>
+>;
+export type MentionPerson = MentionCandidates["users"][number];
+export type MentionProject = MentionCandidates["projects"][number];
+export type MentionMilestone = MentionCandidates["milestones"][number];
+
 /** Soft delete your own comment. */
 export async function deleteComment(
 	orgSlug: string,

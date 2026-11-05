@@ -270,6 +270,111 @@ describe("sanitizeCommentBody", () => {
 		expect(result.text).toContain("Please review the homepage.");
 		expect(result.text).toContain("Hero section");
 	});
+
+	test("keeps user, project and milestone mentions", () => {
+		const result = sanitizeCommentBody([
+			{
+				type: "p",
+				children: [
+					{ text: "Thanks " },
+					{
+						type: "mention",
+						key: "user:user-1",
+						value: "Jane Doe",
+						children: [{ text: "" }],
+					},
+					{ text: ", see " },
+					{
+						type: "mention",
+						key: "project:project-1",
+						value: "Website Redesign",
+						slug: "website-redesign",
+						children: [{ text: "" }],
+					},
+					{ text: " and " },
+					{
+						type: "mention",
+						key: "milestone:milestone-1",
+						value: "Homepage Delivery",
+						slug: "website-redesign",
+						children: [{ text: "" }],
+					},
+				],
+			},
+		]);
+
+		const block = result.value[0] as { children?: { type?: string }[] };
+
+		expect(block.children).toHaveLength(6);
+		expect(block.children?.[1]?.type).toBe("mention");
+		expect(block.children?.[3]?.type).toBe("mention");
+		expect(block.children?.[5]?.type).toBe("mention");
+		expect(result.text).toContain("@Jane Doe");
+		expect(result.text).toContain("#Website Redesign");
+		expect(result.text).toContain("#Homepage Delivery");
+	});
+
+	test("drops a mention with an invalid key", () => {
+		const result = sanitizeCommentBody([
+			{
+				type: "p",
+				children: [
+					{
+						type: "mention",
+						key: "location:somewhere",
+						value: "Somewhere",
+						children: [{ text: "" }],
+					},
+					{ text: "Hello" },
+				],
+			},
+		]);
+
+		const block = result.value[0] as { children?: { type?: string }[] };
+
+		expect(block.children).toHaveLength(1);
+		expect(result.text).toContain("Hello");
+	});
+
+	test("accepts a mention with no text of its own", () => {
+		const result = sanitizeCommentBody([
+			{
+				type: "p",
+				children: [
+					{
+						type: "mention",
+						key: "user:user-1",
+						value: "Jane Doe",
+						children: [{ text: "" }],
+					},
+				],
+			},
+		]);
+
+		expect(result.text).toContain("@Jane Doe");
+	});
+
+	test("drops a project mention slug that is not a slug", () => {
+		const result = sanitizeCommentBody([
+			{
+				type: "p",
+				children: [
+					{
+						type: "mention",
+						key: "project:project-1",
+						value: "Website Redesign",
+						slug: "../../etc/passwd",
+						children: [{ text: "" }],
+					},
+				],
+			},
+		]);
+
+		const mention = (result.value[0] as { children?: { slug?: string }[] })
+			.children?.[0];
+
+		expect(mention?.slug).toBeUndefined();
+	});
 });
 
 describe("sanitizeRichText (milestone profile)", () => {
@@ -331,5 +436,28 @@ describe("sanitizeRichText (milestone profile)", () => {
 		expect((block.children?.[1] as { type?: string }).type).toBe("file");
 		expect(result.text).toContain("Please review");
 		expect(result.text).toContain("Brief.pdf");
+	});
+
+	test("drops a mention from a milestone description", () => {
+		const result = sanitizeRichText([
+			{
+				type: "p",
+				children: [
+					{ text: "See " },
+					{
+						type: "mention",
+						key: "project:project-1",
+						value: "Website Redesign",
+						slug: "website-redesign",
+						children: [{ text: "" }],
+					},
+				],
+			},
+		]);
+
+		const block = result.value[0] as { children?: { type?: string }[] };
+
+		expect(block.children).toHaveLength(1);
+		expect(result.text).toContain("See");
 	});
 });

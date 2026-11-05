@@ -10,6 +10,8 @@
  *   3. drizzle-kit does not generate GRANT / REVOKE / ALTER DEFAULT PRIVILEGES.
  *   4. It must be idempotent, so it can run on every deploy and on volumes
  *      that already contain tables.
+ *   5. The trigram extension must exist before the generated GIN indexes that
+ *      use `gin_trgm_ops` are applied by `db:migrate`.
  *
  * Run order: db:bootstrap, then db:migrate.
  * Used by: the `migrate` service in compose files, and `bun run db:setup`.
@@ -90,6 +92,12 @@ async function main(): Promise<void> {
 	const admin = postgres(databaseEnv.url, { max: 1 });
 
 	try {
+		// 0. Trigram search support. Created before migrations because the
+		// generated GIN indexes on project, milestone and user names reference
+		// `gin_trgm_ops`.
+		await admin.unsafe("create extension if not exists pg_trgm");
+		process.stdout.write("[bootstrap] pg_trgm ready\n");
+
 		// 1. Role. Postgres has no CREATE ROLE IF NOT EXISTS, so check first.
 		const roleRows =
 			await admin<{ exists: boolean }[]>`select exists (

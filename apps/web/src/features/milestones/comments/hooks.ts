@@ -18,6 +18,7 @@
 
 import {
 	type InfiniteData,
+	keepPreviousData,
 	useInfiniteQuery,
 	useMutation,
 	useQuery,
@@ -34,6 +35,7 @@ import {
 	deleteComment,
 	fetchComments,
 	fetchCommentThread,
+	fetchMentionCandidates,
 	toggleCommentChecklist,
 	updateComment,
 } from "./api";
@@ -392,5 +394,30 @@ export function useDeleteComment(
 				data.comment,
 			);
 		},
+	});
+}
+
+/**
+ * Mention suggestions for one search term.
+ *
+ * Why not cached forever: a project can be renamed, a member removed or a
+ * milestone completed while a comment is being written. A short stale time
+ * keeps the popup responsive without offering a target that no longer exists.
+ * The previous result is kept while the next one loads, so the list does not
+ * flicker on every keystroke.
+ */
+export function useMentionCandidates(
+	orgSlug: string,
+	projectId: string,
+	search: string,
+	enabled = true,
+) {
+	return useQuery({
+		queryKey: ["organization", orgSlug, "mentions", projectId, search] as const,
+		queryFn: () => fetchMentionCandidates(orgSlug, projectId, search),
+		enabled: enabled && Boolean(orgSlug) && Boolean(projectId),
+		placeholderData: keepPreviousData,
+		staleTime: 15_000,
+		retry: retryCommentQuery,
 	});
 }

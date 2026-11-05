@@ -22,6 +22,7 @@
 
 import { triggerFloatingLinkInsert } from "@platejs/link/react";
 import {
+	AtSignIcon,
 	BoldIcon,
 	CodeIcon,
 	ImageIcon,
@@ -204,6 +205,25 @@ export function CommentToolbar({
 		}
 	}
 
+	/**
+	 * Start a mention from the toolbar.
+	 *
+	 * Typing `@` is the normal path, but the action row is where every other
+	 * insert lives, so the same gesture is offered here. The trigger has to be
+	 * inserted at a real selection, so an empty editor gets the caret at the
+	 * end first.
+	 */
+	function startMention() {
+		if (!editor.selection) {
+			const end = editor.api.end([]);
+
+			if (end) editor.tf.select(end);
+		}
+
+		editor.tf.focus();
+		editor.tf.insertText("@");
+	}
+
 	return (
 		<>
 			<div
@@ -212,6 +232,15 @@ export function CommentToolbar({
 				className="flex flex-wrap items-center gap-0.5"
 			>
 				<BlockSelect />
+
+				<ToolbarSeparator />
+
+				<ToolbarButton
+					label="Mention a person, project or milestone"
+					onPress={startMention}
+				>
+					<AtSignIcon aria-hidden />
+				</ToolbarButton>
 
 				<ToolbarSeparator />
 

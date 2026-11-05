@@ -11,6 +11,7 @@ import { fileRoutes } from "./routes/files";
 import { publicInvitationRoutes } from "./routes/invitations";
 import { linkPreviewRoutes } from "./routes/link-previews";
 import { memberRoutes } from "./routes/members";
+import { mentionRoutes } from "./routes/mentions";
 import { milestoneRoutes } from "./routes/milestones";
 import { organizationRoutes } from "./routes/organization";
 import { projectRoutes } from "./routes/projects";
@@ -49,6 +50,8 @@ async function buildApp() {
 		.use(milestoneRoutes)
 		// Discussion threads on a milestone (tenant scoped).
 		.use(commentRoutes)
+		// Mention suggestions for the comment editor (tenant scoped).
+		.use(mentionRoutes)
 		// Cached link previews for the milestone editor (tenant scoped).
 		.use(linkPreviewRoutes)
 		// Invitation preview and magic link request for the public accept page.

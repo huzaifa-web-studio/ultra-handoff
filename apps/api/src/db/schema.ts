@@ -90,6 +90,18 @@ export const project = pgTable(
 			table.organizationId,
 			table.archivedAt,
 		),
+		/**
+		 * Substring search for the mention picker.
+		 *
+		 * `ILIKE '%term%'` cannot use a btree index, so a large workspace would
+		 * scan every project on each keystroke. The trigram GIN index keeps the
+		 * same contains-style search fast. The extension is created by
+		 * `scripts/bootstrap-db.ts` before migrations run.
+		 */
+		index("project_name_trgm_idx").using(
+			"gin",
+			sql`${table.name} gin_trgm_ops`,
+		),
 		// The API validates the slug too. This check keeps a bad value out even
 		// if a future code path forgets to call the validator.
 		check(
@@ -273,6 +285,15 @@ export const milestone = pgTable(
 			table.dueDate,
 		),
 		index("milestone_organization_idx").on(table.organizationId),
+		/**
+		 * Substring search for the mention picker. The picker searches titles
+		 * across every visible project, so without a trigram index a large
+		 * workspace would scan the whole table on each keystroke.
+		 */
+		index("milestone_title_trgm_idx").using(
+			"gin",
+			sql`${table.title} gin_trgm_ops`,
+		),
 		check(
 			"milestone_status_check",
 			sql`${table.status} in ('todo', 'in_progress', 'blocked', 'done', 'cancelled')`,

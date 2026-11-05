@@ -40,6 +40,7 @@ import { CommentDayDivider } from "./comment-day-divider";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
 import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
+import { MentionProvider } from "./editor/mention-context";
 import { useMilestoneComments } from "./hooks";
 
 /**
@@ -391,67 +392,69 @@ export function CommentTab({
 	}
 
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
-			{/* A live region, so the result is heard without moving the visual focus. */}
-			<p aria-live="polite" className="sr-only">
-				{announcement}
-			</p>
-
-			<ScrollArea ref={scrollRef} className="min-h-0 flex-1">
-				<div className="flex flex-col gap-4 p-4">
-					{query.hasNextPage && (
-						<div className="flex justify-center">
-							<Button
-								variant="outline"
-								size="xs"
-								loading={query.isFetchingNextPage}
-								onPress={loadEarlier}
-							>
-								Load earlier comments
-							</Button>
-						</div>
-					)}
-
-					{renderContent()}
-				</div>
-			</ScrollArea>
-
-			{locked ? (
-				<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
-					This project is archived, so the discussion is read only. Restore the
-					project to reply.
+		<MentionProvider value={{ orgSlug, projectId }}>
+			<div className="flex min-h-0 flex-1 flex-col">
+				{/* A live region, so the result is heard without moving the visual focus. */}
+				<p aria-live="polite" className="sr-only">
+					{announcement}
 				</p>
-			) : canComment ? (
-				<div className="border-t border-app-border p-3">
-					<CommentComposer
-						orgSlug={orgSlug}
-						organizationId={organizationId}
-						projectId={projectId}
-						milestoneId={milestoneId}
-						parentId={replyingTo?.id ?? null}
-						replyingToName={replyingTo?.name}
-						focusToken={replyFocusToken}
-						onDone={replyingTo ? () => setReplyingTo(null) : undefined}
-						onPosted={handlePosted}
-					/>
-				</div>
-			) : (
-				<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
-					You can read this discussion but not take part in it.
-				</p>
-			)}
 
-			<CommentDeleteDialog
-				orgSlug={orgSlug}
-				projectId={projectId}
-				milestoneId={milestoneId}
-				comment={pendingDelete}
-				isOpen={pendingDelete !== null}
-				onOpenChange={(open) => {
-					if (!open) setPendingDelete(null);
-				}}
-				onDeleted={handleDeleted}
-			/>
-		</div>
+				<ScrollArea ref={scrollRef} className="min-h-0 flex-1">
+					<div className="flex flex-col gap-4 p-4">
+						{query.hasNextPage && (
+							<div className="flex justify-center">
+								<Button
+									variant="outline"
+									size="xs"
+									loading={query.isFetchingNextPage}
+									onPress={loadEarlier}
+								>
+									Load earlier comments
+								</Button>
+							</div>
+						)}
+
+						{renderContent()}
+					</div>
+				</ScrollArea>
+
+				{locked ? (
+					<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
+						This project is archived, so the discussion is read only. Restore
+						the project to reply.
+					</p>
+				) : canComment ? (
+					<div className="border-t border-app-border p-3">
+						<CommentComposer
+							orgSlug={orgSlug}
+							organizationId={organizationId}
+							projectId={projectId}
+							milestoneId={milestoneId}
+							parentId={replyingTo?.id ?? null}
+							replyingToName={replyingTo?.name}
+							focusToken={replyFocusToken}
+							onDone={replyingTo ? () => setReplyingTo(null) : undefined}
+							onPosted={handlePosted}
+						/>
+					</div>
+				) : (
+					<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
+						You can read this discussion but not take part in it.
+					</p>
+				)}
+
+				<CommentDeleteDialog
+					orgSlug={orgSlug}
+					projectId={projectId}
+					milestoneId={milestoneId}
+					comment={pendingDelete}
+					isOpen={pendingDelete !== null}
+					onOpenChange={(open) => {
+						if (!open) setPendingDelete(null);
+					}}
+					onDeleted={handleDeleted}
+				/>
+			</div>
+		</MentionProvider>
 	);
 }
