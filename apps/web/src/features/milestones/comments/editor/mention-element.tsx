@@ -58,6 +58,8 @@ export function MentionElement(props: PlateElementProps) {
 	}
 
 	const value = typeof mention.value === "string" ? mention.value : "";
+	const slug = isSafeSlug(mention.slug) ? mention.slug : null;
+	const linkable = target.type !== "user" && context !== null && slug !== null;
 
 	const chip = (
 		<PlateElement
@@ -67,11 +69,7 @@ export function MentionElement(props: PlateElementProps) {
 				...props.attributes,
 				contentEditable: false,
 			}}
-			className={cn(
-				chipClass,
-				staticRender && "cursor-pointer",
-				props.className,
-			)}
+			className={cn(chipClass, linkable && "cursor-pointer", props.className)}
 		>
 			<MentionIcon type={target.type} />
 			<span>
@@ -82,15 +80,61 @@ export function MentionElement(props: PlateElementProps) {
 		</PlateElement>
 	);
 
-	// Only a reader follows the link. While editing, the chip places the caret
-	// like any other inline node instead of navigating away from the draft.
-	if (!staticRender || !context || !isSafeSlug(mention.slug)) return chip;
+	// A project or milestone chip is clickable in both the composer and a posted
+	// comment. In the composer it opens a new tab, so checking where a mention
+	// goes never throws away the draft.
+	if (!linkable || !context) return chip;
+
+	const href =
+		target.type === "project"
+			? `/${context.orgSlug}/projects/${slug}`
+			: `/${context.orgSlug}/projects/${slug}/milestones?milestone=${target.id}`;
+
+	/**
+	 * Composer link.
+	 *
+	 * A plain anchor inside a contenteditable does not reliably navigate: the
+	 * editor consumes the mouse event to manage the selection. Opening on
+	 * mousedown is a real user gesture, keeps the draft, and does not depend on
+	 * Slate forwarding a click.
+	 */
+	if (!staticRender) {
+		const open = () => window.open(href, "_blank", "noopener,noreferrer");
+
+		return (
+			<a
+				href={href}
+				target="_blank"
+				rel="noreferrer noopener"
+				className="cursor-pointer no-underline"
+				onMouseDown={(event) => {
+					if (event.button !== 0) return;
+
+					event.preventDefault();
+					event.stopPropagation();
+					open();
+				}}
+				onClick={(event) => {
+					event.preventDefault();
+					event.stopPropagation();
+				}}
+				onKeyDown={(event) => {
+					if (event.key !== "Enter") return;
+
+					event.preventDefault();
+					open();
+				}}
+			>
+				{chip}
+			</a>
+		);
+	}
 
 	if (target.type === "project") {
 		return (
 			<Link
 				to="/$orgSlug/projects/$projectSlug"
-				params={{ orgSlug: context.orgSlug, projectSlug: mention.slug }}
+				params={{ orgSlug: context.orgSlug, projectSlug: slug }}
 				className="no-underline"
 			>
 				{chip}
@@ -98,18 +142,14 @@ export function MentionElement(props: PlateElementProps) {
 		);
 	}
 
-	if (target.type === "milestone") {
-		return (
-			<Link
-				to="/$orgSlug/projects/$projectSlug/milestones"
-				params={{ orgSlug: context.orgSlug, projectSlug: mention.slug }}
-				search={{ milestone: target.id }}
-				className="no-underline"
-			>
-				{chip}
-			</Link>
-		);
-	}
-
-	return chip;
+	return (
+		<Link
+			to="/$orgSlug/projects/$projectSlug/milestones"
+			params={{ orgSlug: context.orgSlug, projectSlug: slug }}
+			search={{ milestone: target.id }}
+			className="no-underline"
+		>
+			{chip}
+		</Link>
+	);
 }

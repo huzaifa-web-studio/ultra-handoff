@@ -26,7 +26,7 @@
  * Used by: comments/comment-composer.tsx and comments/comment-item.tsx.
  */
 
-import { RangeApi } from "platejs";
+import { ElementApi, PathApi, RangeApi } from "platejs";
 import {
 	Plate,
 	PlateContent,
@@ -399,16 +399,30 @@ export function CommentEditor({
 					children: [{ text: "" }],
 				});
 
-				// Leave a space when the chip ends the line, so the writer can keep
-				// typing without using the arrow keys to escape the void node.
-				const block = editor.api.block()?.[1];
+				/**
+				 * Move the caret to the text after the chip.
+				 *
+				 * `insertNodes` can leave the selection inside the void node. A void
+				 * node is not editable, so typing there does nothing until the user
+				 * clicks the editor again. Finding the chip we just inserted and
+				 * selecting the next sibling fixes that.
+				 */
+				const mentionEntry = editor.api.above({
+					match: (node) =>
+						ElementApi.isElement(node) && node.type === "mention",
+				});
 
-				if (
-					block &&
-					editor.selection &&
-					editor.api.isEnd(editor.selection.anchor, block)
-				) {
-					editor.tf.insertText(" ");
+				if (mentionEntry) {
+					const afterPath = PathApi.next(mentionEntry[1]);
+
+					// A chip at the end of the line needs a text node after it, both
+					// as a caret home and as the space that lets writing continue.
+					if (!editor.api.node(afterPath)) {
+						editor.tf.insertNodes({ text: " " }, { at: afterPath });
+					}
+
+					const afterPoint = editor.api.start(afterPath);
+					if (afterPoint) editor.tf.select(afterPoint);
 				}
 			});
 
