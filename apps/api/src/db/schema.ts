@@ -407,6 +407,18 @@ export const comment = pgTable(
 		authorId: text("author_id").references(() => user.id, {
 			onDelete: "set null",
 		}),
+		/**
+		 * "comment" for a person's message, "event" for a milestone activity
+		 * entry. An event is shown in the same timeline but is not a message:
+		 * it has no body, no replies and no edit or delete action.
+		 */
+		kind: text("kind").notNull().default("comment"),
+		/** status | start_date | due_date, only when kind is "event". */
+		eventType: text("event_type"),
+		/** Previous value. Null means the field was empty. */
+		eventFrom: text("event_from"),
+		/** New value. Null means the field was cleared. */
+		eventTo: text("event_to"),
 		/** Plate value. Always an array; the service validates before writing. */
 		body: jsonb("body").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
 		/** Plain text mirror used by previews, search and validation. */
@@ -435,6 +447,26 @@ export const comment = pgTable(
 		index("comment_author_idx").on(table.authorId),
 		// Exactly one target. Adding the next entity extends this list.
 		check("comment_target_check", sql`num_nonnulls(${table.milestoneId}) = 1`),
+		check("comment_kind_check", sql`${table.kind} in ('comment', 'event')`),
+		// A message has no event columns; an event names one of the three fields
+		// that the timeline can render.
+		check(
+			"comment_event_check",
+			sql`(
+				${table.kind} = 'comment'
+				and ${table.eventType} is null
+				and ${table.eventFrom} is null
+				and ${table.eventTo} is null
+			) or (
+				${table.kind} = 'event'
+				and ${table.eventType} in ('status', 'start_date', 'due_date')
+			)`,
+		),
+		// An event is a root timeline row. Replies only belong to messages.
+		check(
+			"comment_event_parent_check",
+			sql`${table.kind} = 'comment' or ${table.parentId} is null`,
+		),
 		tenantIsolation(table.organizationId),
 	],
 ).enableRLS();

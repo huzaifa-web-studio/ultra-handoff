@@ -85,6 +85,16 @@ const assigneeField = t.Optional(
 	}),
 );
 
+/**
+ * One optional status value.
+ *
+ * Why the explicit `default: undefined`: `t.UnionEnum` normally injects the
+ * first enum value when the property is missing, so a PATCH that only changed a
+ * date silently reset the status to "todo". Overriding the helper's default
+ * keeps a missing status missing while preserving the inferred union type.
+ */
+const statusField = t.UnionEnum(MILESTONE_STATUSES, { default: undefined });
+
 const MILESTONE_SORTS = ["dueDate", "createdAt", "title"] as const;
 
 const MILESTONE_FILTERS = ["all", "active", ...MILESTONE_STATUSES] as const;
@@ -161,7 +171,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 			params: projectParams,
 			body: t.Object({
 				title: t.String({ minLength: 1, maxLength: MILESTONE_TITLE_MAX }),
-				status: t.Optional(t.UnionEnum(MILESTONE_STATUSES)),
+				status: t.Optional(statusField),
 				description: descriptionField,
 				startDate: dateField,
 				dueDate: dateField,
@@ -213,7 +223,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 				title: t.Optional(
 					t.String({ minLength: 1, maxLength: MILESTONE_TITLE_MAX }),
 				),
-				status: t.Optional(t.UnionEnum(MILESTONE_STATUSES)),
+				status: t.Optional(statusField),
 				description: descriptionField,
 				startDate: dateField,
 				dueDate: dateField,

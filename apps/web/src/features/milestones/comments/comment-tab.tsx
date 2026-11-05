@@ -42,6 +42,7 @@ import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
 import { MentionProvider } from "./editor/mention-context";
 import { useMilestoneComments } from "./hooks";
+import { MilestoneEventItem } from "./milestone-event";
 
 /**
  * Local state for open threads.
@@ -368,22 +369,26 @@ export function CommentTab({
 						<Fragment key={thread.comment.id}>
 							{marker ? <CommentDayDivider heading={marker} /> : null}
 
-							<CommentThread
-								orgSlug={orgSlug}
-								organizationId={organizationId}
-								projectId={projectId}
-								milestoneId={milestoneId}
-								viewerId={viewerId}
-								thread={thread}
-								canComment={canComment && !locked}
-								collapsed={!expandedThreads.has(thread.comment.id)}
-								isReplyTarget={replyingTo?.id === thread.comment.id}
-								onToggle={() => toggleThread(thread.comment.id)}
-								onReply={handleReply}
-								onOpenTab={onOpenCommentTab}
-								onRequestDelete={setPendingDelete}
-								registerRef={registerThreadRef}
-							/>
+							{thread.comment.kind === "event" ? (
+								<MilestoneEventItem event={thread.comment} />
+							) : (
+								<CommentThread
+									orgSlug={orgSlug}
+									organizationId={organizationId}
+									projectId={projectId}
+									milestoneId={milestoneId}
+									viewerId={viewerId}
+									thread={thread}
+									canComment={canComment && !locked}
+									collapsed={!expandedThreads.has(thread.comment.id)}
+									isReplyTarget={replyingTo?.id === thread.comment.id}
+									onToggle={() => toggleThread(thread.comment.id)}
+									onReply={handleReply}
+									onOpenTab={onOpenCommentTab}
+									onRequestDelete={setPendingDelete}
+									registerRef={registerThreadRef}
+								/>
+							)}
 						</Fragment>
 					);
 				})}

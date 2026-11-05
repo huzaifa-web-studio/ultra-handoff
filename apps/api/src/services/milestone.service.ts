@@ -38,7 +38,12 @@ import {
 	validateMilestoneTitle,
 } from "../auth/milestone-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
-import { milestone, milestoneAssignee, projectMember } from "../db/schema";
+import {
+	comment,
+	milestone,
+	milestoneAssignee,
+	projectMember,
+} from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
@@ -191,6 +196,47 @@ function toIsoDay(value: string | Date | null): string | null {
 	if (value instanceof Date) return value.toISOString().slice(0, 10);
 
 	return value;
+}
+
+/** One field change that belongs in the milestone timeline. */
+type MilestoneEventDraft = {
+	type: "status" | "start_date" | "due_date";
+	from: string | null;
+	to: string | null;
+};
+
+/**
+ * Write activity rows into the comment timeline.
+ *
+ * Why the comment table instead of a second event table: the discussion is the
+ * one place a reader already looks for "what changed". Storing the event as a
+ * different `kind` on the same table means one ordered read serves the whole
+ * timeline, with no merge step and no second cursor. Events are excluded from
+ * the comment count and are never editable, so they cannot be confused with a
+ * message.
+ */
+async function recordMilestoneEvents(
+	tx: TenantTx,
+	tenant: TenantContext,
+	milestoneId: string,
+	events: MilestoneEventDraft[],
+): Promise<void> {
+	if (events.length === 0) return;
+
+	await tx.insert(comment).values(
+		events.map((event) => ({
+			id: randomUUID(),
+			organizationId: tenant.organizationId,
+			milestoneId,
+			authorId: tenant.userId,
+			kind: "event" as const,
+			eventType: event.type,
+			eventFrom: event.from,
+			eventTo: event.to,
+			body: [],
+			bodyText: "",
+		})),
+	);
 }
 
 /** Build the viewer capabilities from the project access the caller has. */
@@ -861,6 +907,7 @@ export async function updateMilestone(
 			const patch: Partial<typeof milestone.$inferInsert> = {
 				updatedBy: tenant.userId,
 			};
+			const events: MilestoneEventDraft[] = [];
 
 			if (input.title !== undefined) {
 				patch.title = validateMilestoneTitle(input.title);
@@ -869,6 +916,10 @@ export async function updateMilestone(
 			if (input.status !== undefined) {
 				const status = validateMilestoneStatus(input.status);
 				patch.status = status;
+
+				if (status !== record.status) {
+					events.push({ type: "status", from: record.status, to: status });
+				}
 
 				// `completed_at` is derived state. Keep it in sync here so no
 				// code path can produce "done but never completed".
@@ -887,17 +938,36 @@ export async function updateMilestone(
 
 			// The range check needs both sides, so a one sided patch is compared
 			// against the value already stored.
+			const previousStart = toIsoDay(record.startDate);
+			const previousDue = toIsoDay(record.dueDate);
 			const nextStart =
 				input.startDate !== undefined
 					? validateMilestoneDate(input.startDate, "The start date")
-					: toIsoDay(record.startDate);
+					: previousStart;
 			const nextDue =
 				input.dueDate !== undefined
 					? validateMilestoneDate(input.dueDate, "The due date")
-					: toIsoDay(record.dueDate);
+					: previousDue;
 
-			if (input.startDate !== undefined) patch.startDate = nextStart;
-			if (input.dueDate !== undefined) patch.dueDate = nextDue;
+			if (input.startDate !== undefined) {
+				patch.startDate = nextStart;
+
+				if (nextStart !== previousStart) {
+					events.push({
+						type: "start_date",
+						from: previousStart,
+						to: nextStart,
+					});
+				}
+			}
+
+			if (input.dueDate !== undefined) {
+				patch.dueDate = nextDue;
+
+				if (nextDue !== previousDue) {
+					events.push({ type: "due_date", from: previousDue, to: nextDue });
+				}
+			}
 
 			validateMilestoneDateRange(nextStart, nextDue);
 
@@ -917,6 +987,8 @@ export async function updateMilestone(
 						eq(milestone.id, milestoneId),
 					),
 				);
+
+			await recordMilestoneEvents(tx, tenant, milestoneId, events);
 
 			if (input.assigneeUserIds !== undefined) {
 				const memberIds = await resolveAssigneeMemberIds(

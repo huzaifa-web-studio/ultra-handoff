@@ -53,10 +53,26 @@ export type CommentAuthor = {
 	image: string | null;
 };
 
+/** One field change recorded in the milestone timeline. */
+export type CommentEventType = "status" | "start_date" | "due_date";
+
+/** The stored change, ready to render as a sentence. */
+export type CommentEvent = {
+	type: CommentEventType;
+	/** Null when the field was empty before the change. */
+	from: string | null;
+	/** Null when the field was cleared by the change. */
+	to: string | null;
+};
+
 /** One comment on the wire. */
 export type CommentRow = {
 	id: string;
 	parentId: string | null;
+	/** "event" rows are milestone activity, not messages. */
+	kind: "comment" | "event";
+	/** Present only on an event row. */
+	event: CommentEvent | null;
 	/** Empty for a deleted comment: the content is gone, the row is not. */
 	body: unknown[];
 	author: CommentAuthor | null;
@@ -189,6 +205,7 @@ async function countComments(
 			and(
 				eq(comment.organizationId, tenant.organizationId),
 				eq(comment.milestoneId, milestoneId),
+				eq(comment.kind, "comment"),
 				isNull(comment.deletedAt),
 			),
 		);
@@ -267,17 +284,30 @@ function toCommentRow(
 ): CommentRow {
 	const person = record.authorId ? people.get(record.authorId) : undefined;
 	const deleted = record.deletedAt !== null;
-	const editable = canModifyComment({
-		viewerId,
-		authorId: record.authorId,
-		deletedAt: record.deletedAt,
-		locked,
-	});
+	const isEvent = record.kind === "event";
+	const editable =
+		!isEvent &&
+		canModifyComment({
+			viewerId,
+			authorId: record.authorId,
+			deletedAt: record.deletedAt,
+			locked,
+		});
+	const event =
+		isEvent && record.eventType
+			? {
+					type: record.eventType as CommentEventType,
+					from: record.eventFrom,
+					to: record.eventTo,
+				}
+			: null;
 
 	return {
 		id: record.id,
 		parentId: record.parentId,
-		body: deleted ? [] : record.body,
+		kind: isEvent ? "event" : "comment",
+		event,
+		body: deleted || isEvent ? [] : record.body,
 		author: record.authorId
 			? {
 					id: record.authorId,
@@ -449,8 +479,9 @@ export async function getMilestoneCommentThread(
 			const root = await loadCommentRecord(tx, tenant, milestoneId, commentId);
 
 			// A reply has no thread of its own. Answering 404 keeps the tab read
-			// honest instead of showing a single reply out of context.
-			if (!root || root.parentId !== null) {
+			// honest instead of showing a single reply out of context. A timeline
+			// event has no discussion either.
+			if (!root || root.parentId !== null || root.kind !== "comment") {
 				throw new APIError("NOT_FOUND", {
 					message: "That discussion no longer exists.",
 				});
@@ -538,6 +569,12 @@ export async function createMilestoneComment(
 					});
 				}
 
+				if (parent.kind !== "comment") {
+					throw new APIError("BAD_REQUEST", {
+						message: "You cannot reply to a timeline event.",
+					});
+				}
+
 				if (parent.parentId !== null) {
 					throw new APIError("BAD_REQUEST", {
 						message:
@@ -618,6 +655,12 @@ export async function updateMilestoneComment(
 			if (!record) {
 				throw new APIError("NOT_FOUND", {
 					message: "That comment no longer exists.",
+				});
+			}
+
+			if (record.kind !== "comment") {
+				throw new APIError("BAD_REQUEST", {
+					message: "Timeline events cannot be edited.",
 				});
 			}
 
@@ -749,6 +792,12 @@ export async function toggleMilestoneChecklistItem(
 				});
 			}
 
+			if (record.kind !== "comment") {
+				throw new APIError("BAD_REQUEST", {
+					message: "Timeline events do not have a checklist.",
+				});
+			}
+
 			if (record.deletedAt !== null) {
 				throw new APIError("BAD_REQUEST", {
 					message: "That comment was deleted and can no longer be changed.",
@@ -834,6 +883,12 @@ export async function deleteMilestoneComment(
 			if (!record) {
 				throw new APIError("NOT_FOUND", {
 					message: "That comment no longer exists.",
+				});
+			}
+
+			if (record.kind !== "comment") {
+				throw new APIError("BAD_REQUEST", {
+					message: "Timeline events cannot be deleted.",
 				});
 			}
 
