@@ -22,10 +22,15 @@ import { cn } from "cn";
 import {
 	BookmarkIcon,
 	CheckIcon,
+	CircleDotIcon,
 	CopyIcon,
 	ExternalLinkIcon,
 	LinkIcon,
+	MessageSquareTextIcon,
+	MinusIcon,
 	PencilIcon,
+	PlusIcon,
+	StarIcon,
 	UnlinkIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,6 +42,132 @@ import { displayDomain, shortenUrl } from "./utils";
 
 /** How long the "Copied" label stays before it reverts. */
 const COPY_FEEDBACK_MS = 1_500;
+
+/** Provider fields that read best as compact numeric metrics. */
+const PROVIDER_METRIC_ICONS: Record<string, typeof PlusIcon> = {
+	additions: PlusIcon,
+	deletions: MinusIcon,
+	comments: MessageSquareTextIcon,
+	stars: StarIcon,
+};
+
+/** Format a provider status with a calm, familiar state treatment. */
+function statusClass(value: string): string {
+	const status = value.toLowerCase();
+	if (
+		["merged", "closed", "resolved", "complete", "completed"].includes(status)
+	) {
+		return "border-success/30 bg-success-bg text-success";
+	}
+	if (["open", "in progress", "in review"].includes(status)) {
+		return "border-app-action/30 bg-app-selected text-app-action";
+	}
+	return "border-app-border bg-app-panel-subtle text-app-text-muted";
+}
+
+/** Present provider metadata with hierarchy instead of a flat label/value list. */
+function ProviderDetails({
+	providerData,
+}: {
+	providerData: NonNullable<LinkPreview["providerData"]>;
+}) {
+	const status = providerData.fields.find(
+		({ label }) => label.toLowerCase() === "status",
+	);
+	const summary = providerData.fields.find(
+		({ label }) => label.toLowerCase() === "summary",
+	);
+	const metrics = providerData.fields.filter(({ label }) =>
+		Object.hasOwn(PROVIDER_METRIC_ICONS, label.toLowerCase()),
+	);
+	const details = providerData.fields.filter(
+		({ label }) =>
+			label.toLowerCase() !== "status" &&
+			label.toLowerCase() !== "summary" &&
+			!Object.hasOwn(PROVIDER_METRIC_ICONS, label.toLowerCase()),
+	);
+
+	return (
+		<div className="flex flex-col gap-2 border-t border-app-border pt-2">
+			<div className="flex min-w-0 items-center justify-between gap-2">
+				<span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-app-text">
+					<CircleDotIcon
+						aria-hidden
+						className="size-3.5 shrink-0 text-app-text-muted"
+					/>
+					<span className="truncate">{providerData.kind}</span>
+				</span>
+				{status ? (
+					<span
+						className={cn(
+							"shrink-0 border px-2 py-0.5 text-[0.65rem] font-semibold capitalize",
+							statusClass(status.value),
+						)}
+					>
+						{status.value}
+					</span>
+				) : null}
+			</div>
+
+			{metrics.length ? (
+				<dl className="grid grid-cols-3 gap-1.5">
+					{metrics.map(({ label, value }) => {
+						const normalizedLabel = label.toLowerCase();
+						const Icon =
+							PROVIDER_METRIC_ICONS[normalizedLabel] ?? CircleDotIcon;
+						const metricColor =
+							normalizedLabel === "additions"
+								? "text-success"
+								: normalizedLabel === "deletions"
+									? "text-danger"
+									: "text-app-text-muted";
+						return (
+							<div
+								key={`${label}:${value}`}
+								className="flex min-w-0 items-center gap-2 border border-app-border bg-app-panel-subtle px-2 py-1.5"
+							>
+								<Icon
+									aria-hidden
+									className={cn("size-3.5 shrink-0", metricColor)}
+								/>
+								<div className="min-w-0">
+									<dd className="truncate text-sm font-semibold tabular-nums text-app-text">
+										{value}
+									</dd>
+									<dt className="truncate text-[0.6rem] leading-tight text-app-text-muted">
+										{label}
+									</dt>
+								</div>
+							</div>
+						);
+					})}
+				</dl>
+			) : null}
+
+			{summary ? (
+				<div className="min-w-0 border-l-2 border-app-border-strong pl-2">
+					<dt className="mb-0.5 text-[0.6rem] font-semibold tracking-wide text-app-text-muted uppercase">
+						{summary.label}
+					</dt>
+					<dd className="line-clamp-2 break-words text-xs leading-relaxed text-app-text">
+						{summary.value}
+					</dd>
+				</div>
+			) : null}
+
+			{details.length ? (
+				<dl className="grid grid-cols-2 gap-x-3 gap-y-1 border-t border-app-border/70 pt-1.5 text-xs">
+					{details.map(({ label, value }) => (
+						<div key={`${label}:${value}`} className="min-w-0">
+							<dt className="truncate text-app-text-muted">{label}</dt>
+							<dd className="truncate font-medium text-app-text">{value}</dd>
+						</div>
+					))}
+				</dl>
+			) : null}
+		</div>
+	);
+}
 
 /** Which value was copied last, so only that button changes label. */
 type CopyTarget = "link" | "text";
@@ -253,6 +384,8 @@ export function LinkPreviewCard({
 	const title = preview?.title?.trim();
 	const description = preview?.description?.trim();
 	const image = resolveAssetUrl(preview?.imageUrl);
+	const providerData = preview?.providerData;
+	const sourceName = preview?.siteName || providerData?.provider;
 
 	return (
 		<div className="flex flex-col">
@@ -261,7 +394,7 @@ export function LinkPreviewCard({
 					src={image}
 					alt=""
 					aria-hidden
-					className="aspect-[1.91/1] w-full object-cover"
+					className="h-32 w-full object-cover"
 					loading="lazy"
 					decoding="async"
 				/>
@@ -271,9 +404,9 @@ export function LinkPreviewCard({
 				<div className="flex items-center gap-1.5">
 					<PreviewFavicon preview={preview} />
 					<span className="truncate text-xs text-app-text-muted">{domain}</span>
-					{preview?.siteName ? (
+					{sourceName ? (
 						<span className="ml-auto shrink-0 truncate text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
-							{preview.siteName}
+							{sourceName}
 						</span>
 					) : null}
 				</div>
@@ -287,6 +420,11 @@ export function LinkPreviewCard({
 						{description}
 					</p>
 				) : null}
+
+				{providerData &&
+				(providerData.kind !== "Link" || providerData.fields.length > 0) ? (
+					<ProviderDetails providerData={providerData} />
+				) : null}
 			</div>
 
 			<PreviewActions href={href} text={text} />
@@ -298,9 +436,9 @@ export function LinkPreviewCard({
 /**
  * The bookmark block body.
  *
- * The whole card is one link, so the metadata is not repeated in a footer. The
- * thumbnail sits on the right and is hidden on very narrow panes, where it
- * would squeeze the text into a column of single words.
+ * The whole card is one link, and repeats the provider details from the hover
+ * card so a saved bookmark is useful without hovering it first. Its thumbnail
+ * stays in a restrained right-side rail so the text keeps the main column.
  */
 export function BookmarkPreview({
 	href,
@@ -317,6 +455,7 @@ export function BookmarkPreview({
 	const title = preview?.title?.trim();
 	const description = preview?.description?.trim();
 	const image = resolveAssetUrl(preview?.imageUrl);
+	const providerData = preview?.providerData;
 
 	return (
 		<a
@@ -329,8 +468,8 @@ export function BookmarkPreview({
 				className,
 			)}
 		>
-			<div className="flex min-w-0 flex-1 flex-col gap-1 p-3">
-				<span className="flex items-center gap-1.5 text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
+			<div className="flex min-w-0 flex-col gap-1.5 p-3">
+				<span className="flex min-w-0 items-center gap-1.5 text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
 					<PreviewFavicon preview={preview} className="size-3.5" />
 					<span className="truncate">{domain}</span>
 				</span>
@@ -340,9 +479,14 @@ export function BookmarkPreview({
 				</span>
 
 				{description ? (
-					<span className="line-clamp-2 text-xs leading-relaxed text-app-text-muted">
+					<span className="line-clamp-3 text-xs leading-relaxed text-app-text-muted">
 						{description}
 					</span>
+				) : null}
+
+				{providerData &&
+				(providerData.kind !== "Link" || providerData.fields.length > 0) ? (
+					<ProviderDetails providerData={providerData} />
 				) : null}
 
 				<span className="truncate text-[0.65rem] text-app-text-muted">
@@ -355,7 +499,7 @@ export function BookmarkPreview({
 					src={image}
 					alt=""
 					aria-hidden
-					className="hidden w-32 shrink-0 object-cover sm:block"
+					className="max-h-64 w-40 shrink-0 self-stretch border-l border-app-border object-left object-cover sm:w-56"
 					loading="lazy"
 					decoding="async"
 				/>

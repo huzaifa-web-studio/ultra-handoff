@@ -25,6 +25,11 @@ export type LinkPreview = {
 	imageWidth: number | null;
 	imageHeight: number | null;
 	faviconUrl: string | null;
+	providerData: {
+		provider: string;
+		kind: string;
+		fields: { label: string; value: string }[];
+	} | null;
 	domain: string;
 	fetchedAt: string | null;
 };

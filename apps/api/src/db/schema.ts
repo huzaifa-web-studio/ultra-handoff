@@ -510,6 +510,12 @@ export const linkPreview = pgTable(
 		title: text("title"),
 		description: text("description"),
 		siteName: text("site_name"),
+		/** Sanitised provider details returned by a public adapter or oEmbed. */
+		providerData: jsonb("provider_data").$type<{
+			provider: string;
+			kind: string;
+			fields: { label: string; value: string }[];
+		} | null>(),
 		imageKey: text("image_key"),
 		imageWidth: integer("image_width"),
 		imageHeight: integer("image_height"),

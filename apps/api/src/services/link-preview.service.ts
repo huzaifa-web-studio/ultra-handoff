@@ -51,6 +51,11 @@ export type LinkPreviewWire = {
 	imageWidth: number | null;
 	imageHeight: number | null;
 	faviconUrl: string | null;
+	providerData: {
+		provider: string;
+		kind: string;
+		fields: { label: string; value: string }[];
+	} | null;
 	/** Display host, without `www.` and without brackets for IPv6. */
 	domain: string;
 	fetchedAt: string | null;
@@ -83,6 +88,7 @@ function toWire(record: PreviewRecord): LinkPreviewWire {
 		imageWidth: record.imageWidth,
 		imageHeight: record.imageHeight,
 		faviconUrl: record.faviconKey ? objectUrl(record.faviconKey) : null,
+		providerData: record.providerData,
 		domain: displayHost(record.url),
 		fetchedAt: record.fetchedAt ? record.fetchedAt.toISOString() : null,
 	};
@@ -232,6 +238,7 @@ export async function storeResolvedPreview(
 					title: outcome.data.title || null,
 					description: outcome.data.description || null,
 					siteName: outcome.data.siteName || null,
+					providerData: outcome.data.providerData,
 					imageKey,
 					imageWidth: outcome.data.image?.image.width ?? null,
 					imageHeight: outcome.data.image?.image.height ?? null,
@@ -246,6 +253,7 @@ export async function storeResolvedPreview(
 						title: outcome.data.title || null,
 						description: outcome.data.description || null,
 						siteName: outcome.data.siteName || null,
+						providerData: outcome.data.providerData,
 						imageKey,
 						imageWidth: outcome.data.image?.image.width ?? null,
 						imageHeight: outcome.data.image?.image.height ?? null,

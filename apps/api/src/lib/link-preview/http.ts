@@ -89,6 +89,8 @@ export type FetchOptions = {
 	acceptContentTypes: readonly string[];
 	/** Value for the Accept header. */
 	accept?: string;
+	/** Optional host-specific agent for public sites that reject scraper UAs. */
+	userAgent?: string;
 	/**
 	 * Stop reading as soon as this marker appears in the decoded body.
 	 *
@@ -240,10 +242,9 @@ function requestOnce(
 				createConnection: () => socket,
 				headers: {
 					Host: target.hostname,
-					"User-Agent": USER_AGENT,
+					"User-Agent": options.userAgent ?? USER_AGENT,
 					Accept: options.accept ?? "text/html,application/xhtml+xml",
 					"Accept-Encoding": "gzip, deflate, br",
-					"Accept-Language": "en",
 					Connection: "close",
 				},
 			},
@@ -405,21 +406,29 @@ export async function fetchResource(
 }
 
 /** Fetch an HTML page with the document limits applied. */
-export function fetchPage(rawUrl: string): Promise<FetchResult> {
+export function fetchPage(
+	rawUrl: string,
+	options: Pick<FetchOptions, "userAgent" | "accept"> = {},
+): Promise<FetchResult> {
 	return fetchResource(rawUrl, {
 		maxBytes: MAX_DOCUMENT_BYTES,
 		acceptContentTypes: ["text/html", "application/xhtml+xml"],
 		accept: "text/html,application/xhtml+xml;q=0.9",
 		stopAt: "</head>",
+		...options,
 	});
 }
 
 /** Fetch an image or icon with the asset limits applied. */
-export function fetchAsset(rawUrl: string): Promise<FetchResult> {
+export function fetchAsset(
+	rawUrl: string,
+	options: Pick<FetchOptions, "userAgent"> = {},
+): Promise<FetchResult> {
 	return fetchResource(rawUrl, {
 		maxBytes: MAX_ASSET_BYTES,
 		acceptContentTypes: ["image/"],
 		accept:
 			"image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/*;q=0.8",
+		...options,
 	});
 }
