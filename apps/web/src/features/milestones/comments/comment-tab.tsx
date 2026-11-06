@@ -22,7 +22,7 @@
 
 import { Button } from "@org/ui/components/button";
 import { ScrollArea } from "@org/ui/components/scroll-area";
-import { RefreshCwIcon } from "lucide-react";
+import { ArrowDownIcon, RefreshCwIcon } from "lucide-react";
 import {
 	Fragment,
 	useCallback,
@@ -32,6 +32,8 @@ import {
 	useState,
 } from "react";
 import { MentionProvider } from "#/components/rich-text/mentions/mention-context";
+import { useRealtimeEvent } from "#/features/realtime/provider";
+import { useAtBottom } from "#/hooks/use-at-bottom";
 import { useClockTick } from "#/hooks/use-clock-tick";
 import type { Comment } from "./api";
 import { CommentComposer } from "./comment-composer";
@@ -42,6 +44,7 @@ import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
 import { useMilestoneComments } from "./hooks";
 import { MilestoneEventItem } from "./milestone-event";
+import { readCommentPayload } from "./realtime";
 
 /**
  * Local state for open threads.
@@ -127,9 +130,41 @@ export function CommentTab({
 	// Bumped after a root post so the effect below scrolls once the row is in.
 	const [scrollToken, setScrollToken] = useState(0);
 
+	// A remote comment while the reader is scrolled up must not steal the view.
+	const [remoteCount, setRemoteCount] = useState(0);
+	const { atBottomRef, measure } = useAtBottom(scrollRef);
+
 	// Keeps the relative labels and the day headings honest while the tab is
 	// visible. One timer for the whole list, none while the tab is hidden.
 	useClockTick(active);
+
+	/**
+	 * React to a comment that arrived over the stream.
+	 *
+	 * Only roots are handled here. A reply lands inside its thread, and the
+	 * thread already follows its own tail, so moving the whole page would be
+	 * wrong. The author's own post is skipped because `handlePosted` already
+	 * scrolled for it.
+	 */
+	useRealtimeEvent((event) => {
+		if (event.type !== "comment.created") return;
+
+		const payload = readCommentPayload(event);
+
+		if (!payload || payload.milestoneId !== milestoneId) return;
+		if (payload.comment.parentId) return;
+		if (payload.comment.author?.id === viewerId) return;
+
+		if (atBottomRef.current) {
+			setScrollToken((current) => current + 1);
+			return;
+		}
+
+		setRemoteCount((current) => current + 1);
+		setAnnouncement(
+			`New comment from ${payload.comment.author?.name ?? "someone"}.`,
+		);
+	});
 
 	// The one reply target. The composer at the bottom renders the banner and
 	// sends with this id as the parent, so a thread is one level and one draft.
@@ -215,6 +250,17 @@ export function CommentTab({
 		}
 
 		void query.fetchNextPage();
+	}
+
+	/** Clear the "new comments" pill as soon as the reader reaches the end. */
+	function handleScroll() {
+		if (measure()) setRemoteCount(0);
+	}
+
+	/** Jump to the latest comment from the pill. */
+	function scrollToLatest() {
+		setRemoteCount(0);
+		setScrollToken((current) => current + 1);
 	}
 
 	/** Keep the root element of each thread available for a post-reply scroll. */
@@ -403,24 +449,50 @@ export function CommentTab({
 					{announcement}
 				</p>
 
-				<ScrollArea ref={scrollRef} className="min-h-0 flex-1">
-					<div className="flex flex-col gap-4 p-4">
-						{query.hasNextPage && (
-							<div className="flex justify-center">
-								<Button
-									variant="outline"
-									size="xs"
-									loading={query.isFetchingNextPage}
-									onPress={loadEarlier}
-								>
-									Load earlier comments
-								</Button>
-							</div>
-						)}
+				<div className="relative min-h-0 flex-1">
+					<ScrollArea
+						ref={scrollRef}
+						className="h-full"
+						onScroll={handleScroll}
+					>
+						<div className="flex flex-col gap-4 p-4">
+							{query.hasNextPage && (
+								<div className="flex justify-center">
+									<Button
+										variant="outline"
+										size="xs"
+										loading={query.isFetchingNextPage}
+										onPress={loadEarlier}
+									>
+										Load earlier comments
+									</Button>
+								</div>
+							)}
 
-						{renderContent()}
-					</div>
-				</ScrollArea>
+							{renderContent()}
+						</div>
+					</ScrollArea>
+
+					{/*
+					 * A remote comment arrived while the reader was further up.
+					 * The pill is the polite alternative to yanking the view.
+					 */}
+					{remoteCount > 0 && (
+						<div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+							<Button
+								variant="surface"
+								size="xs"
+								className="pointer-events-auto"
+								onPress={scrollToLatest}
+							>
+								<ArrowDownIcon aria-hidden />
+								{remoteCount === 1
+									? "1 new comment"
+									: `${remoteCount} new comments`}
+							</Button>
+						</div>
+					)}
+				</div>
 
 				{locked ? (
 					<p className="border-t border-app-border p-4 text-xs text-app-text-muted">

@@ -98,6 +98,16 @@ async function buildApp() {
 export type App = Awaited<ReturnType<typeof buildApp>>;
 
 /**
+ * Realtime event payloads for the web app.
+ *
+ * Type only, same reason as above. The browser recomputes the viewer
+ * capabilities that `RealtimeComment` deliberately leaves out.
+ */
+export type {
+	CommentRealtimePayload,
+	RealtimeComment,
+} from "./realtime/events";
+/**
  * Realtime wire types for the web app.
  *
  * Exported as types only, so the browser bundle never pulls in the server

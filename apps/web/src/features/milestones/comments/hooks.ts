@@ -17,7 +17,6 @@
  */
 
 import {
-	type InfiniteData,
 	keepPreviousData,
 	useInfiniteQuery,
 	useMutation,
@@ -29,7 +28,6 @@ import { ApiRequestError } from "#/lib/api";
 import { milestonesKey } from "../hooks";
 import {
 	type Comment,
-	type CommentPage,
 	type CommentThreadResponse,
 	createComment,
 	deleteComment,
@@ -39,6 +37,12 @@ import {
 	toggleCommentChecklist,
 	updateComment,
 } from "./api";
+import {
+	appendToPages,
+	type CommentPages,
+	replaceInPages,
+	withTotal,
+} from "./cache";
 
 /** Every comment query for one milestone. */
 export function commentsKey(
@@ -72,9 +76,6 @@ function threadKey(
 	] as const;
 }
 
-/** The shape react-query stores for the infinite list. */
-type CommentPages = InfiniteData<CommentPage, string | null>;
-
 /**
  * A 403 or 404 is a permission or existence answer, not a transient failure.
  * Retrying only delays the access card, so those stop after the first answer.
@@ -101,67 +102,6 @@ function updatePages(
 	);
 }
 
-/** Replace one comment wherever it lives. */
-function replaceInPages(data: CommentPages, next: Comment): CommentPages {
-	return {
-		...data,
-		pages: data.pages.map((page) => ({
-			...page,
-			threads: page.threads.map((thread) => {
-				if (thread.comment.id === next.id) {
-					return { ...thread, comment: next };
-				}
-
-				if (!thread.replies.some((reply) => reply.id === next.id)) {
-					return thread;
-				}
-
-				return {
-					...thread,
-					replies: thread.replies.map((reply) =>
-						reply.id === next.id ? next : reply,
-					),
-				};
-			}),
-		})),
-	};
-}
-
-/** Add a new comment to the page that owns its thread. */
-function appendToPages(data: CommentPages, next: Comment): CommentPages {
-	// A reply belongs to its root, wherever that root is paged.
-	if (next.parentId) {
-		return {
-			...data,
-			pages: data.pages.map((page) => ({
-				...page,
-				threads: page.threads.map((thread) =>
-					thread.comment.id === next.parentId
-						? { ...thread, replies: [...thread.replies, next] }
-						: thread,
-				),
-			})),
-		};
-	}
-
-	// A root goes at the end of the newest page, which is page zero and reads
-	// oldest first inside itself.
-	const [newest, ...older] = data.pages;
-
-	if (!newest) return data;
-
-	return {
-		...data,
-		pages: [
-			{
-				...newest,
-				threads: [...newest.threads, { comment: next, replies: [] }],
-			},
-			...older,
-		],
-	};
-}
-
 /** Append a reply to a focused thread cache, when that thread is open. */
 function appendReplyToThread(
 	queryClient: ReturnType<typeof useQueryClient>,
@@ -174,15 +114,26 @@ function appendReplyToThread(
 
 	queryClient.setQueryData<CommentThreadResponse>(
 		threadKey(orgSlug, projectId, milestoneId, comment.parentId),
-		(current) =>
-			current
-				? {
-						thread: {
-							...current.thread,
-							replies: [...current.thread.replies, comment],
-						},
-					}
-				: current,
+		(current) => {
+			if (!current) return current;
+
+			// The author's own reply already arrived through the mutation
+			// response, so the echo must replace instead of appending twice.
+			const exists = current.thread.replies.some(
+				(reply) => reply.id === comment.id,
+			);
+
+			return {
+				thread: {
+					...current.thread,
+					replies: exists
+						? current.thread.replies.map((reply) =>
+								reply.id === comment.id ? comment : reply,
+							)
+						: [...current.thread.replies, comment],
+				},
+			};
+		},
 	);
 }
 
@@ -214,6 +165,56 @@ function replaceInThread(
 				},
 			};
 		},
+	);
+}
+
+/** How a realtime comment changed the discussion. */
+export type CommentEventKind = "created" | "updated" | "deleted";
+
+/**
+ * Apply one realtime comment event to the caches.
+ *
+ * Why here and not in the hook that receives the event: the mutation
+ * `onSuccess` handlers use the same reducers, so a save and a stream event
+ * cannot drift apart. The page reducer is idempotent, which is what makes the
+ * author's own echo harmless.
+ */
+export function applyCommentEvent(
+	queryClient: ReturnType<typeof useQueryClient>,
+	orgSlug: string,
+	projectId: string,
+	input: { milestoneId: string; comment: Comment; total: number | null },
+	kind: CommentEventKind,
+): void {
+	const key = listKey(orgSlug, projectId, input.milestoneId);
+
+	updatePages(queryClient, key, (pages) => {
+		const next =
+			kind === "created"
+				? appendToPages(pages, input.comment)
+				: replaceInPages(pages, input.comment);
+
+		return input.total === null ? next : withTotal(next, input.total);
+	});
+
+	if (kind === "created") {
+		appendReplyToThread(
+			queryClient,
+			orgSlug,
+			projectId,
+			input.milestoneId,
+			input.comment,
+		);
+
+		return;
+	}
+
+	replaceInThread(
+		queryClient,
+		orgSlug,
+		projectId,
+		input.milestoneId,
+		input.comment,
 	);
 }
 
@@ -306,21 +307,17 @@ export function useUpdateComment(
 	milestoneId: string,
 ) {
 	const queryClient = useQueryClient();
-	const key = listKey(orgSlug, projectId, milestoneId);
 
 	return useMutation({
 		mutationFn: ({ commentId, body }: { commentId: string; body: unknown[] }) =>
 			updateComment(orgSlug, projectId, milestoneId, commentId, body),
 		onSuccess: (data) => {
-			updatePages(queryClient, key, (pages) =>
-				replaceInPages(pages, data.comment),
-			);
-			replaceInThread(
+			applyCommentEvent(
 				queryClient,
 				orgSlug,
 				projectId,
-				milestoneId,
-				data.comment,
+				{ milestoneId, comment: data.comment, total: null },
+				"updated",
 			);
 		},
 	});
@@ -339,7 +336,6 @@ export function useToggleChecklist(
 	milestoneId: string,
 ) {
 	const queryClient = useQueryClient();
-	const key = listKey(orgSlug, projectId, milestoneId);
 
 	return useMutation({
 		mutationFn: ({
@@ -356,15 +352,12 @@ export function useToggleChecklist(
 				checked,
 			}),
 		onSuccess: (data) => {
-			updatePages(queryClient, key, (pages) =>
-				replaceInPages(pages, data.comment),
-			);
-			replaceInThread(
+			applyCommentEvent(
 				queryClient,
 				orgSlug,
 				projectId,
-				milestoneId,
-				data.comment,
+				{ milestoneId, comment: data.comment, total: null },
+				"updated",
 			);
 		},
 	});
@@ -377,21 +370,17 @@ export function useDeleteComment(
 	milestoneId: string,
 ) {
 	const queryClient = useQueryClient();
-	const key = listKey(orgSlug, projectId, milestoneId);
 
 	return useMutation({
 		mutationFn: (commentId: string) =>
 			deleteComment(orgSlug, projectId, milestoneId, commentId),
 		onSuccess: (data) => {
-			updatePages(queryClient, key, (pages) =>
-				replaceInPages(pages, data.comment),
-			);
-			replaceInThread(
+			applyCommentEvent(
 				queryClient,
 				orgSlug,
 				projectId,
-				milestoneId,
-				data.comment,
+				{ milestoneId, comment: data.comment, total: data.total },
+				"deleted",
 			);
 		},
 	});

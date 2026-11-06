@@ -16,8 +16,14 @@ import { Elysia, t } from "elysia";
 
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import { tenantPlugin } from "../middleware/tenant";
+import { publishRealtimeEvent } from "../realtime";
+import {
+	type CommentRealtimePayload,
+	toRealtimeComment,
+} from "../realtime/events";
 import {
 	type CommentListQuery,
+	type CommentRow,
 	createMilestoneComment,
 	deleteMilestoneComment,
 	getMilestoneCommentThread,
@@ -71,6 +77,30 @@ function parseCommentQuery(query: {
 	};
 }
 
+/**
+ * Publish one comment event after the service has committed.
+ *
+ * Why the route and not the service: the service owns rules, the route owns the
+ * transport side effect, and the envelope needs the project id from the URL.
+ * `publishRealtimeEvent` never rejects, so a realtime failure cannot turn a
+ * successful save into an error.
+ */
+function publishCommentEvent(
+	projectId: string,
+	type: "comment.created" | "comment.updated" | "comment.deleted",
+	milestoneId: string,
+	comment: CommentRow,
+	total: number | null,
+): void {
+	const payload: CommentRealtimePayload = {
+		milestoneId,
+		comment: toRealtimeComment(comment),
+		total,
+	};
+
+	void publishRealtimeEvent(projectId, type, payload).catch(() => undefined);
+}
+
 export const commentRoutes = new Elysia({ name: "comments" })
 	.use(tenantPlugin)
 	/** One page of the discussion, newest page first, threads ascending. */
@@ -97,12 +127,22 @@ export const commentRoutes = new Elysia({ name: "comments" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/comments",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await createMilestoneComment(
+				const result = await createMilestoneComment(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 					body,
 				);
+
+				publishCommentEvent(
+					params.projectId,
+					"comment.created",
+					params.milestoneId,
+					result.comment,
+					result.total,
+				);
+
+				return result;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not post the comment."),
@@ -150,13 +190,23 @@ export const commentRoutes = new Elysia({ name: "comments" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/comments/:commentId/checklist",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await toggleMilestoneChecklistItem(
+				const result = await toggleMilestoneChecklistItem(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 					params.commentId,
 					body,
 				);
+
+				publishCommentEvent(
+					params.projectId,
+					"comment.updated",
+					params.milestoneId,
+					result.comment,
+					null,
+				);
+
+				return result;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not update the checklist."),
@@ -177,13 +227,23 @@ export const commentRoutes = new Elysia({ name: "comments" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/comments/:commentId",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await updateMilestoneComment(
+				const result = await updateMilestoneComment(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 					params.commentId,
 					body,
 				);
+
+				publishCommentEvent(
+					params.projectId,
+					"comment.updated",
+					params.milestoneId,
+					result.comment,
+					null,
+				);
+
+				return result;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not save the comment."),
@@ -201,12 +261,22 @@ export const commentRoutes = new Elysia({ name: "comments" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/comments/:commentId",
 		async ({ tenant, status, params }) => {
 			try {
-				return await deleteMilestoneComment(
+				const result = await deleteMilestoneComment(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 					params.commentId,
 				);
+
+				publishCommentEvent(
+					params.projectId,
+					"comment.deleted",
+					params.milestoneId,
+					result.comment,
+					result.total,
+				);
+
+				return result;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not delete the comment."),

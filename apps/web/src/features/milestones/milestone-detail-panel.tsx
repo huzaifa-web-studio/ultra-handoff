@@ -48,6 +48,7 @@ import type { MilestoneDetail, MilestoneViewer } from "./api";
 import type { Comment } from "./comments/api";
 import { CommentTab } from "./comments/comment-tab";
 import { CommentThreadTab } from "./comments/comment-thread-tab";
+import { useRealtimeComments } from "./comments/realtime";
 import {
 	commentTabsStorageKey,
 	type OpenCommentTab,
@@ -237,6 +238,20 @@ function MilestoneDetailContent({
 }) {
 	const update = useUpdateMilestone(orgSlug, projectId);
 	const setAssignees = useSetMilestoneAssignees(orgSlug, projectId);
+
+	/*
+	 * One subscription covers every comment surface of this milestone: the main
+	 * list, the focused thread tabs and any thread cache that is still open.
+	 * It patches the caches even while another tab is selected, so opening
+	 * Comments after a remote post shows the current discussion.
+	 */
+	useRealtimeComments({
+		orgSlug,
+		projectId,
+		milestoneId: milestone.id,
+		viewerId: viewer.userId,
+		locked: viewer.locked,
+	});
 
 	const [title, setTitle] = useState(milestone.title);
 	const [status, setStatus] = useState<MilestoneStatus>(milestone.status);
