@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
-
 import { auth } from "./auth";
+import { EMAIL_NOT_VERIFIED, isEmailVerified } from "./verified";
 
 /**
  * Session gate shared by every protected route group.
@@ -16,6 +16,12 @@ export const authMacro = new Elysia({ name: "better-auth-macro" }).macro({
 		async resolve({ status, request: { headers } }) {
 			const session = await auth.api.getSession({ headers });
 			if (!session) return status(401);
+			// A session alone is not enough. An account whose address was never
+			// confirmed cannot read or write its own data, which is what makes
+			// `requireEmailVerification` hold for sessions that already exist.
+			if (!isEmailVerified(session.user)) {
+				return status(403, EMAIL_NOT_VERIFIED);
+			}
 			return {
 				user: session.user,
 				session: session.session,

@@ -19,6 +19,7 @@
 import { and, eq } from "drizzle-orm";
 import { Elysia } from "elysia";
 import { auth } from "../auth/auth";
+import { EMAIL_NOT_VERIFIED, isEmailVerified } from "../auth/verified";
 import { adminDb } from "../db";
 import { member, organization } from "../db/auth-schema";
 import type { TenantScope } from "../db/tenant";
@@ -41,6 +42,7 @@ export type TenantContext = TenantScope & {
 export type TenantResolution =
 	| { kind: "ok"; tenant: TenantContext }
 	| { kind: "unauthenticated" }
+	| { kind: "unverified" }
 	| { kind: "not-found" };
 
 /**
@@ -55,6 +57,11 @@ export async function resolveTenantScope(
 ): Promise<TenantResolution> {
 	const session = await auth.api.getSession({ headers });
 	if (!session) return { kind: "unauthenticated" };
+
+	// Session existence and address proof are separate questions. An
+	// unconfirmed account gets its own result so HTTP and realtime callers can
+	// answer with a "verify your email" code instead of a generic 401.
+	if (!isEmailVerified(session.user)) return { kind: "unverified" };
 
 	const [row] = await adminDb
 		.select({
@@ -103,6 +110,9 @@ export const tenantPlugin = new Elysia({ name: "tenant" }).macro({
 			const resolution = await resolveTenantScope(request.headers, orgSlug);
 
 			if (resolution.kind === "unauthenticated") return status(401);
+			if (resolution.kind === "unverified") {
+				return status(403, EMAIL_NOT_VERIFIED);
+			}
 			if (resolution.kind === "not-found") return status(404);
 
 			return { tenant: resolution.tenant };

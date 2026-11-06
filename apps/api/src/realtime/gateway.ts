@@ -109,6 +109,17 @@ async function authorize(
 			};
 		}
 
+		// An unconfirmed account may not stream workspace data. Forbidden is
+		// terminal in the browser policy, so the client stops rather than
+		// retrying with the same unproven session.
+		if (resolution.kind === "unverified") {
+			return {
+				ok: false,
+				code: CLOSE_FORBIDDEN,
+				reason: "email not verified",
+			};
+		}
+
 		if (resolution.kind === "not-found") {
 			return { ok: false, code: CLOSE_FORBIDDEN, reason: "forbidden" };
 		}

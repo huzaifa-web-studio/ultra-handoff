@@ -10,7 +10,7 @@ import { PasswordInput } from "@org/ui/components/password-input";
 import { GithubLight as GithubIcon } from "@org/ui/components/ui/svgs/githubLight";
 import { Google } from "@org/ui/components/ui/svgs/google";
 import { useForm } from "@tanstack/react-form";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation } from "@tanstack/react-router";
 import { useState } from "react";
 import { FieldMeta } from "#/components/field-meta";
 import { toFieldErrors } from "#/lib/form-errors";
@@ -18,16 +18,17 @@ import { EMAIL_MAX, USER_NAME_MAX } from "#/lib/limits";
 import { PASSWORD_MAX, passwordRuleMessage } from "#/lib/password";
 import { authClient } from "./client";
 import { signUpSchema } from "./schema";
-import { closeAuthDialog } from "./store";
-import { broadcastAuth } from "./sync";
+import { VerifyEmailCard } from "./verify-email-card";
 
 export function AuthSignUpForm() {
-	const navigate = useNavigate();
 	const location = useLocation();
 	// On the invite page the card needs the session to move to the accept
 	// state, so the form must not navigate away.
 	const isInvitePage = location.pathname.startsWith("/invite/");
 	const [error, setError] = useState<string | null>(null);
+	// Address the confirmation mail went to. Set only after a successful sign
+	// up, and the whole form is replaced by the pending state while it is here.
+	const [pendingEmail, setPendingEmail] = useState<string | null>(null);
 
 	const form = useForm({
 		defaultValues: { name: "", email: "", password: "" },
@@ -48,21 +49,46 @@ export function AuthSignUpForm() {
 					return;
 				}
 
-				// The account is ready and Better Auth signed the new user in,
-				// so the app can take over from here. The confirmation mail is
-				// on its way and the profile shows the address as unverified
-				// until it is opened.
-				closeAuthDialog();
-				broadcastAuth("auth:signed-in");
-
-				if (!isInvitePage) {
-					navigate({ to: "/" });
-				}
+				// Sign up deliberately returns no session. The account becomes
+				// usable when the emailed link is opened, which also signs the
+				// person in. Keeping the dialog on the pending state puts the
+				// resend action exactly where they are looking.
+				setPendingEmail(value.email.trim());
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Sign up failed");
 			}
 		},
 	});
+
+	/** Go back to an empty form when the address was wrong. */
+	function handleUseDifferentEmail() {
+		setPendingEmail(null);
+		setError(null);
+		form.reset();
+	}
+
+	if (pendingEmail) {
+		return (
+			<div className="flex flex-col gap-4">
+				<VerifyEmailCard
+					state="pending"
+					email={pendingEmail}
+					hint={
+						isInvitePage
+							? "Open the link, then come back to this page to accept the invitation."
+							: undefined
+					}
+				/>
+				<Button
+					type="button"
+					variant="outline"
+					onPress={handleUseDifferentEmail}
+				>
+					Use a different email
+				</Button>
+			</div>
+		);
+	}
 
 	return (
 		<form

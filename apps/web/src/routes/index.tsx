@@ -1,8 +1,7 @@
 import { Button } from "@org/ui/components/button";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useSelector } from "@tanstack/react-store";
-import { useEffect, useRef } from "react";
-import { toast } from "sonner";
+import { useEffect } from "react";
 import { HomeHeader } from "#/components/home-header";
 import { AuthDialog } from "#/features/auth/auth-dialog";
 import { authClient } from "#/features/auth/client";
@@ -16,42 +15,26 @@ import {
 } from "#/features/organization/store";
 
 export const Route = createFileRoute("/")({
-	/**
-	 * The verification email redirects here with `verified=1`.
-	 *
-	 * Why validate: the flag comes from a URL, so it has to be parsed into a
-	 * typed boolean before the page can render a confirmation instead of
-	 * silently dropping the user on the home screen. The key stays optional so
-	 * every other link to `/` does not have to pass a search object.
-	 */
-	validateSearch: (search: Record<string, unknown>): { verified?: boolean } => {
-		const verified = search.verified === "1" || search.verified === true;
-
-		return verified ? { verified } : {};
-	},
 	component: Home,
 });
 
 function Home() {
 	const navigate = useNavigate();
-	const { verified } = Route.useSearch();
 	const { data: session } = authClient.useSession();
 	const { data: activeOrg } = authClient.useActiveOrganization();
-	const hasOrg = !!session?.user && !!session.session?.activeOrganizationId;
 
-	const verifiedToastShown = useRef(false);
+	// A session without a confirmed address cannot do anything useful here.
+	// See the guard below, which moves it to the page that owns the resend.
+	const isUnverified = !!session?.user && !session.user.emailVerified;
+
+	const hasOrg =
+		!!session?.user && !!session.session?.activeOrganizationId && !isUnverified;
 
 	useEffect(() => {
-		if (verified && !verifiedToastShown.current) {
-			verifiedToastShown.current = true;
-			toast.success("Email verified. Your account is ready.");
-			// Strip `?verified=1` so the flag does not linger in the URL.
-			navigate({ to: "/", search: {}, replace: true });
+		if (isUnverified) {
+			navigate({ to: "/verify-email", search: {} });
 		}
-		if (!verified) {
-			verifiedToastShown.current = false;
-		}
-	}, [verified, navigate]);
+	}, [isUnverified, navigate]);
 
 	useEffect(() => {
 		if (hasOrg && activeOrg?.slug) {
@@ -60,7 +43,8 @@ function Home() {
 	}, [hasOrg, activeOrg, navigate]);
 
 	const isSignedIn = !!session?.user;
-	const needsOrg = isSignedIn && !session.session?.activeOrganizationId;
+	const needsOrg =
+		isSignedIn && !session.session?.activeOrganizationId && !isUnverified;
 
 	// The dismissal only has to survive the current visit, so it lives in the
 	// dialog store. A reload starts a fresh visit and the prompt returns.
@@ -77,8 +61,6 @@ function Home() {
 		// The next sign in is a fresh visit, so the organization prompt is
 		// allowed to appear again.
 		resetOrganizationDialog();
-		// Drop `?verified=1` so the verification banner does not linger after
-		// signing out.
 		navigate({ to: "/", search: {}, replace: true });
 	}
 
@@ -91,7 +73,6 @@ function Home() {
 				onOpenSignIn={openSignIn}
 				onOpenSignUp={openSignUp}
 			/>
-			{/* Confirmation for the emailed verification link is shown via toast. */}
 			<main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
 				{needsOrg ? (
 					<>

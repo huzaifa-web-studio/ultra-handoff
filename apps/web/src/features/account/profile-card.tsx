@@ -17,11 +17,9 @@ import { Input } from "@org/ui/components/input";
 import { Separator } from "@org/ui/components/separator";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
-import { toast } from "sonner";
 import { FieldMeta } from "#/components/field-meta";
-import { authClient } from "#/features/auth/client";
+import { useVerificationResend } from "#/features/auth/use-verification-resend";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
-import { useCooldown } from "#/hooks/use-cooldown";
 import { toFieldErrors } from "#/lib/form-errors";
 import { USER_NAME_MAX } from "#/lib/limits";
 import { AvatarUploader } from "./avatar-uploader";
@@ -39,8 +37,6 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 	const updateProfile = useUpdateProfile();
 	const [error, setError] = useState<string | null>(null);
 	const [saved, setSaved] = useState<string | null>(null);
-	const [resending, setResending] = useState(false);
-	const resendCooldown = useCooldown();
 
 	useAutoDismiss(saved, () => setSaved(null));
 
@@ -76,41 +72,11 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 	/**
 	 * Send the confirmation mail again.
 	 *
-	 * Why it lives here: sign up signs the person in straight away, so the
-	 * account page is where they land when the mail never arrives. A
-	 * confirmed address is what lets them accept an invitation.
+	 * Why it stays here: sign up and sign in own the normal resend path, but a
+	 * session from before verification became mandatory can still open this
+	 * card. The shared hook keeps one implementation across all three.
 	 */
-	async function handleResendVerification() {
-		if (resending || resendCooldown.isActive) return;
-
-		setResending(true);
-		setError(null);
-
-		try {
-			const { error: resendError } = await authClient.sendVerificationEmail({
-				email: user.email,
-			});
-
-			if (resendError) {
-				setError(
-					resendError.message ?? "Could not resend the verification email.",
-				);
-				return;
-			}
-
-			toast.success("Verification email sent.");
-			// Start the wait again so a queued message cannot be spammed.
-			resendCooldown.start();
-		} catch (resendError) {
-			setError(
-				resendError instanceof Error
-					? resendError.message
-					: "Could not resend the verification email.",
-			);
-		} finally {
-			setResending(false);
-		}
-	}
+	const verification = useVerificationResend();
 
 	return (
 		<Card>
@@ -209,18 +175,25 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 						Your email is used to sign in and is not editable here.
 					</FieldDescription>
 					{!user.emailVerified && (
-						<div>
+						<div className="flex flex-col gap-2">
 							<Button
 								variant="outline"
 								size="sm"
-								loading={resending}
-								isDisabled={resending || resendCooldown.isActive}
-								onPress={handleResendVerification}
+								loading={verification.sending}
+								isDisabled={
+									verification.sending || verification.cooldown.isActive
+								}
+								onPress={() => void verification.resend(user.email)}
 							>
-								{resendCooldown.isActive
-									? `Resend in ${resendCooldown.remaining}s`
+								{verification.cooldown.isActive
+									? `Resend in ${verification.cooldown.remaining}s`
 									: "Resend verification email"}
 							</Button>
+							{verification.error && (
+								<p role="alert" className="text-sm text-danger">
+									{verification.error}
+								</p>
+							)}
 						</div>
 					)}
 				</Field>

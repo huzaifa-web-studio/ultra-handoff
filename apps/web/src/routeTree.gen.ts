@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as DeleteAccountRouteImport } from './routes/delete-account'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AppOrgSlugRouteImport } from './routes/_app/$orgSlug'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
@@ -48,6 +49,11 @@ const DeleteAccountRoute = DeleteAccountRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppOrgSlugRoute = AppOrgSlugRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/delete-account': typeof DeleteAccountRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/delete-account': typeof DeleteAccountRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/delete-account': typeof DeleteAccountRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/_app/$orgSlug': typeof AppOrgSlugRouteWithChildren
   '/_app/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
     | '/'
     | '/delete-account'
     | '/reset-password'
+    | '/verify-email'
     | '/$orgSlug'
     | '/account'
     | '/auth/error'
@@ -235,6 +245,7 @@ export interface FileRouteTypes {
     | '/'
     | '/delete-account'
     | '/reset-password'
+    | '/verify-email'
     | '/account'
     | '/auth/error'
     | '/invite/$invitationId'
@@ -253,6 +264,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/delete-account'
     | '/reset-password'
+    | '/verify-email'
     | '/_app/$orgSlug'
     | '/_app/account'
     | '/auth/error'
@@ -277,6 +289,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   DeleteAccountRoute: typeof DeleteAccountRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   AuthErrorRoute: typeof AuthErrorRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
 }
@@ -309,6 +322,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/$orgSlug': {
@@ -534,6 +554,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   DeleteAccountRoute: DeleteAccountRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   AuthErrorRoute: AuthErrorRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
 }

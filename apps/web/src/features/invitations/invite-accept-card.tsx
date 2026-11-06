@@ -26,6 +26,7 @@ import { RoleChip } from "#/components/role-chip";
 import { authClient } from "#/features/auth/client";
 import { openSignIn } from "#/features/auth/store";
 import { broadcastAuth } from "#/features/auth/sync";
+import { useVerificationResend } from "#/features/auth/use-verification-resend";
 import { useSwitchOrganization } from "#/features/organization/switch";
 import { openSwitchBlockedDialog } from "#/features/organization/switch-blocked-store";
 import { getSwitchBlock } from "#/features/organization/switch-guard";
@@ -65,7 +66,7 @@ export function InviteAcceptCard({
 	const magicLink = useInvitationMagicLink(invitationId);
 
 	const magicCooldown = useCooldown();
-	const verifyCooldown = useCooldown();
+	const verification = useVerificationResend();
 
 	const [magicSent, setMagicSent] = useState(false);
 	const [declined, setDeclined] = useState(false);
@@ -239,33 +240,6 @@ export function InviteAcceptCard({
 		broadcastAuth("auth:signed-out");
 		setMagicSent(false);
 		setActionError(null);
-	}
-
-	async function handleResendVerification() {
-		if (!session?.user.email) return;
-
-		setActionError(null);
-
-		try {
-			const { error } = await authClient.sendVerificationEmail({
-				email: session.user.email,
-			});
-
-			if (error) {
-				throw new Error(
-					error.message ?? "Could not send the verification email.",
-				);
-			}
-
-			toast.success("Verification email sent.");
-			verifyCooldown.start();
-		} catch (error) {
-			setActionError(
-				error instanceof Error
-					? error.message
-					: "Could not send the verification email.",
-			);
-		}
 	}
 
 	if (previewQuery.isPending) {
@@ -490,7 +464,9 @@ export function InviteAcceptCard({
 		);
 	}
 
-	// Right address, not verified yet. Only password accounts reach this.
+	// Right address, not verified yet. Sign up now refuses a session until the
+	// address is confirmed, so this is a safety net for a session that predates
+	// the rule rather than the normal password path.
 	if (!preview.viewer.emailVerified) {
 		return (
 			<StateCard
@@ -499,13 +475,16 @@ export function InviteAcceptCard({
 			>
 				{invitationDetails}
 				<Button
-					loading={verifyCooldown.isActive}
-					onPress={handleResendVerification}
-					isDisabled={verifyCooldown.isActive}
+					loading={verification.sending}
+					onPress={() => {
+						if (!session?.user.email) return;
+						void verification.resend(session.user.email);
+					}}
+					isDisabled={verification.sending || verification.cooldown.isActive}
 				>
 					<MailIcon aria-hidden />
-					{verifyCooldown.isActive
-						? `Resend in ${verifyCooldown.remaining}s`
+					{verification.cooldown.isActive
+						? `Resend in ${verification.cooldown.remaining}s`
 						: "Resend verification email"}
 				</Button>
 				<p className="text-xs text-app-text-muted">
@@ -526,9 +505,9 @@ export function InviteAcceptCard({
 					<LogOutIcon aria-hidden />
 					Use a different account
 				</Button>
-				{actionError && (
+				{verification.error && (
 					<p role="alert" className="text-sm text-danger">
-						{actionError}
+						{verification.error}
 					</p>
 				)}
 			</StateCard>

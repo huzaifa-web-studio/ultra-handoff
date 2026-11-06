@@ -24,13 +24,16 @@ export default function VerificationEmail({ url }: VerificationEmailProps) {
 					<Heading>Verify your email</Heading>
 					<Text>
 						Thanks for signing up for Handoff. Click the link below to verify
-						your email address.
+						your email address. This link expires in one hour, and you cannot
+						use your account until the address is confirmed.
 					</Text>
 					<Section>
 						<Link href={url}>Verify email</Link>
 					</Section>
 					<Text>
-						If you did not create an account, you can ignore this email.
+						If you did not create a Handoff account, ignore this email. The
+						address stays unverified and the account cannot be used without this
+						link.
 					</Text>
 				</Container>
 			</Body>

@@ -27,20 +27,35 @@ function AppLayout() {
 	// screen under `_app` still needs an active organization, so the guard is
 	// relaxed for this one path only.
 	const needsOrganization = pathname !== "/account";
+
+	// A session that exists without a confirmed address may not render any
+	// workspace screen. The verify page is the only place with a resend action,
+	// so an unverified visitor is sent there instead of the marketing page.
+	const unverified = !!session?.user && !session.user.emailVerified;
+
 	const missingScope =
 		isPending ||
 		!session?.user ||
+		unverified ||
 		(needsOrganization && !session.session?.activeOrganizationId);
 
 	useEffect(() => {
-		if (
-			!isPending &&
-			(!session?.user ||
-				(needsOrganization && !session.session?.activeOrganizationId))
-		) {
+		if (isPending) return;
+
+		if (!session?.user) {
+			navigate({ to: "/" });
+			return;
+		}
+
+		if (unverified) {
+			navigate({ to: "/verify-email", search: {} });
+			return;
+		}
+
+		if (needsOrganization && !session.session?.activeOrganizationId) {
 			navigate({ to: "/" });
 		}
-	}, [session, isPending, needsOrganization, navigate]);
+	}, [session, isPending, needsOrganization, unverified, navigate]);
 
 	if (missingScope) {
 		return null;

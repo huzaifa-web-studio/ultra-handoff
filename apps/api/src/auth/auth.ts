@@ -53,6 +53,22 @@ export const auth = betterAuth({
 	session: {
 		storeSessionInDatabase: true,
 	},
+	/**
+	 * Throttle the endpoints that send mail.
+	 *
+	 * Why these three: sign up, a blocked sign in and an explicit resend all
+	 * enqueue a verification email. The library default is 100 requests per 10
+	 * seconds, which lets one client turn a typo into an inbox flood. The
+	 * sign-in rule is the widest because it also covers a legitimate person
+	 * retrying a password.
+	 */
+	rateLimit: {
+		customRules: {
+			"/sign-up/email": { window: 60, max: 5 },
+			"/sign-in/email": { window: 60, max: 10 },
+			"/send-verification-email": { window: 60, max: 3 },
+		},
+	},
 	user: {
 		/**
 		 * Server-owned pointer to the workspace the user was last active in.
@@ -122,25 +138,24 @@ export const auth = betterAuth({
 		minPasswordLength: PASSWORD_MIN,
 		maxPasswordLength: PASSWORD_MAX,
 		/**
-		 * Sign up signs the new account in.
+		 * An account is unusable until its address is confirmed.
 		 *
-		 * Why this is off: Better Auth ties the auto sign in to the email
-		 * verification requirement. While the requirement is on, the sign-up
-		 * route returns the user but no session, so a fresh account lands on
-		 * the marketing page as a stranger and can do nothing until a
-		 * verification mail arrives. With it off, the auto sign in below
-		 * creates the session right away.
+		 * Why: the address is the identity every invitation, member row and
+		 * workspace membership is matched against. Letting an unconfirmed
+		 * address hold a session means a typo, or someone else's mailbox,
+		 * can own real workspace data.
 		 *
-		 * The address is still confirmed: the verification mail goes out on
-		 * sign up (emailVerification.sendOnSignUp) and the organization
-		 * plugin refuses an unverified address on invitations
-		 * (requireEmailVerificationOnInvitation). Sign in accepts an
-		 * unverified address as well, because the account is usable right
-		 * away and blocking it would only lock the owner out of their own
-		 * workspace.
+		 * With this on, sign up returns the user and no session. The person
+		 * confirms the address by opening the mail sent on sign up, and
+		 * `emailVerification.autoSignInAfterVerification` creates the session
+		 * at that moment. The verification mail is therefore the only way in,
+		 * so the sign-up and sign-in screens both offer a resend.
 		 */
-		requireEmailVerification: false,
-		autoSignIn: true,
+		requireEmailVerification: true,
+		// Sign up never mints a session while the requirement above is on.
+		// Stated explicitly so a future default change cannot quietly restore
+		// the old "signed in, unverified" behaviour.
+		autoSignIn: false,
 		// Reset links stay valid for one hour. The email and the forgot
 		// password screen both state this expiry, so keep them in sync.
 		resetPasswordTokenExpiresIn: 60 * 60,
@@ -167,14 +182,17 @@ export const auth = betterAuth({
 		},
 	},
 	emailVerification: {
-		// One hour is Better Auth's default, stated here because the sign-up
-		// screen tells the user how long the link stays valid.
+		// One hour is Better Auth's default, stated here because the
+		// verification email and the verify page both tell the user how long
+		// the link stays valid.
 		expiresIn: 60 * 60,
 		sendVerificationEmail: async ({ user, url }) => {
 			const verifyUrl = new URL(url);
-			// Send the browser back to the web app with a flag the home page
-			// turns into a confirmation. Without it the redirect is silent.
-			const verifiedUrl = new URL(serverEnv.webUrl);
+			// Land on the web app's verification page. Better Auth appends an
+			// `error` query to this same URL when the token is expired or
+			// invalid, so the page can tell success and failure apart instead
+			// of turning a dead link into a false confirmation.
+			const verifiedUrl = new URL("/verify-email", serverEnv.webUrl);
 			verifiedUrl.searchParams.set("verified", "1");
 			verifyUrl.searchParams.set("callbackURL", verifiedUrl.toString());
 
@@ -184,16 +202,17 @@ export const auth = betterAuth({
 				url: verifyUrl.toString(),
 			});
 		},
-		// The confirmation mail goes out on sign up even though the account is
-		// usable straight away. The address is confirmed so it can join a
-		// workspace, not so the owner can sign in.
+		// The confirmation mail goes out on sign up because the account cannot
+		// be used without it.
 		sendOnSignUp: true,
-		// Sign in does not wait for a confirmed address, so this no longer
-		// fires for a password sign in. It stays for a social provider that
-		// reports an unverified address, where the account is blocked.
+		// A blocked sign in sends a fresh link, which is the recovery path for
+		// an account that never opened the first mail. Better Auth only sends
+		// this while `requireEmailVerification` is on, so the setting and the
+		// recovery path stay tied together.
 		sendOnSignIn: true,
-		// Opening the link signs the user in again, so a person who verified
-		// the address in another tab keeps working in this one.
+		// Opening the link is what creates the session, because sign up no
+		// longer does. It also refreshes the session when the address was
+		// verified in another tab.
 		autoSignInAfterVerification: true,
 	},
 	databaseHooks: {
@@ -351,9 +370,10 @@ export const auth = betterAuth({
 			// of leaving two live invitations behind.
 			cancelPendingInvitationsOnReInvite: true,
 			// Invitation ids are visible to every member through the pending
-			// list, so accepting one also requires a verified email. Both
-			// acceptance paths satisfy this: the magic link verifies the
-			// address, and password sign up already requires verification.
+			// list, so accepting, rejecting or reading one also requires a
+			// verified email. Password accounts verify before they can sign
+			// in, and the magic link path proves the mailbox and clears any
+			// unproven credentials before it creates the session.
 			requireEmailVerificationOnInvitation: true,
 			/**
 			 * Deliver the invitation as a single use link.
