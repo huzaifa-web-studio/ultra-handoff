@@ -2,9 +2,11 @@ import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 
 import { betterAuth } from "./auth/plugin";
-import { isDevelopment, serverEnv } from "./lib/env";
+import { isDevelopment, realtimeEnv, serverEnv } from "./lib/env";
 import { tenantPlugin } from "./middleware/tenant";
 import { queues } from "./queues";
+import { startRealtime } from "./realtime";
+import { realtimeRoutes } from "./realtime/gateway";
 import { accountRoutes } from "./routes/account";
 import { commentRoutes } from "./routes/comments";
 import { fileRoutes } from "./routes/files";
@@ -23,7 +25,12 @@ const { port, host: hostname, webUrl } = serverEnv;
 // Bull Board is a development-only dashboard for BullMQ queues.
 // It is never mounted in production, so the routes stay inaccessible there.
 async function buildApp() {
-	const app = new Elysia()
+	const app = new Elysia({
+		// Bun rejects an oversized WebSocket frame before Elysia's message parser
+		// allocates for it, so the inbound frame limit is enforced at the protocol
+		// edge, not only in the handler.
+		websocket: { maxPayloadLength: realtimeEnv.maxFrameBytes },
+	})
 		.use(
 			cors({
 				origin: webUrl,
@@ -50,6 +57,8 @@ async function buildApp() {
 		.use(milestoneRoutes)
 		// Discussion threads on a milestone (tenant scoped).
 		.use(commentRoutes)
+		// Live comment, milestone and presence stream for the project workspace.
+		.use(realtimeRoutes)
 		// Mention suggestions for the comment editor (tenant scoped).
 		.use(mentionRoutes)
 		// Cached link previews for the milestone editor (tenant scoped).
@@ -88,6 +97,18 @@ async function buildApp() {
 // from the builder, keeping Eden Treaty types intact.
 export type App = Awaited<ReturnType<typeof buildApp>>;
 
+/**
+ * Realtime wire types for the web app.
+ *
+ * Exported as types only, so the browser bundle never pulls in the server
+ * module (which imports node:crypto). The web client validates frames against
+ * the same version constant through this contract.
+ */
+export type {
+	RealtimeEnvelope,
+	RealtimeEventType,
+} from "./realtime/protocol";
+
 void buildApp()
 	.then((app) => {
 		// Workers share the process so deployment stays a single container.
@@ -96,11 +117,23 @@ void buildApp()
 
 		app.listen({ port, hostname });
 
+		// Realtime attaches after listen because it needs the running Bun
+		// server for topic fan-out. A missing server is a boot error, not a
+		// reason to run the API with a silently dead stream.
+		const server = app.server;
+
+		if (!server) throw new Error("Realtime requires a listening server");
+
+		const stopRealtime = startRealtime(server);
+
 		const shutdown = async () => {
 			// Stop accepting requests first. Better Auth now reads sessions from
 			// Redis, so closing the connections before in-flight requests finish
 			// would turn a graceful deploy into visible auth errors.
 			await app.stop();
+			// Close the stream subscriber before the shared Redis client it
+			// borrows its connection options from.
+			stopRealtime();
 			// A failing Redis connection must not stop the HTTP server from
 			// closing cleanly during a deploy.
 			await stopWorkers().catch(() => undefined);

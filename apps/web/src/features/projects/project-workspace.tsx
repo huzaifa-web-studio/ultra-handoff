@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { setProjectBreadcrumbLabel } from "#/components/app-sidebar/project-breadcrumb";
+import { RealtimeProvider } from "#/features/realtime/provider";
 import {
 	useProjectDetailBySlug,
 	useSetProjectPinned,
@@ -225,7 +226,14 @@ export function ProjectWorkspace({
 					!fillsViewport && "overflow-y-auto",
 				)}
 			>
-				<Outlet />
+				{/*
+				 * The stream is project scoped, and every tab that needs it renders
+				 * inside this Outlet. Mounting here keeps the connection tied to the
+				 * project view instead of the whole app shell.
+				 */}
+				<RealtimeProvider orgSlug={orgSlug} projectId={project.id}>
+					<Outlet />
+				</RealtimeProvider>
 			</div>
 		</div>
 	);

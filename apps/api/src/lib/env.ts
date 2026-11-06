@@ -61,6 +61,22 @@ export const redisEnv = {
 	password: Bun.env.REDIS_PASSWORD || undefined,
 };
 
+/**
+ * Realtime WebSocket settings.
+ *
+ * `pingIntervalMs` is the server side liveness probe. It has to stay below the
+ * idle timeout of any proxy in front of the API, or the proxy silently drops a
+ * quiet socket. `maxConnectionMs` forces a periodic reconnect so a membership
+ * change or a revoked session cannot stream forever. The frame limits protect
+ * the process from a broken client, not from a person.
+ */
+export const realtimeEnv = {
+	pingIntervalMs: readNumber("REALTIME_PING_INTERVAL_MS", 25_000),
+	maxConnectionMs: readNumber("REALTIME_MAX_CONNECTION_MS", 30 * 60 * 1000),
+	maxFrameBytes: readNumber("REALTIME_MAX_FRAME_BYTES", 16 * 1024),
+	maxFramesPerSecond: readNumber("REALTIME_MAX_FRAMES_PER_SECOND", 20),
+};
+
 /** Better Auth settings and social providers. */
 export const authEnv = {
 	secret: readString("BETTER_AUTH_SECRET"),
