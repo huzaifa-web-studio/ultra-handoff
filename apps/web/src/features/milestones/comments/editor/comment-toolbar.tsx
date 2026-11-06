@@ -39,7 +39,20 @@ import {
 import { useEditorRef } from "platejs/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-
+import {
+	canInsertInlineAt,
+	captureEditorRange,
+	insertInlineInParagraph,
+	insertInlineNode,
+} from "#/components/rich-text/editor-insert";
+import { fileNode, imageNode } from "#/components/rich-text/editor-nodes";
+import {
+	BlockSelect,
+	ListButton,
+	MarkButton,
+	ToolbarButton,
+	ToolbarSeparator,
+} from "#/components/rich-text/editor-toolbar-primitives";
 import { beginOrganizationOperation } from "#/features/organization/switch-guard";
 import {
 	FILE_POLICIES,
@@ -47,20 +60,6 @@ import {
 	uploadFile,
 	validateUploadFile,
 } from "#/lib/upload";
-import {
-	canInsertInlineAt,
-	captureEditorRange,
-	insertInlineInParagraph,
-	insertInlineNode,
-} from "../../editor/editor-insert";
-import { fileNode, imageNode } from "../../editor/editor-nodes";
-import {
-	BlockSelect,
-	ListButton,
-	MarkButton,
-	ToolbarButton,
-	ToolbarSeparator,
-} from "../../editor/editor-toolbar-primitives";
 import {
 	type CommentInsertPoint,
 	insertCommentBlock,

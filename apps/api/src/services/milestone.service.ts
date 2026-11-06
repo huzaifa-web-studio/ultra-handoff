@@ -49,6 +49,7 @@ import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
 import { queueDocumentPreviews } from "./link-preview.service";
+import { assertCommentMentions } from "./mention.service";
 import { listOrganizationOwners } from "./organization.service";
 import {
 	loadProjectAccess,
@@ -835,6 +836,7 @@ export async function createMilestone(
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
 			assertWritable(tenant, access);
+			await assertCommentMentions(tx, tenant, projectId, description.value);
 
 			// Resolve assignees before the insert, so a bad assignee fails the
 			// whole request instead of leaving a milestone behind.
@@ -932,6 +934,7 @@ export async function updateMilestone(
 
 			if (input.description !== undefined) {
 				const description = sanitizeRichText(input.description);
+				await assertCommentMentions(tx, tenant, projectId, description.value);
 				patch.description = description.value;
 				patch.descriptionText = description.text;
 			}

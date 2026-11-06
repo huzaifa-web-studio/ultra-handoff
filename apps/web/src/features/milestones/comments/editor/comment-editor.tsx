@@ -42,16 +42,15 @@ import {
 	useRef,
 	useState,
 } from "react";
-
-import { LinkPreviewProvider } from "#/features/link-previews/link-preview-context";
-import { extractLinkUrls } from "#/features/link-previews/utils";
-import { useDebouncedValue } from "#/hooks/use-debounced-value";
 import {
 	EditorDropOverlay,
 	useEditorFileDrop,
-} from "../../editor/editor-file-drop";
-import { toEditorValue } from "../../editor/editor-value";
-import { EditorStaticProvider } from "../../editor/editor-view-context";
+} from "#/components/rich-text/editor-file-drop";
+import { toEditorValue } from "#/components/rich-text/editor-value";
+import { EditorStaticProvider } from "#/components/rich-text/editor-view-context";
+import { LinkPreviewProvider } from "#/features/link-previews/link-preview-context";
+import { extractLinkUrls } from "#/features/link-previews/utils";
+import { useDebouncedValue } from "#/hooks/use-debounced-value";
 import { CommentChecklistProvider } from "../comment-checklist";
 import { useMentionCandidates } from "../hooks";
 import {

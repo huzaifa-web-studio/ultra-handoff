@@ -27,7 +27,7 @@ import { ListItemPlugin } from "@platejs/list-classic/react";
 import {
 	milestoneEditorPlugins,
 	milestoneStaticEditorPlugins,
-} from "../../editor/editor-kit";
+} from "#/components/rich-text/editor-kit";
 import { CommentStaticListItemElement } from "../comment-checklist";
 import { CommentMentionPlugin } from "./mention-plugin";
 

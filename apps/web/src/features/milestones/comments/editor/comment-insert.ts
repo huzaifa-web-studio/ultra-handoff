@@ -25,7 +25,7 @@ import {
 	insertVoidBlock,
 	refreshInsertPoint,
 	resolveInsertPoint,
-} from "../../editor/editor-insert";
+} from "#/components/rich-text/editor-insert";
 
 /** Where an insert should happen, captured before a file picker opens. */
 export type CommentInsertPoint = EditorInsertPoint;

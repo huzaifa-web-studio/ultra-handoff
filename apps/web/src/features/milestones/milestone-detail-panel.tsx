@@ -55,7 +55,7 @@ import {
 import {
 	MilestoneEditor,
 	MilestoneEditorStatic,
-} from "./editor/milestone-editor";
+} from "#/components/rich-text/milestone-editor";
 import {
 	useMilestoneDetail,
 	useSetMilestoneAssignees,

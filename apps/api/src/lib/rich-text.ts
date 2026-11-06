@@ -67,6 +67,7 @@ const ALLOWED_BLOCK_TYPES = new Set([
 	"img",
 	"bookmark",
 	"file",
+	"mention",
 ]);
 
 /** Marks the editor toolbar can toggle. */

@@ -26,7 +26,7 @@ import {
 	useState,
 } from "react";
 
-import { ListItemElement } from "../editor/editor-elements";
+import { ListItemElement } from "#/components/rich-text/editor-elements";
 
 /** What a rendered checklist needs from the comment it belongs to. */
 type CommentChecklistContextValue = {

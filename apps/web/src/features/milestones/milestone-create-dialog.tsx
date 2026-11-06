@@ -28,7 +28,7 @@ import { Input } from "@org/ui/components/input";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { MilestoneDetail } from "./api";
-import { MilestoneEditor } from "./editor/milestone-editor";
+import { MilestoneEditor } from "#/components/rich-text/milestone-editor";
 import { useCreateMilestone } from "./hooks";
 import {
 	type AssignableMember,

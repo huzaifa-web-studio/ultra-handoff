@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The milestone editor plugin set.
+ * Shared rich text capabilities and the milestone description profile.
  *
  * Why curated instead of a full kit: a milestone description is a short brief,
  * not a document. Every plugin adds bundle weight and another node type the
@@ -250,7 +250,7 @@ const MilestoneImagePlugin = ImagePlugin.configure({
 });
 
 /** The plugins passed to `usePlateEditor`. */
-export const milestoneEditorPlugins = [
+export const richTextEditorPlugins = [
 	// Blocks
 	ParagraphPlugin.withComponent(ParagraphElement),
 	H2Plugin.withComponent(H2Element),
@@ -377,8 +377,8 @@ export const milestoneEditorPlugins = [
  * so the plugin is removed from this list instead of being conditionally
  * skipped at render time.
  */
-export const milestoneStaticEditorPlugins = [
-	...milestoneEditorPlugins.filter(
+export const richTextStaticEditorPlugins = [
+	...richTextEditorPlugins.filter(
 		(plugin) =>
 			plugin.key !== "dnd" &&
 			plugin.key !== KEYS.img &&
@@ -398,3 +398,9 @@ export const milestoneStaticEditorPlugins = [
 	// remove control or the block edge handling.
 	FilePlugin.withComponent(FileElementStatic),
 ];
+
+/** Milestone descriptions enable block insertion and retain their own editor instance. */
+export const milestoneEditorPlugins = richTextEditorPlugins;
+
+/** Static milestone descriptions use the shared renderers without editing plugins. */
+export const milestoneStaticEditorPlugins = richTextStaticEditorPlugins;

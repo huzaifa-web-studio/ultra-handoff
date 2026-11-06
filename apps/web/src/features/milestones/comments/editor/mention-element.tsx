@@ -20,7 +20,7 @@ import { cn } from "cn";
 import { FlagIcon, FolderIcon, UserIcon } from "lucide-react";
 import { PlateElement, type PlateElementProps } from "platejs/react";
 
-import { useEditorStatic } from "../../editor/editor-view-context";
+import { useEditorStatic } from "#/components/rich-text/editor-view-context";
 import { useMentionContext } from "./mention-context";
 import {
 	isSafeSlug,

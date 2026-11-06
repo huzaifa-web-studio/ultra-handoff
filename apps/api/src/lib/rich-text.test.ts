@@ -438,7 +438,7 @@ describe("sanitizeRichText (milestone profile)", () => {
 		expect(result.text).toContain("Brief.pdf");
 	});
 
-	test("drops a mention from a milestone description", () => {
+	test("keeps a mention in a milestone description", () => {
 		const result = sanitizeRichText([
 			{
 				type: "p",
@@ -457,7 +457,8 @@ describe("sanitizeRichText (milestone profile)", () => {
 
 		const block = result.value[0] as { children?: { type?: string }[] };
 
-		expect(block.children).toHaveLength(1);
-		expect(result.text).toContain("See");
+		expect(block.children).toHaveLength(2);
+		expect((block.children?.[1] as { type?: string }).type).toBe("mention");
+		expect(result.text).toContain("#Website Redesign");
 	});
 });
