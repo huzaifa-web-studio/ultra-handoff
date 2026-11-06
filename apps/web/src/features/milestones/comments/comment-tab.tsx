@@ -31,7 +31,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-
+import { MentionProvider } from "#/components/rich-text/mentions/mention-context";
 import { useClockTick } from "#/hooks/use-clock-tick";
 import type { Comment } from "./api";
 import { CommentComposer } from "./comment-composer";
@@ -40,7 +40,6 @@ import { CommentDayDivider } from "./comment-day-divider";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
 import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
-import { MentionProvider } from "./editor/mention-context";
 import { useMilestoneComments } from "./hooks";
 import { MilestoneEventItem } from "./milestone-event";
 

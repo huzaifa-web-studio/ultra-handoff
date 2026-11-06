@@ -18,7 +18,7 @@ import { createPlatePlugin } from "platejs/react";
 import { MentionElement } from "./mention-element";
 
 /** Renders the stored mention chip. Shared by the editor and the static view. */
-export const CommentMentionPlugin = createPlatePlugin({
+export const MentionPlugin = createPlatePlugin({
 	key: "mention",
 	node: {
 		isElement: true,

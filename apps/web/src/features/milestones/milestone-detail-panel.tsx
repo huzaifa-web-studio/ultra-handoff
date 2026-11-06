@@ -37,7 +37,10 @@ import {
 	XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-
+import {
+	MilestoneEditor,
+	MilestoneEditorStatic,
+} from "#/components/rich-text/milestone-editor";
 import { UserAvatar } from "#/components/user-avatar";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
 import { formatRelativeTime } from "#/lib/date";
@@ -52,10 +55,6 @@ import {
 	toOpenCommentTab,
 	writeCommentTabs,
 } from "./comments/tabs-storage";
-import {
-	MilestoneEditor,
-	MilestoneEditorStatic,
-} from "#/components/rich-text/milestone-editor";
 import {
 	useMilestoneDetail,
 	useSetMilestoneAssignees,
@@ -700,6 +699,7 @@ function MilestoneDetailContent({
 											ariaLabel="Milestone details"
 											organizationId={organizationId}
 											organizationSlug={orgSlug}
+											projectId={projectId}
 										/>
 									) : milestone.description.length > 0 ? (
 										<MilestoneEditorStatic

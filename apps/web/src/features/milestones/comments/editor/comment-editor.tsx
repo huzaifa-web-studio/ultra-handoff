@@ -48,6 +48,15 @@ import {
 } from "#/components/rich-text/editor-file-drop";
 import { toEditorValue } from "#/components/rich-text/editor-value";
 import { EditorStaticProvider } from "#/components/rich-text/editor-view-context";
+import { useMentionContext } from "#/components/rich-text/mentions/mention-context";
+import { mentionKey } from "#/components/rich-text/mentions/mention-key";
+import {
+	MENTION_PICKER_ID,
+	type MentionPanelPosition,
+	MentionPicker,
+	type MentionPickerGroup,
+	type MentionPickerItem,
+} from "#/components/rich-text/mentions/mention-picker";
 import { LinkPreviewProvider } from "#/features/link-previews/link-preview-context";
 import { extractLinkUrls } from "#/features/link-previews/utils";
 import { useDebouncedValue } from "#/hooks/use-debounced-value";
@@ -57,15 +66,6 @@ import {
 	commentEditorPlugins,
 	commentStaticEditorPlugins,
 } from "./comment-kit";
-import { useMentionContext } from "./mention-context";
-import { mentionKey } from "./mention-key";
-import {
-	MENTION_PICKER_ID,
-	type MentionPanelPosition,
-	MentionPicker,
-	type MentionPickerGroup,
-	type MentionPickerItem,
-} from "./mention-picker";
 
 /** Run the submit action without letting the browser or Slate also handle it. */
 function handleShortcut(

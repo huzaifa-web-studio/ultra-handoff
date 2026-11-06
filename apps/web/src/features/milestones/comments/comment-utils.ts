@@ -9,8 +9,11 @@
  * Used by: comment-composer.tsx, comment-item.tsx and the focused tabs.
  */
 
+import {
+	mentionPrefix,
+	parseMentionKey,
+} from "#/components/rich-text/mentions/mention-key";
 import type { Comment } from "./api";
-import { mentionPrefix, parseMentionKey } from "./editor/mention-key";
 
 /**
  * The client mirror of the server text limit.

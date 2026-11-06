@@ -94,6 +94,7 @@ import {
 	TableElement,
 	TableRowElement,
 } from "./editor-table";
+import { MentionPlugin } from "./mentions/mention-plugin";
 
 /**
  * Keeps an empty paragraph after a block that ends the document.
@@ -320,6 +321,7 @@ export const richTextEditorPlugins = [
 	// Bookmarks. A void block that renders the cached preview of one URL.
 	// The URL is the only stored value, so the card can never go stale.
 	BookmarkPlugin,
+	MentionPlugin,
 
 	// Drag and drop. The provider must wrap the Slate surface, which is what
 	// `aboveSlate` does. The plugin is edit only, so the static viewer and
@@ -397,6 +399,7 @@ export const richTextStaticEditorPlugins = [
 	// The static attachment keeps the card and the download link, without the
 	// remove control or the block edge handling.
 	FilePlugin.withComponent(FileElementStatic),
+	MentionPlugin,
 ];
 
 /** Milestone descriptions enable block insertion and retain their own editor instance. */

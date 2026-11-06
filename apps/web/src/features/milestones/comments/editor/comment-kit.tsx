@@ -13,11 +13,8 @@
  * the block gutter that hosts the side insert menu. Blocks are inserted from the
  * bottom toolbar instead.
  *
- * Mentions are the one thing added on top of the milestone kit: people in the
- * project, visible projects and their milestones. The mention trigger is handled
- * by the comment editor as ordinary text, so this kit only registers the stored
- * chip node. No Plate combobox input node is mounted, which is what keeps typing
- * inside the editor while the picker is open.
+ * Mentions use the shared rich-text chip node. The comment editor adds its own
+ * picker behavior while preserving independent draft state and persistence.
  *
  * Used by: comments/editor/comment-editor.tsx.
  */
@@ -29,7 +26,6 @@ import {
 	milestoneStaticEditorPlugins,
 } from "#/components/rich-text/editor-kit";
 import { CommentStaticListItemElement } from "../comment-checklist";
-import { CommentMentionPlugin } from "./mention-plugin";
 
 /**
  * Everything the milestone editor has except the drag provider.
@@ -42,12 +38,7 @@ const commentBasePlugins = milestoneEditorPlugins.filter(
 );
 
 /** The plugins passed to `usePlateEditor` while writing. */
-export const commentEditorPlugins = [
-	...commentBasePlugins,
-	// Mentions are a comment feature. The milestone description kit does not
-	// include them, and the sanitizer only accepts them in a comment body.
-	CommentMentionPlugin,
-];
+export const commentEditorPlugins = [...commentBasePlugins];
 
 /**
  * Everything the static milestone renderer has, except the list item renderer.
@@ -63,7 +54,5 @@ const commentStaticBasePlugins = milestoneStaticEditorPlugins.filter(
 /** The plugins passed to the static renderer. */
 export const commentStaticEditorPlugins = [
 	...commentStaticBasePlugins,
-	// The static mention renders the same chip, without any picker machinery.
-	CommentMentionPlugin,
 	ListItemPlugin.withComponent(CommentStaticListItemElement),
 ];

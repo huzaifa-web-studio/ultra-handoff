@@ -18,7 +18,7 @@ import { Button } from "@org/ui/components/button";
 import { ScrollArea } from "@org/ui/components/scroll-area";
 import { RefreshCwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
+import { MentionProvider } from "#/components/rich-text/mentions/mention-context";
 import { useClockTick } from "#/hooks/use-clock-tick";
 import { formatDayHeading } from "#/lib/date";
 import type { Comment } from "./api";
@@ -27,7 +27,6 @@ import { CommentDayDivider } from "./comment-day-divider";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
 import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
-import { MentionProvider } from "./editor/mention-context";
 import { useCommentThread } from "./hooks";
 
 export function CommentThreadTab({
