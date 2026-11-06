@@ -179,8 +179,12 @@ export async function resolvePreview(rawUrl: string): Promise<ResolveOutcome> {
 			: undefined;
 	// Provider lookups are best effort. The hardened OG fetch remains the
 	// universal fallback and is always performed through the same SSRF guard.
+	const [page, resolvedProviderData] = await Promise.all([
+		fetchPage(target.canonical),
+		resolveProviderMetadata(target.canonical),
+	]);
 	const baseProviderData =
-		(await resolveProviderMetadata(target.canonical)) ??
+		resolvedProviderData ??
 		(() => {
 			const provider = identifyProvider(target.url.hostname);
 			const isFigmaCommunityFile =
@@ -194,7 +198,6 @@ export async function resolvePreview(rawUrl: string): Promise<ResolveOutcome> {
 					}
 				: null;
 		})();
-	const page = await fetchPage(target.canonical);
 
 	if (!page.ok && !figmaCommunityIdFor(target.url)) {
 		return {
@@ -249,18 +252,18 @@ export async function resolvePreview(rawUrl: string): Promise<ResolveOutcome> {
 					page.ok ? page.response.finalUrl : target.canonical,
 				);
 
-	let [image, favicon] = await Promise.all([
-		imageUrl ? loadAsset(imageUrl, figmaUserAgent) : Promise.resolve(null),
+	const [resolvedImage, favicon] = await Promise.all([
+		imageUrl
+			? figmaCommunityId && !meta.image
+				? loadFigmaThumbnail(figmaCommunityId)
+				: loadAsset(imageUrl, figmaUserAgent)
+			: Promise.resolve(null),
 		iconUrl ? loadAsset(iconUrl, figmaUserAgent) : Promise.resolve(null),
 	]);
-	if (!image && figmaCommunityId) {
+	let image = resolvedImage;
+	if (!image && figmaCommunityId && meta.image) {
 		image = await loadFigmaThumbnail(figmaCommunityId);
 	}
-	if (baseProviderData?.provider === "Figma")
-		favicon ??= await loadAsset(
-			"https://static.figma.com/app/icon/1/favicon.png",
-			figmaUserAgent,
-		);
 	const slugTitle = target.url.pathname
 		.split("/")
 		.filter(Boolean)

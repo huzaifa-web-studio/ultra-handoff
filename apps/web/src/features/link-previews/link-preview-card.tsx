@@ -26,6 +26,7 @@ import {
 	CopyIcon,
 	ExternalLinkIcon,
 	LinkIcon,
+	LoaderCircleIcon,
 	MessageSquareTextIcon,
 	MinusIcon,
 	PencilIcon,
@@ -42,6 +43,16 @@ import { displayDomain, shortenUrl } from "./utils";
 
 /** How long the "Copied" label stays before it reverts. */
 const COPY_FEEDBACK_MS = 1_500;
+
+/** Small non-blocking progress cue while the background resolver fills the card. */
+function PreviewLoading() {
+	return (
+		<output className="flex items-center gap-1.5 text-xs text-app-text-muted">
+			<LoaderCircleIcon aria-hidden className="size-3 animate-spin" />
+			Loading preview
+		</output>
+	);
+}
 
 /** Provider fields that read best as compact numeric metrics. */
 const PROVIDER_METRIC_ICONS: Record<string, typeof PlusIcon> = {
@@ -414,6 +425,7 @@ export function LinkPreviewCard({
 				<p className="line-clamp-2 font-display text-sm font-bold text-app-text">
 					{title || domain}
 				</p>
+				{!preview ? <PreviewLoading /> : null}
 
 				{description ? (
 					<p className="line-clamp-3 text-xs leading-relaxed text-app-text-muted">
@@ -477,6 +489,7 @@ export function BookmarkPreview({
 				<span className="line-clamp-2 font-display text-sm font-bold text-app-text">
 					{title || domain}
 				</span>
+				{!preview ? <PreviewLoading /> : null}
 
 				{description ? (
 					<span className="line-clamp-3 text-xs leading-relaxed text-app-text-muted">

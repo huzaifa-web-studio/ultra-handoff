@@ -16,10 +16,10 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchLinkPreviews, type LinkPreviewMap } from "./api";
 
 /** How often a missing preview is retried, in milliseconds. */
-const PENDING_POLL_MS = 4_000;
+const PENDING_POLL_MS = 1_200;
 
 /** How many reads happen before the editor accepts that a preview is missing. */
-const MAX_PENDING_POLLS = 4;
+const MAX_PENDING_POLLS = 12;
 
 /** Stable query key, so two editors asking about the same URLs share a request. */
 function previewsKey(orgSlug: string, urls: string[]) {
