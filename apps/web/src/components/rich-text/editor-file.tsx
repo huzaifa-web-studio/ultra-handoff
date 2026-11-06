@@ -80,12 +80,14 @@ function FileChip({
 	size,
 	src,
 	trailing,
+	selected = false,
 }: {
 	name: string;
 	mime: string;
 	size: number | undefined;
 	src: string;
 	trailing?: ReactNode;
+	selected?: boolean;
 }) {
 	const viewer = useFileViewer();
 	const meta = formatFileSize(size) ?? "Attachment";
@@ -93,7 +95,11 @@ function FileChip({
 	return (
 		<span
 			contentEditable={false}
-			className="group/file inline-flex max-w-64 items-center border border-app-border bg-app-panel-subtle align-middle text-xs"
+			className={cn(
+				"group/file inline-flex max-w-64 items-center border border-app-border bg-app-panel-subtle align-middle text-xs transition-colors hover:border-app-focus hover:bg-app-panel",
+				selected &&
+					"border-app-focus bg-app-panel ring-2 ring-app-focus ring-offset-1 ring-offset-app-panel",
+			)}
 		>
 			<button
 				type="button"
@@ -176,6 +182,7 @@ export function FileElement(props: PlateElementProps) {
 						<XIcon aria-hidden />
 					</Button>
 				}
+				selected={selected}
 			/>
 
 			{/* Plate requires the child to exist even for a void inline node. */}

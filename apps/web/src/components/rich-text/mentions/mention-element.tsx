@@ -18,7 +18,11 @@
 import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
 import { FlagIcon, FolderIcon, UserIcon } from "lucide-react";
-import { PlateElement, type PlateElementProps } from "platejs/react";
+import {
+	PlateElement,
+	type PlateElementProps,
+	useSelected,
+} from "platejs/react";
 
 import { useEditorStatic } from "#/components/rich-text/editor-view-context";
 import { useMentionContext } from "./mention-context";
@@ -43,13 +47,14 @@ function MentionIcon({ type }: { type: MentionType }) {
 
 /** The shared chip presentation. */
 const chipClass =
-	"mx-0.5 inline-flex items-center gap-1 border border-app-border-strong bg-app-panel-subtle px-1 py-0 align-baseline text-[0.8125rem] font-medium text-app-text";
+	"mx-0.5 inline-flex items-center gap-1 border border-app-border-strong bg-app-panel-subtle px-1 py-0 align-baseline text-[0.8125rem] font-medium text-app-text transition-colors hover:border-app-focus hover:bg-app-panel";
 
 export function MentionElement(props: PlateElementProps) {
 	const mention = props.element as unknown as MentionNode;
 	const target = parseMentionKey(mention.key);
 	const staticRender = useEditorStatic();
 	const context = useMentionContext();
+	const selected = useSelected();
 
 	// A malformed node should never reach the renderer, but a plain span is a
 	// safer fallback than crashing a whole discussion.
@@ -69,7 +74,13 @@ export function MentionElement(props: PlateElementProps) {
 				...props.attributes,
 				contentEditable: false,
 			}}
-			className={cn(chipClass, linkable && "cursor-pointer", props.className)}
+			className={cn(
+				chipClass,
+				linkable && "cursor-pointer",
+				selected &&
+					"border-app-focus bg-app-panel ring-2 ring-app-focus ring-offset-1 ring-offset-app-panel",
+				props.className,
+			)}
 		>
 			<MentionIcon type={target.type} />
 			<span>
