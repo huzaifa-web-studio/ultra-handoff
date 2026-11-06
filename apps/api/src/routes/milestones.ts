@@ -23,12 +23,23 @@ import {
 } from "../auth/milestone-permissions";
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import { tenantPlugin } from "../middleware/tenant";
+import { publishRealtimeEvent } from "../realtime";
+import {
+	type CommentRealtimePayload,
+	type MilestoneChangedField,
+	type MilestoneCreatedPayload,
+	type MilestoneDeletedPayload,
+	type MilestoneUpdatedPayload,
+	toRealtimeMilestone,
+} from "../realtime/events";
 import {
 	createMilestone,
 	deleteMilestone,
 	getMilestone,
 	listMilestones,
 	type MilestoneListQuery,
+	type MilestoneSummary,
+	type MilestoneTimelineComment,
 	setMilestoneAssignees,
 	updateMilestone,
 } from "../services/milestone.service";
@@ -134,6 +145,67 @@ function parseMilestoneQuery(query: {
 	};
 }
 
+/**
+ * Publish a milestone change.
+ *
+ * Why the routes and not the service: each helper needs the project id from the
+ * URL, and a realtime failure must never turn a successful save into an error.
+ * `publishRealtimeEvent` never rejects, so these are fire and forget.
+ */
+function publishMilestoneCreated(
+	projectId: string,
+	milestone: MilestoneSummary,
+): void {
+	const payload: MilestoneCreatedPayload = {
+		milestone: toRealtimeMilestone(milestone),
+	};
+
+	void publishRealtimeEvent(projectId, "milestone.created", payload).catch(
+		() => undefined,
+	);
+}
+
+function publishMilestoneUpdated(
+	projectId: string,
+	milestone: MilestoneSummary,
+	changed: MilestoneChangedField[],
+	timeline: MilestoneTimelineComment[],
+): void {
+	const payload: MilestoneUpdatedPayload = {
+		milestone: toRealtimeMilestone(milestone),
+		changed,
+	};
+
+	void publishRealtimeEvent(projectId, "milestone.updated", payload).catch(
+		() => undefined,
+	);
+
+	// Activity rows ride the comment channel, so the discussion shows the status
+	// and date changes without a refetch. An event is not a message, so the
+	// visible comment count is left alone.
+	for (const comment of timeline) {
+		const commentPayload: CommentRealtimePayload = {
+			milestoneId: milestone.id,
+			comment,
+			total: null,
+		};
+
+		void publishRealtimeEvent(
+			projectId,
+			"comment.created",
+			commentPayload,
+		).catch(() => undefined);
+	}
+}
+
+function publishMilestoneDeleted(projectId: string, milestoneId: string): void {
+	const payload: MilestoneDeletedPayload = { milestoneId };
+
+	void publishRealtimeEvent(projectId, "milestone.deleted", payload).catch(
+		() => undefined,
+	);
+}
+
 export const milestoneRoutes = new Elysia({ name: "milestones" })
 	.use(tenantPlugin)
 	/** The list, its counts and the caller's capabilities. */
@@ -159,7 +231,11 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 		"/orgs/:orgSlug/projects/:projectId/milestones",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await createMilestone(tenant, params.projectId, body);
+				const result = await createMilestone(tenant, params.projectId, body);
+
+				publishMilestoneCreated(params.projectId, result.milestone);
+
+				return result;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not create the milestone."),
@@ -204,12 +280,24 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await updateMilestone(
+				const result = await updateMilestone(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 					body,
 				);
+				// `changed` and `timeline` are transport metadata. The HTTP
+				// response stays the detail the editor already expects.
+				const { changed, timeline, ...detail } = result;
+
+				publishMilestoneUpdated(
+					params.projectId,
+					detail.milestone,
+					changed,
+					timeline,
+				);
+
+				return detail;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not save the milestone."),
@@ -242,12 +330,21 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/assignees",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await setMilestoneAssignees(
+				const result = await setMilestoneAssignees(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 					body.userIds,
 				);
+
+				publishMilestoneUpdated(
+					params.projectId,
+					result.milestone,
+					["assignees"],
+					[],
+				);
+
+				return result;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not update the assignees."),
@@ -269,11 +366,15 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId",
 		async ({ tenant, status, params }) => {
 			try {
-				return await deleteMilestone(
+				const result = await deleteMilestone(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 				);
+
+				publishMilestoneDeleted(params.projectId, params.milestoneId);
+
+				return result;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not delete the milestone."),

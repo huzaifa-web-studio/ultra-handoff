@@ -9,7 +9,8 @@
 import { describe, expect, it } from "bun:test";
 
 import type { CommentRow } from "../services/comment.service";
-import { toRealtimeComment } from "./events";
+import type { MilestoneSummary } from "../services/milestone.service";
+import { toRealtimeComment, toRealtimeMilestone } from "./events";
 
 function makeRow(overrides: Partial<CommentRow> = {}): CommentRow {
 	return {
@@ -54,5 +55,53 @@ describe("toRealtimeComment", () => {
 		expect(result.updatedAt).toBe(row.updatedAt);
 		expect(result.editedAt).toBe(row.editedAt);
 		expect(result.deletedAt).toBe(row.deletedAt);
+	});
+});
+
+/** One summary, matching the columns the list renders. */
+function makeSummary(
+	overrides: Partial<MilestoneSummary> = {},
+): MilestoneSummary {
+	return {
+		id: "milestone-1",
+		projectId: "project-1",
+		title: "Design",
+		excerpt: "A first pass",
+		status: "todo",
+		startDate: null,
+		dueDate: "2026-01-10",
+		estimateMinutes: 60,
+		assignees: [],
+		completedAt: null,
+		createdBy: "user-1",
+		createdByName: "Ayesha",
+		updatedBy: "user-1",
+		updatedByName: "Ayesha",
+		createdAt: "2026-01-01T00:00:00.000Z",
+		updatedAt: "2026-01-01T00:00:00.000Z",
+		...overrides,
+	};
+}
+
+describe("toRealtimeMilestone", () => {
+	it("drops the rich text body a detail carries", () => {
+		// A create returns a detail. Typed as a summary, it would still ship the
+		// body at runtime, which is what this mapper exists to prevent.
+		const detail = {
+			...makeSummary(),
+			description: [{ type: "p", children: [{ text: "hidden" }] }],
+		};
+
+		const result = toRealtimeMilestone(detail);
+
+		expect("description" in result).toBe(false);
+		expect(result.id).toBe(detail.id);
+	});
+
+	it("keeps every field the list and detail merge need", () => {
+		const summary = makeSummary({ title: "Build" });
+		const result = toRealtimeMilestone(summary);
+
+		expect(result).toEqual(summary);
 	});
 });

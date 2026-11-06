@@ -152,6 +152,9 @@ export function CommentTab({
 		const payload = readCommentPayload(event);
 
 		if (!payload || payload.milestoneId !== milestoneId) return;
+		// Activity rows are not messages, so they never justify the pill or a
+		// page scroll.
+		if (payload.comment.kind !== "comment") return;
 		if (payload.comment.parentId) return;
 		if (payload.comment.author?.id === viewerId) return;
 

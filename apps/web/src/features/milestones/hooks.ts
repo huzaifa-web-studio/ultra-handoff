@@ -17,7 +17,6 @@
  */
 
 import {
-	type InfiniteData,
 	keepPreviousData,
 	type QueryClient,
 	useInfiniteQuery,
@@ -36,10 +35,14 @@ import {
 	type MilestoneDetailResponse,
 	type MilestonePatch,
 	type MilestoneSummary,
-	type MilestonesResponse,
 	setMilestoneAssignees,
 	updateMilestone,
 } from "./api";
+import {
+	type MilestonePages,
+	patchMilestoneRow,
+	removeMilestoneRow,
+} from "./cache";
 import { type MilestoneFilters, normalizeDay } from "./schema";
 
 /** Prefix shared by every milestone query in one project. */
@@ -151,22 +154,77 @@ function syncMilestone(
 
 	const summary: MilestoneSummary = { ...normalized };
 
-	queryClient.setQueriesData<InfiniteData<MilestonesResponse, number>>(
+	queryClient.setQueriesData<MilestonePages>(
 		{ queryKey: [...milestonesKey(orgSlug, projectId), "list"] },
-		(data) => {
-			if (!data) return data;
-
-			return {
-				...data,
-				pages: data.pages.map((page) => ({
-					...page,
-					milestones: page.milestones.map((row) =>
-						row.id === milestoneId ? summary : row,
-					),
-				})),
-			};
-		},
+		(data) => (data ? patchMilestoneRow(data, summary) : data),
 	);
+}
+
+/** One realtime milestone change, as the client applies it. */
+export type MilestoneRealtimeEvent =
+	| { kind: "created"; milestone: MilestoneSummary }
+	| { kind: "updated"; milestone: MilestoneSummary; changed: readonly string[] }
+	| { kind: "deleted"; milestoneId: string };
+
+/**
+ * Apply one realtime milestone change.
+ *
+ * Why the list is refetched only on a status change: status decides filter
+ * membership and the counts. A title, date, estimate or assignee edit is a row
+ * patch, and refetching the page for every one of those would make the list
+ * flicker while somebody types.
+ */
+export function applyMilestoneEvent(
+	queryClient: QueryClient,
+	orgSlug: string,
+	projectId: string,
+	event: MilestoneRealtimeEvent,
+): void {
+	const listQuery = {
+		queryKey: [...milestonesKey(orgSlug, projectId), "list"],
+	};
+
+	if (event.kind === "created") {
+		void queryClient.invalidateQueries(listQuery);
+		return;
+	}
+
+	if (event.kind === "deleted") {
+		queryClient.setQueriesData<MilestonePages>(listQuery, (data) =>
+			data ? removeMilestoneRow(data, event.milestoneId) : data,
+		);
+
+		queryClient.removeQueries({
+			queryKey: detailKey(orgSlug, projectId, event.milestoneId),
+		});
+
+		void queryClient.invalidateQueries(listQuery);
+		return;
+	}
+
+	const summary: MilestoneSummary = {
+		...event.milestone,
+		startDate: normalizeDay(event.milestone.startDate),
+		dueDate: normalizeDay(event.milestone.dueDate),
+	};
+
+	queryClient.setQueriesData<MilestonePages>(listQuery, (data) =>
+		data ? patchMilestoneRow(data, summary) : data,
+	);
+
+	// The broadcast carries the summary, not the body, so merging keeps the
+	// description the detail cache already holds.
+	queryClient.setQueryData<MilestoneDetailResponse>(
+		detailKey(orgSlug, projectId, summary.id),
+		(current) =>
+			current
+				? { ...current, milestone: { ...current.milestone, ...summary } }
+				: current,
+	);
+
+	if (event.changed.includes("status")) {
+		void queryClient.invalidateQueries(listQuery);
+	}
 }
 
 /** Invalidate every milestone query in one project. */

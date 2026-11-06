@@ -40,6 +40,7 @@ import {
 	type MilestoneTabKey,
 } from "./milestone-detail-panel";
 import { MilestoneListPanel } from "./milestone-list-panel";
+import { useRealtimeMilestones } from "./realtime";
 import {
 	MILESTONE_PAGE_SIZE,
 	type MilestoneFilters,
@@ -97,6 +98,18 @@ export function MilestonePage({
 	};
 
 	const query = useMilestones(orgSlug, projectId, filters);
+
+	/*
+	 * One subscription for the list and the open detail. A milestone deleted in
+	 * another tab closes the pane instead of leaving a dead selection behind.
+	 */
+	useRealtimeMilestones({
+		orgSlug,
+		projectId,
+		onDeleted: (milestoneId) => {
+			if (milestoneId === selectedId) onSelect(null);
+		},
+	});
 
 	const pages = query.data?.pages ?? [];
 	const milestones = pages.flatMap((page) => page.milestones);

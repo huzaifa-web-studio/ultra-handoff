@@ -105,6 +105,10 @@ export type App = Awaited<ReturnType<typeof buildApp>>;
  */
 export type {
 	CommentRealtimePayload,
+	MilestoneChangedField,
+	MilestoneCreatedPayload,
+	MilestoneDeletedPayload,
+	MilestoneUpdatedPayload,
 	RealtimeComment,
 } from "./realtime/events";
 /**

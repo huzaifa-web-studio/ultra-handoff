@@ -48,6 +48,7 @@ import { type TenantTx, withTenant } from "../db/tenant";
 import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
+import type { MilestoneChangedField } from "../realtime/events";
 import { queueDocumentPreviews } from "./link-preview.service";
 import { assertCommentMentions } from "./mention.service";
 import { listOrganizationOwners } from "./organization.service";
@@ -150,6 +151,36 @@ export type MilestoneDetailResult = {
 	viewer: MilestoneViewer;
 };
 
+/** One timeline row written by a milestone update, in broadcast shape. */
+export type MilestoneTimelineComment = {
+	id: string;
+	parentId: null;
+	kind: "event";
+	event: {
+		type: MilestoneEventDraft["type"];
+		from: string | null;
+		to: string | null;
+	};
+	body: unknown[];
+	author: { id: string; name: string; image: string | null };
+	createdAt: string;
+	updatedAt: string;
+	editedAt: null;
+	deletedAt: null;
+};
+
+/**
+ * The update result plus what the route needs to broadcast.
+ *
+ * `changed` lets the client decide between patching a row and refetching the
+ * list. `timeline` carries the activity rows the update wrote, so the
+ * discussion shows them without a refetch.
+ */
+export type MilestoneUpdateResult = MilestoneDetailResult & {
+	changed: MilestoneChangedField[];
+	timeline: MilestoneTimelineComment[];
+};
+
 /** Normalised list filters, parsed and clamped by the route. */
 export type MilestoneListQuery = {
 	search: string;
@@ -185,6 +216,9 @@ export type UpdateMilestoneInput = {
 /** A database row, before it is mapped to the wire shape. */
 export type MilestoneRecord = typeof milestone.$inferSelect;
 
+/** A database row from the comment table, used for the activity timeline. */
+type CommentRecord = typeof comment.$inferSelect;
+
 /**
  * Read a `date` column as the ISO day the client expects.
  *
@@ -215,29 +249,88 @@ type MilestoneEventDraft = {
  * timeline, with no merge step and no second cursor. Events are excluded from
  * the comment count and are never editable, so they cannot be confused with a
  * message.
+ *
+ * Returns the inserted rows so the caller can broadcast them. `returning` is
+ * what gives the broadcast the same ids and timestamps the database stored.
  */
 async function recordMilestoneEvents(
 	tx: TenantTx,
 	tenant: TenantContext,
 	milestoneId: string,
 	events: MilestoneEventDraft[],
-): Promise<void> {
-	if (events.length === 0) return;
+): Promise<CommentRecord[]> {
+	if (events.length === 0) return [];
 
-	await tx.insert(comment).values(
-		events.map((event) => ({
-			id: randomUUID(),
-			organizationId: tenant.organizationId,
-			milestoneId,
-			authorId: tenant.userId,
-			kind: "event" as const,
-			eventType: event.type,
-			eventFrom: event.from,
-			eventTo: event.to,
-			body: [],
-			bodyText: "",
-		})),
-	);
+	return tx
+		.insert(comment)
+		.values(
+			events.map((event) => ({
+				id: randomUUID(),
+				organizationId: tenant.organizationId,
+				milestoneId,
+				authorId: tenant.userId,
+				kind: "event" as const,
+				eventType: event.type,
+				eventFrom: event.from,
+				eventTo: event.to,
+				body: [],
+				bodyText: "",
+			})),
+		)
+		.returning();
+}
+
+/** True for the three event kinds the milestone timeline writes. */
+function isMilestoneEventType(
+	value: string | null,
+): value is MilestoneEventDraft["type"] {
+	return value === "status" || value === "start_date" || value === "due_date";
+}
+
+/**
+ * Map inserted activity rows into the broadcast shape.
+ *
+ * A caller's own name is looked up once, not per row, because one update can
+ * write two rows (a start date and a due date moved together).
+ */
+async function toMilestoneTimeline(
+	rows: CommentRecord[],
+	tenant: TenantContext,
+): Promise<MilestoneTimelineComment[]> {
+	if (rows.length === 0) return [];
+
+	const people = await loadUserMap([tenant.userId]);
+	const person = people.get(tenant.userId);
+	const author = {
+		id: tenant.userId,
+		name: person?.name || person?.email || "Someone",
+		image: person?.image ?? null,
+	};
+
+	return rows.flatMap((row) => {
+		// A row without an event type is not something this helper wrote, so it
+		// cannot be rendered by the timeline. Skipping is safer than guessing.
+		if (!isMilestoneEventType(row.eventType)) return [];
+
+		return [
+			{
+				id: row.id,
+				parentId: null,
+				kind: "event" as const,
+				event: {
+					type: row.eventType,
+					from: row.eventFrom,
+					to: row.eventTo,
+				},
+				body: [],
+				author,
+				createdAt: row.createdAt.toISOString(),
+				updatedAt: row.updatedAt.toISOString(),
+				editedAt: null,
+				deletedAt: null,
+			},
+		];
+	});
 }
 
 /** Build the viewer capabilities from the project access the caller has. */
@@ -892,8 +985,8 @@ export async function updateMilestone(
 	projectId: string,
 	milestoneId: string,
 	input: UpdateMilestoneInput,
-): Promise<MilestoneDetailResult> {
-	const result = await withTenant(
+): Promise<MilestoneUpdateResult> {
+	const write = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
@@ -910,9 +1003,13 @@ export async function updateMilestone(
 				updatedBy: tenant.userId,
 			};
 			const events: MilestoneEventDraft[] = [];
+			const changed: MilestoneChangedField[] = [];
 
 			if (input.title !== undefined) {
-				patch.title = validateMilestoneTitle(input.title);
+				const title = validateMilestoneTitle(input.title);
+				patch.title = title;
+
+				if (title !== record.title) changed.push("title");
 			}
 
 			if (input.status !== undefined) {
@@ -921,6 +1018,7 @@ export async function updateMilestone(
 
 				if (status !== record.status) {
 					events.push({ type: "status", from: record.status, to: status });
+					changed.push("status");
 				}
 
 				// `completed_at` is derived state. Keep it in sync here so no
@@ -937,6 +1035,9 @@ export async function updateMilestone(
 				await assertCommentMentions(tx, tenant, projectId, description.value);
 				patch.description = description.value;
 				patch.descriptionText = description.text;
+				// The body is not broadcast, but listing the field lets a future
+				// client tell a body save from a title save.
+				changed.push("description");
 			}
 
 			// The range check needs both sides, so a one sided patch is compared
@@ -961,6 +1062,7 @@ export async function updateMilestone(
 						from: previousStart,
 						to: nextStart,
 					});
+					changed.push("startDate");
 				}
 			}
 
@@ -969,15 +1071,19 @@ export async function updateMilestone(
 
 				if (nextDue !== previousDue) {
 					events.push({ type: "due_date", from: previousDue, to: nextDue });
+					changed.push("dueDate");
 				}
 			}
 
 			validateMilestoneDateRange(nextStart, nextDue);
 
 			if (input.estimateMinutes !== undefined) {
-				patch.estimateMinutes = validateMilestoneEstimate(
-					input.estimateMinutes,
-				);
+				const estimate = validateMilestoneEstimate(input.estimateMinutes);
+				patch.estimateMinutes = estimate;
+
+				if (estimate !== record.estimateMinutes) {
+					changed.push("estimateMinutes");
+				}
 			}
 
 			await tx
@@ -991,7 +1097,12 @@ export async function updateMilestone(
 					),
 				);
 
-			await recordMilestoneEvents(tx, tenant, milestoneId, events);
+			const eventRows = await recordMilestoneEvents(
+				tx,
+				tenant,
+				milestoneId,
+				events,
+			);
 
 			if (input.assigneeUserIds !== undefined) {
 				const memberIds = await resolveAssigneeMemberIds(
@@ -1002,27 +1113,39 @@ export async function updateMilestone(
 				);
 
 				await replaceAssignees(tx, tenant, milestoneId, memberIds);
+				changed.push("assignees");
 			}
 
-			return loadDetail(
+			const detail = await loadDetail(
 				tx,
 				tenant,
 				projectId,
 				milestoneId,
 				toViewer(tenant, access),
 			);
+
+			return { detail, changed, eventRows };
 		},
 	);
+
+	// The activity rows are mapped after the commit, so the extra user lookup
+	// never extends the transaction.
+	const timeline = await toMilestoneTimeline(write.eventRows, tenant);
 
 	// Only a body change can introduce a new link. Every other patch skips the
 	// queue entirely, which keeps status and date edits free.
 	if (input.description !== undefined) {
-		void queueDocumentPreviews(tenant, result.milestone.description).catch(
-			() => undefined,
-		);
+		void queueDocumentPreviews(
+			tenant,
+			write.detail.milestone.description,
+		).catch(() => undefined);
 	}
 
-	return result;
+	return {
+		...write.detail,
+		changed: write.changed,
+		timeline,
+	};
 }
 
 /**
