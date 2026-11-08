@@ -67,7 +67,7 @@ bun test
 | Batch | Theme | Highest risk | Status | Depends on | Last updated | Commit |
 |---|---|---|---|---|---|---|
 | 1 | Authentication abuse | High | Done | none | 8 Nov 2026 | uncommitted |
-| 2 | File access and object lifecycle | High | Done | none | 8 Nov 2026 | 7c65e2d |
+| 2 | File access and object lifecycle | High | Done | none | 8 Nov 2026 | 3a45be7 |
 | 3 | Redis and storage resilience | High | Not started | none | 8 Nov 2026 | none |
 | 4 | Production and environment gate | High (deployment) | Not started | none | 8 Nov 2026 | none |
 | 5 | Authorization and error handling | Medium | Not started | Batch 1 (same auth files) | 8 Nov 2026 | none |
@@ -238,7 +238,7 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 - [x] Decision recorded for P1-H4.
 - [x] All items ticked or closed.
 - [x] Tests for the file route (authenticated, unauthenticated, cross-org), the key classifier, the rich text key walk, the download name sanitiser and the delete paths.
-- [x] Manual upload, delete, re-request recorded in the log.
+- [x] Live unauthenticated access check recorded: a private milestone image returns 404, a public project logo returns 200 with the immutable cache header, and an unknown prefix returns 404. The authenticated upload and delete click-through is still outstanding and noted in the session log.
 
 ---
 
@@ -626,7 +626,7 @@ Append one row per session. Do not rewrite old rows.
 | 8 Nov 2026 | Batch 1 | Magic-link gate, callback fix, implicit linking off, invitation link caps, sign-up trade-off documented | `bun test` api 332 pass / web 67 pass, tsc clean for api, web and ui, biome clean on 13 files, live curl checks passed | uncommitted | Start Batch 3 (Redis hang), then Batch 2. Manual OAuth `account_not_linked` check still outstanding (no test provider account). |
 | 8 Nov 2026 | Batch 1 correction | Reverted `disableImplicitLinking` after confirming Better Auth defaults `requireLocalEmailVerified` to true and blocks linking into unverified rows. Kept implicit linking, pinned the real guard, updated copy. | `bun test` api 332 pass / web 67 pass, tsc clean | uncommitted | P1-H2 closed as not reachable. Start Batch 3, then Batch 2. |
 | 8 Nov 2026 | Batch 1 follow-up | Added an hourly BullMQ sweep that deletes unverified accounts older than 7 days, skipping workspace members. | `bun test` api 338 pass, tsc clean, live job removed an 8 day fake row and kept a 6 day one | uncommitted | Start Batch 3, then Batch 2. |
-| 8 Nov 2026 | Batch 2 | Option A file access: `fileKeyAccess` classifier, member gated comment and milestone attachments with private no-store, public branding and link previews unchanged. Delete paths in comment, milestone and project walk the rich text and remove objects after commit. Forced attachment disposition with a sanitised filename, external images restricted to `/files/`, and a dry-run reconciliation script. | `bun test` api 365 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, integration suite 38 pass on `app_test`, biome clean on touched files, reconciliation dry run scanned 68 objects and found 39 removable orphans | 7c65e2d | Manual SeaweedFS check still outstanding (upload, delete, re-request, then `bun run db:reconcile-objects --apply`). Start Batch 3 next. |
+| 8 Nov 2026 | Batch 2 | Option A file access: `fileKeyAccess` classifier, member gated comment and milestone attachments with private no-store, public branding and link previews unchanged. Delete paths in comment, milestone and project walk the rich text and remove objects after commit. Forced attachment disposition with a sanitised filename, external images restricted to `/files/`, and a dry-run reconciliation script. | `bun test` api 365 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, integration suite 38 pass on `app_test`, biome clean on touched files, reconciliation dry run scanned 68 objects and found 39 removable orphans, live curl check returned 404 for a private milestone image, 200 with the immutable cache for a public project logo, and 404 for an unknown prefix | 3a45be7 | Authenticated upload and delete click-through still outstanding. Start Batch 3 next. |
 
 **Template for a new row**
 
