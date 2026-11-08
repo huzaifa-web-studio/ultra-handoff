@@ -8,6 +8,7 @@
 **Driver:** Chrome DevTools MCP with one isolated browser context per persona, plus direct HTTP for the security negatives.
 
 **Context:** the app is not hosted yet; this phase ran entirely against the local dev stack. Items about production defaults are pre-deployment risks, not current incidents. Bull Board and OpenAPI are dev-only and are not mounted when `NODE_ENV=production`, which both the production compose file and the API Dockerfile set.
+**Fix tracking:** `qa/FIX-PLAN.md` (batch status, session log).
 
 ---
 

@@ -5,6 +5,7 @@
 **Date:** 8 Nov 2026
 **Mode:** Testing only. No application code was changed. New files are test files and this report.
 **Database:** throwaway `app_test` on the existing Postgres container. The dev database was not touched.
+**Fix tracking:** `qa/FIX-PLAN.md` (batch status, session log).
 
 ---
 

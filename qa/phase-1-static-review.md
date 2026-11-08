@@ -6,6 +6,7 @@
 **Mode:** Read only. No application code was changed. This document is the only file created.
 **Scope:** `apps/api` (19,459 LOC), `apps/web` (38,914 LOC), `packages/ui`, Docker and environment configuration, migrations, dependency tree.
 **Deployment context:** the app is not hosted yet. Production findings are pre-deployment risks, not current incidents.
+**Fix tracking:** `qa/FIX-PLAN.md` (batch status, session log).
 
 ---
 
