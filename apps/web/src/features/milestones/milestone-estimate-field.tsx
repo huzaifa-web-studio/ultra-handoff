@@ -11,7 +11,7 @@
  * Used by: milestone-detail-panel.tsx.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { MilestoneEstimateInput } from "./milestone-estimate-input";
 import {
@@ -31,6 +31,17 @@ export function MilestoneEstimateField({
 }) {
 	const [draft, setDraft] = useState(() => estimateInputValue(minutes));
 	const [error, setError] = useState<string | null>(null);
+	// A remote change must not overwrite a value the user is still typing.
+	const focused = useRef(false);
+
+	// The prop only moves after a save or a broadcast, so this keeps a remote
+	// estimate visible without touching keystrokes already in the field.
+	useEffect(() => {
+		if (focused.current) return;
+
+		setDraft(estimateInputValue(minutes));
+		setError(null);
+	}, [minutes]);
 
 	if (readOnly) {
 		return (
@@ -65,7 +76,13 @@ export function MilestoneEstimateField({
 					setDraft(next);
 					setError(null);
 				}}
-				onBlur={commit}
+				onFocus={() => {
+					focused.current = true;
+				}}
+				onBlur={() => {
+					focused.current = false;
+					commit();
+				}}
 				invalid={error !== null}
 			/>
 

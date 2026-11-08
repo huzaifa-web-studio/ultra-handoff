@@ -45,6 +45,12 @@ import {
 	projectMember,
 } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
+import {
+	buildAssigneeEvents,
+	buildEstimateEvent,
+	isMilestoneEventType,
+	type MilestoneEventDraft,
+} from "../lib/milestone-events";
 import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
@@ -233,13 +239,6 @@ function toIsoDay(value: string | Date | null): string | null {
 	return value;
 }
 
-/** One field change that belongs in the milestone timeline. */
-type MilestoneEventDraft = {
-	type: "status" | "start_date" | "due_date";
-	from: string | null;
-	to: string | null;
-};
-
 /**
  * Write activity rows into the comment timeline.
  *
@@ -278,13 +277,6 @@ async function recordMilestoneEvents(
 			})),
 		)
 		.returning();
-}
-
-/** True for the three event kinds the milestone timeline writes. */
-function isMilestoneEventType(
-	value: string | null,
-): value is MilestoneEventDraft["type"] {
-	return value === "status" || value === "start_date" || value === "due_date";
 }
 
 /**
@@ -1081,7 +1073,13 @@ export async function updateMilestone(
 				const estimate = validateMilestoneEstimate(input.estimateMinutes);
 				patch.estimateMinutes = estimate;
 
-				if (estimate !== record.estimateMinutes) {
+				const estimateEvent = buildEstimateEvent(
+					record.estimateMinutes,
+					estimate,
+				);
+
+				if (estimateEvent) {
+					events.push(estimateEvent);
 					changed.push("estimateMinutes");
 				}
 			}
@@ -1097,14 +1095,13 @@ export async function updateMilestone(
 					),
 				);
 
-			const eventRows = await recordMilestoneEvents(
-				tx,
-				tenant,
-				milestoneId,
-				events,
-			);
-
+			// Assignees are replaced as a set, so the timeline is derived from
+			// the two snapshots rather than from the request. That also catches
+			// the case where the same set is sent again: no rows, no change.
 			if (input.assigneeUserIds !== undefined) {
+				const previous =
+					(await loadAssignees(tx, tenant, [milestoneId])).get(milestoneId) ??
+					[];
 				const memberIds = await resolveAssigneeMemberIds(
 					tx,
 					tenant,
@@ -1113,8 +1110,26 @@ export async function updateMilestone(
 				);
 
 				await replaceAssignees(tx, tenant, milestoneId, memberIds);
-				changed.push("assignees");
+
+				const next =
+					(await loadAssignees(tx, tenant, [milestoneId])).get(milestoneId) ??
+					[];
+				const assigneeEvents = buildAssigneeEvents(previous, next);
+
+				if (assigneeEvents.length > 0) {
+					events.push(...assigneeEvents);
+					changed.push("assignees");
+				}
 			}
+
+			// Recorded last so an assignee change made in the same PATCH is part
+			// of the same insert and the same broadcast.
+			const eventRows = await recordMilestoneEvents(
+				tx,
+				tenant,
+				milestoneId,
+				events,
+			);
 
 			const detail = await loadDetail(
 				tx,
@@ -1154,14 +1169,17 @@ export async function updateMilestone(
  * Why its own endpoint: the picker sends the full selection, and keeping it
  * separate from the field patch means a lost assignee update can never
  * overwrite a body someone is typing.
+ *
+ * The timeline is built from the sets before and after the write, so it records
+ * who was actually added or removed rather than trusting the request.
  */
 export async function setMilestoneAssignees(
 	tenant: TenantContext,
 	projectId: string,
 	milestoneId: string,
 	userIds: string[],
-): Promise<MilestoneDetailResult> {
-	return withTenant(
+): Promise<MilestoneUpdateResult> {
+	const write = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
@@ -1169,6 +1187,8 @@ export async function setMilestoneAssignees(
 
 			await requireMilestoneRecord(tx, tenant, projectId, milestoneId);
 
+			const previous =
+				(await loadAssignees(tx, tenant, [milestoneId])).get(milestoneId) ?? [];
 			const memberIds = await resolveAssigneeMemberIds(
 				tx,
 				tenant,
@@ -1178,15 +1198,39 @@ export async function setMilestoneAssignees(
 
 			await replaceAssignees(tx, tenant, milestoneId, memberIds);
 
-			return loadDetail(
+			const next =
+				(await loadAssignees(tx, tenant, [milestoneId])).get(milestoneId) ?? [];
+			const events = buildAssigneeEvents(previous, next);
+			const eventRows = await recordMilestoneEvents(
+				tx,
+				tenant,
+				milestoneId,
+				events,
+			);
+
+			const detail = await loadDetail(
 				tx,
 				tenant,
 				projectId,
 				milestoneId,
 				toViewer(tenant, access),
 			);
+			const changed: MilestoneChangedField[] =
+				events.length > 0 ? ["assignees"] : [];
+
+			return { detail, changed, eventRows };
 		},
 	);
+
+	// The rows are mapped after the commit, so the extra user lookup never
+	// extends the transaction.
+	const timeline = await toMilestoneTimeline(write.eventRows, tenant);
+
+	return {
+		...write.detail,
+		changed: write.changed,
+		timeline,
+	};
 }
 
 /**

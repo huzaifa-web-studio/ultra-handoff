@@ -42,6 +42,7 @@ import {
 	MilestoneEditorStatic,
 } from "#/components/rich-text/milestone-editor";
 import { UserAvatar } from "#/components/user-avatar";
+import { useRealtimeEvent } from "#/features/realtime/provider";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
 import { formatRelativeTime } from "#/lib/date";
 import type { MilestoneDetail, MilestoneViewer } from "./api";
@@ -70,6 +71,7 @@ import { MilestoneDeleteDialog } from "./milestone-delete-dialog";
 import { MilestoneEstimateField } from "./milestone-estimate-field";
 import { MilestoneStatusBadge } from "./milestone-status-badge";
 import { MilestoneStatusSelect } from "./milestone-status-select";
+import { readMilestonePayload } from "./realtime";
 import {
 	MILESTONE_TITLE_MAX,
 	type MilestoneStatus,
@@ -288,24 +290,71 @@ function MilestoneDetailContent({
 	}, [commentTabsKey, openCommentTabs]);
 
 	const retryRef = useRef<(() => Promise<unknown>) | null>(null);
-	const lastSeenVersion = useRef(milestone.updatedAt);
 	const lastSavedTitle = useRef(milestone.title);
 	const lastSavedBody = useRef(JSON.stringify(milestone.description));
+	// The body the panel has already shown, so a refetch that brings somebody
+	// else's text can raise the reload banner.
+	const lastSeenDescription = useRef(JSON.stringify(milestone.description));
+	// A remote title must not overwrite what the user is typing right now.
+	const titleFocused = useRef(false);
 
 	const canWrite = viewer.canWrite;
 
-	// Detect a change made by somebody else. The author of the latest write is
-	// the only reliable signal, because a refetch and our own save both bump
-	// `updatedAt`.
-	useEffect(() => {
-		if (milestone.updatedAt === lastSeenVersion.current) return;
+	/*
+	 * Only the rich text body is missing from the broadcast. Every other field
+	 * is patched into the detail cache, so a remote change to one of those needs
+	 * no reload prompt. This listener therefore watches the `changed` list, not
+	 * `updatedAt`, which moves for any write.
+	 */
+	useRealtimeEvent((event) => {
+		const payload = readMilestonePayload(event);
 
-		lastSeenVersion.current = milestone.updatedAt;
+		if (!payload || payload.kind !== "updated") return;
+		if (payload.milestone.id !== milestone.id) return;
+		if (payload.milestone.updatedBy === viewer.userId) return;
+		if (!payload.changed.includes("description")) return;
+
+		setExternalUpdate(true);
+	});
+
+	// A refetch can deliver a body edited while the socket was down. Our own
+	// save also changes the prop, so the author check keeps it quiet.
+	useEffect(() => {
+		const serialized = JSON.stringify(milestone.description);
+
+		if (serialized === lastSeenDescription.current) return;
+
+		lastSeenDescription.current = serialized;
 
 		if (milestone.updatedBy && milestone.updatedBy !== viewer.userId) {
 			setExternalUpdate(true);
 		}
-	}, [milestone.updatedAt, milestone.updatedBy, viewer.userId]);
+	}, [milestone.description, milestone.updatedBy, viewer.userId]);
+
+	/*
+	 * Keep the editable controls in step with the cache. They hold local state
+	 * so a save can be optimistic and rolled back, so a remote change has to be
+	 * pushed back into that state. The body is excluded on purpose: the editor
+	 * owns its draft and the banner above handles a conflict.
+	 */
+	useEffect(() => {
+		if (!titleFocused.current) setTitle(milestone.title);
+	}, [milestone.title]);
+
+	useEffect(() => {
+		setStatus(milestone.status);
+	}, [milestone.status]);
+
+	useEffect(() => {
+		setDates({
+			startDate: normalizeDay(milestone.startDate),
+			dueDate: normalizeDay(milestone.dueDate),
+		});
+	}, [milestone.startDate, milestone.dueDate]);
+
+	useEffect(() => {
+		setAssigneeIds(milestone.assignees.map((assignee) => assignee.userId));
+	}, [milestone.assignees]);
 
 	// Remember the first visit so the panel is never torn down afterwards.
 	useEffect(() => {
@@ -501,7 +550,12 @@ function MilestoneDetailContent({
 								setTitle(event.target.value);
 								saveTitle.schedule(event.target.value);
 							}}
+							onFocus={() => {
+								titleFocused.current = true;
+							}}
 							onBlur={() => {
+								titleFocused.current = false;
+
 								// An empty title is never saved, so the field must snap
 								// back instead of showing a value the server does not have.
 								if (title.trim().length === 0) {
@@ -653,7 +707,8 @@ function MilestoneDetailContent({
 								>
 									<AlertTriangleIcon className="size-4 shrink-0" aria-hidden />
 									<span className="flex-1">
-										Someone else updated this milestone while you had it open.
+										Someone else edited the milestone details. Reload to see
+										their changes.
 									</span>
 									<Button size="xs" variant="surface" onPress={onReload}>
 										Reload

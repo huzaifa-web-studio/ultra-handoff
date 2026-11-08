@@ -413,7 +413,10 @@ export const comment = pgTable(
 		 * it has no body, no replies and no edit or delete action.
 		 */
 		kind: text("kind").notNull().default("comment"),
-		/** status | start_date | due_date, only when kind is "event". */
+		/**
+		 * status | start_date | due_date | assignee_added | assignee_removed |
+		 * estimate_minutes, only when kind is "event".
+		 */
 		eventType: text("event_type"),
 		/** Previous value. Null means the field was empty. */
 		eventFrom: text("event_from"),
@@ -448,8 +451,8 @@ export const comment = pgTable(
 		// Exactly one target. Adding the next entity extends this list.
 		check("comment_target_check", sql`num_nonnulls(${table.milestoneId}) = 1`),
 		check("comment_kind_check", sql`${table.kind} in ('comment', 'event')`),
-		// A message has no event columns; an event names one of the three fields
-		// that the timeline can render.
+		// A message has no event columns; an event names one of the fields the
+		// timeline can render.
 		check(
 			"comment_event_check",
 			sql`(
@@ -459,7 +462,7 @@ export const comment = pgTable(
 				and ${table.eventTo} is null
 			) or (
 				${table.kind} = 'event'
-				and ${table.eventType} in ('status', 'start_date', 'due_date')
+				and ${table.eventType} in ('status', 'start_date', 'due_date', 'assignee_added', 'assignee_removed', 'estimate_minutes')
 			)`,
 		),
 		// An event is a root timeline row. Replies only belong to messages.

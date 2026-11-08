@@ -43,12 +43,14 @@ const ESTIMATE_SUGGESTIONS = [
 export function MilestoneEstimateInput({
 	value,
 	onChange,
+	onFocus,
 	onBlur,
 	invalid = false,
 	placeholder = "1h 30m",
 }: {
 	value: string;
 	onChange: (value: string) => void;
+	onFocus?: () => void;
 	onBlur?: () => void;
 	invalid?: boolean;
 	placeholder?: string;
@@ -70,6 +72,7 @@ export function MilestoneEstimateInput({
 			<Input
 				placeholder={placeholder}
 				aria-invalid={invalid || undefined}
+				onFocus={onFocus}
 				onBlur={onBlur}
 				className={cn(inputClassName, "h-9 w-full text-sm")}
 			/>

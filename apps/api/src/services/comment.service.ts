@@ -39,6 +39,7 @@ import {
 import { assertProjectActive } from "../auth/project-permissions";
 import { comment } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
+import type { MilestoneEventType } from "../lib/milestone-events";
 import { consumeRateLimit } from "../lib/rate-limit";
 import { sanitizeCommentBody } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
@@ -54,7 +55,7 @@ export type CommentAuthor = {
 };
 
 /** One field change recorded in the milestone timeline. */
-export type CommentEventType = "status" | "start_date" | "due_date";
+export type CommentEventType = MilestoneEventType;
 
 /** The stored change, ready to render as a sentence. */
 export type CommentEvent = {

@@ -336,15 +336,18 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					params.milestoneId,
 					body.userIds,
 				);
+				// `changed` and `timeline` are transport metadata. The HTTP
+				// response stays the detail the editor already expects.
+				const { changed, timeline, ...detail } = result;
 
 				publishMilestoneUpdated(
 					params.projectId,
-					result.milestone,
-					["assignees"],
-					[],
+					detail.milestone,
+					changed,
+					timeline,
 				);
 
-				return result;
+				return detail;
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not update the assignees."),
