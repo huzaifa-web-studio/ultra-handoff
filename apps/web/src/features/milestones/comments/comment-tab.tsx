@@ -16,6 +16,8 @@
  *   - loading earlier comments preserves the current scroll position instead
  *     of jumping to the top of the new page
  *   - a post scrolls to the bottom and is announced to a screen reader
+ *   - a new comment or activity row follows the tail while the reader is at the
+ *     bottom, and raises a pill instead of stealing the view when they are not
  *
  * Used by: milestone-detail-panel.tsx.
  */
@@ -130,8 +132,11 @@ export function CommentTab({
 	// Bumped after a root post so the effect below scrolls once the row is in.
 	const [scrollToken, setScrollToken] = useState(0);
 
-	// A remote comment while the reader is scrolled up must not steal the view.
-	const [remoteCount, setRemoteCount] = useState(0);
+	// New rows that arrived while the reader was scrolled up. Comments and
+	// activity are counted apart, because the pill must not call an activity
+	// row a comment.
+	const [remoteComments, setRemoteComments] = useState(0);
+	const [remoteEvents, setRemoteEvents] = useState(0);
 	const { atBottomRef, measure } = useAtBottom(scrollRef);
 
 	// Keeps the relative labels and the day headings honest while the tab is
@@ -139,12 +144,14 @@ export function CommentTab({
 	useClockTick(active);
 
 	/**
-	 * React to a comment that arrived over the stream.
+	 * React to a row that arrived over the stream.
 	 *
 	 * Only roots are handled here. A reply lands inside its thread, and the
 	 * thread already follows its own tail, so moving the whole page would be
-	 * wrong. The author's own post is skipped because `handlePosted` already
-	 * scrolled for it.
+	 * wrong. The author's own comment is skipped because `handlePosted` already
+	 * scrolled for it. An activity row is not a message and has no composer, so
+	 * its echo is the only chance to follow it, even when the viewer is the
+	 * author.
 	 */
 	useRealtimeEvent((event) => {
 		if (event.type !== "comment.created") return;
@@ -152,18 +159,24 @@ export function CommentTab({
 		const payload = readCommentPayload(event);
 
 		if (!payload || payload.milestoneId !== milestoneId) return;
-		// Activity rows are not messages, so they never justify the pill or a
-		// page scroll.
-		if (payload.comment.kind !== "comment") return;
 		if (payload.comment.parentId) return;
-		if (payload.comment.author?.id === viewerId) return;
+
+		const isEvent = payload.comment.kind === "event";
+
+		if (!isEvent && payload.comment.author?.id === viewerId) return;
 
 		if (atBottomRef.current) {
 			setScrollToken((current) => current + 1);
 			return;
 		}
 
-		setRemoteCount((current) => current + 1);
+		if (isEvent) {
+			setRemoteEvents((current) => current + 1);
+			setAnnouncement("New milestone activity.");
+			return;
+		}
+
+		setRemoteComments((current) => current + 1);
 		setAnnouncement(
 			`New comment from ${payload.comment.author?.name ?? "someone"}.`,
 		);
@@ -209,7 +222,8 @@ export function CommentTab({
 		scrolledOnceRef.current = true;
 	}, [active, query.data]);
 
-	// A new comment arrives at the bottom, so a smooth scroll follows the post.
+	// A new comment or activity row arrives at the bottom, so a smooth scroll
+	// follows it.
 	useEffect(() => {
 		if (scrollToken === 0) return;
 
@@ -255,14 +269,18 @@ export function CommentTab({
 		void query.fetchNextPage();
 	}
 
-	/** Clear the "new comments" pill as soon as the reader reaches the end. */
+	/** Clear the "new items" pill as soon as the reader reaches the end. */
 	function handleScroll() {
-		if (measure()) setRemoteCount(0);
+		if (measure()) {
+			setRemoteComments(0);
+			setRemoteEvents(0);
+		}
 	}
 
-	/** Jump to the latest comment from the pill. */
+	/** Jump to the latest row from the pill. */
 	function scrollToLatest() {
-		setRemoteCount(0);
+		setRemoteComments(0);
+		setRemoteEvents(0);
 		setScrollToken((current) => current + 1);
 	}
 
@@ -444,6 +462,20 @@ export function CommentTab({
 		);
 	}
 
+	// The pill never calls an activity row a comment, so the label follows what
+	// actually arrived while the reader was away from the tail.
+	const remoteTotal = remoteComments + remoteEvents;
+	const remoteLabel =
+		remoteComments === 0
+			? remoteTotal === 1
+				? "1 new activity"
+				: `${remoteTotal} new activities`
+			: remoteEvents === 0
+				? remoteTotal === 1
+					? "1 new comment"
+					: `${remoteTotal} new comments`
+				: `${remoteTotal} new items`;
+
 	return (
 		<MentionProvider value={{ orgSlug, projectId }}>
 			<div className="flex min-h-0 flex-1 flex-col">
@@ -477,10 +509,10 @@ export function CommentTab({
 					</ScrollArea>
 
 					{/*
-					 * A remote comment arrived while the reader was further up.
-					 * The pill is the polite alternative to yanking the view.
+					 * A remote row arrived while the reader was further up. The
+					 * pill is the polite alternative to yanking the view.
 					 */}
-					{remoteCount > 0 && (
+					{remoteTotal > 0 && (
 						<div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
 							<Button
 								variant="surface"
@@ -489,9 +521,7 @@ export function CommentTab({
 								onPress={scrollToLatest}
 							>
 								<ArrowDownIcon aria-hidden />
-								{remoteCount === 1
-									? "1 new comment"
-									: `${remoteCount} new comments`}
+								{remoteLabel}
 							</Button>
 						</div>
 					)}
