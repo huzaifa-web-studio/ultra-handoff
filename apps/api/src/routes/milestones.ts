@@ -290,12 +290,17 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 				// response stays the detail the editor already expects.
 				const { changed, timeline, ...detail } = result;
 
-				publishMilestoneUpdated(
-					params.projectId,
-					detail.milestone,
-					changed,
-					timeline,
-				);
+				// A no-op save returns an empty change list. Broadcasting it
+				// would tell every open thread an edit happened, so the publish
+				// is gated on actual change or a timeline row.
+				if (changed.length > 0 || timeline.length > 0) {
+					publishMilestoneUpdated(
+						params.projectId,
+						detail.milestone,
+						changed,
+						timeline,
+					);
+				}
 
 				return detail;
 			} catch (error) {

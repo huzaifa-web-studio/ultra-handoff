@@ -1,5 +1,7 @@
 import { type APIError, isAPIError } from "better-auth/api";
 
+import { isProduction, isTest } from "./env";
+
 /**
  * Turn a Better Auth error into a message a person can act on.
  *
@@ -8,6 +10,11 @@ import { type APIError, isAPIError } from "better-auth/api";
  * produces a UI that looks broken. The members and invitations services catch
  * Better Auth failures per item, so this module is the single place that maps
  * known codes to copy and keeps unknown failures generic.
+ *
+ * Trust boundary: only an `APIError` with a client status is safe to surface.
+ * The library builds those messages itself, so they describe the request. A
+ * driver error, a timeout or a programmer mistake stays in the server log and
+ * the caller's generic fallback reaches the browser.
  *
  * Used by: src/services/member.service.ts and
  * src/services/invitation.service.ts.
@@ -58,12 +65,39 @@ export function readAuthErrorCode(error: unknown): string | null {
 	return typeof body?.code === "string" ? body.code : null;
 }
 
+/** Client statuses an APIError may report as. Anything else is unknown. */
+function isClientStatus(status: number): boolean {
+	return (
+		status === 400 ||
+		status === 401 ||
+		status === 403 ||
+		status === 404 ||
+		status === 422 ||
+		status === 429
+	);
+}
+
+/**
+ * Log a failure the caller is not allowed to see.
+ *
+ * Dev only, matching the rest of the API until a real production logger
+ * exists. The raw message is exactly what should never reach the browser, so
+ * dropping it entirely in production is preferable to echoing it back. The
+ * test runner is silent for the same reason: an expected failure should not
+ * print a stack into a green suite.
+ */
+function logUnexpectedAuthError(error: unknown, context: string): void {
+	if (isProduction || isTest) return;
+
+	console.error(`[auth-error] ${context}`, error);
+}
+
 /**
  * Best available user facing message for a failure.
  *
- * Order: a mapped code, then the library's own message, then the caller's
- * fallback. The mapped code wins because the library message often contains the
- * code itself.
+ * Order: a mapped code, then the library's own message for a client error,
+ * then the caller's fallback. A mapped code wins because the library message
+ * often contains the code itself.
  */
 export function authErrorMessage(error: unknown, fallback: string): string {
 	const code = readAuthErrorCode(error);
@@ -72,9 +106,20 @@ export function authErrorMessage(error: unknown, fallback: string): string {
 		return AUTH_ERROR_MESSAGES[code];
 	}
 
-	if (error instanceof Error && error.message) {
-		return error.message;
+	// Only an APIError that resolves to a client status is safe to surface.
+	// Everything else may carry a driver message, a query fragment or an
+	// internal identifier, so it is logged and replaced with the fallback.
+	if (isAPIError(error) && isClientStatus(authErrorStatus(error))) {
+		const body = (error as APIError).body as { message?: unknown } | undefined;
+
+		if (typeof body?.message === "string" && body.message.length > 0) {
+			return body.message;
+		}
+
+		return fallback;
 	}
+
+	logUnexpectedAuthError(error, fallback);
 
 	return fallback;
 }
@@ -85,11 +130,15 @@ export function authErrorMessage(error: unknown, fallback: string): string {
  * Why: `APIError.status` is either a numeric code or a status name such as
  * "BAD_REQUEST", while `status()` expects a numeric literal. Mapping keeps the
  * response honest instead of flattening every library failure to 500.
+ *
+ * Unknown failures answer 500. A 409 used to stand in here, which told the
+ * client a conflict happened when the real cause was a broken dependency. If
+ * the failure is genuinely a conflict, it has to say so explicitly.
  */
 export function authErrorStatus(
 	error: unknown,
-): 400 | 401 | 403 | 404 | 409 | 422 | 429 {
-	if (!isAPIError(error)) return 409;
+): 400 | 401 | 403 | 404 | 422 | 429 | 500 {
+	if (!isAPIError(error)) return 500;
 
 	const status = (error as APIError).status;
 
@@ -105,7 +154,7 @@ export function authErrorStatus(
 			case 429:
 				return 429;
 			default:
-				return 409;
+				return 500;
 		}
 	}
 
@@ -123,6 +172,6 @@ export function authErrorStatus(
 		case "TOO_MANY_REQUESTS":
 			return 429;
 		default:
-			return 409;
+			return 500;
 	}
 }

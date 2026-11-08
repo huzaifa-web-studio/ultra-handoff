@@ -85,13 +85,12 @@ describe("canManageTarget", () => {
 		expect(canManageTarget("admin", "member,member")).toBe(true);
 	});
 
-	test("the predicate only inspects the target; the caller checks the actor first", () => {
-		// The service always calls canManageMembers / assertManager before this
-		// helper, so a plain member never reaches it in a real request. As a
-		// standalone predicate it answers "is this target a plain member", which
-		// is why the actor check cannot be inferred from this result.
-		expect(canManageTarget("member", "member")).toBe(true);
+	test("a plain member cannot manage anyone", () => {
+		// The actor check is part of the predicate, so a caller that forgets
+		// the manager guard still gets a safe answer.
+		expect(canManageTarget("member", "member")).toBe(false);
 		expect(canManageTarget("member", "admin")).toBe(false);
+		expect(canManageTarget("member", "owner")).toBe(false);
 	});
 });
 

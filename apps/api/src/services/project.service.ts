@@ -70,6 +70,7 @@ import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 import { escapeLike } from "../lib/query";
 import { keyFromFileUrl, keyFromRichText } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
+import { publishMemberRevocation } from "../realtime/bus";
 import {
 	getOrganizationMember,
 	listOrganizationOwners,
@@ -1912,6 +1913,15 @@ export async function removeProjectMember(
 				);
 		},
 	);
+
+	// Access to this project is gone. Close the streams that person has open on
+	// it; other projects in the workspace are untouched.
+	void publishMemberRevocation({
+		type: "revoke.member",
+		organizationId: tenant.organizationId,
+		userId: targetUserId,
+		projectId,
+	}).catch(() => undefined);
 
 	return { status: "ok" };
 }

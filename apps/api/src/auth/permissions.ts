@@ -188,11 +188,16 @@ export function canManageOwners(role: string): boolean {
  * Product rule: an admin manages members only. Owners and admins are read only
  * to an admin, which stops two admins from removing each other. The owner has
  * no such restriction.
+ *
+ * The actor check is part of the predicate on purpose: a caller that forgets to
+ * assert the role first must not get a true answer for a plain member.
  */
 export function canManageTarget(
 	actorRole: string,
 	targetRole: string,
 ): boolean {
+	if (!canManageMembers(actorRole)) return false;
+
 	if (canManageOwners(actorRole)) return true;
 
 	return parseRoleList(targetRole).every((value) => value === "member");

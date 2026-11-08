@@ -2,10 +2,8 @@
  * Better Auth error translation.
  *
  * Why these exist: every route uses these helpers to turn a library failure
- * into a status and a message. The current fallback deliberately returns the
- * raw error message, which is useful for known API errors but is also the path
- * that could leak a driver message. Pinning the current behaviour makes that
- * trade-off explicit and gives phase 3 a regression guard.
+ * into a status and a message. The trust boundary is pinned here: a client
+ * status from the library may reach the browser, an unknown failure must not.
  *
  * Run with: bun test
  */
@@ -66,12 +64,12 @@ describe("authErrorStatus", () => {
 		expect(authErrorStatus(new APIError(404, { message: "x" }))).toBe(404);
 	});
 
-	test("collapses an unexpected status to 409", () => {
-		expect(authErrorStatus(new APIError(500, { message: "x" }))).toBe(409);
+	test("returns 500 for an unexpected status", () => {
+		expect(authErrorStatus(new APIError(500, { message: "x" }))).toBe(500);
 		expect(
 			authErrorStatus(new APIError("INTERNAL_SERVER_ERROR", { message: "x" })),
-		).toBe(409);
-		expect(authErrorStatus(new Error("boom"))).toBe(409);
+		).toBe(500);
+		expect(authErrorStatus(new Error("boom"))).toBe(500);
 	});
 });
 
@@ -87,10 +85,28 @@ describe("authErrorMessage", () => {
 		);
 	});
 
-	test("falls back to the error message for an unmapped API error", () => {
+	test("falls back to the body message for a client API error", () => {
 		const error = new APIError("BAD_REQUEST", { message: "Slug is taken" });
 
 		expect(authErrorMessage(error, "fallback")).toBe("Slug is taken");
+	});
+
+	test("hides a server side API error behind the fallback", () => {
+		const error = new APIError(500, {
+			message: 'driver error: relation "project" does not exist',
+		});
+
+		expect(authErrorMessage(error, "Could not load the projects.")).toBe(
+			"Could not load the projects.",
+		);
+	});
+
+	test("hides a plain driver error behind the fallback", () => {
+		const error = new Error("connect ECONNREFUSED 127.0.0.1:5432");
+
+		expect(authErrorMessage(error, "Something went wrong.")).toBe(
+			"Something went wrong.",
+		);
 	});
 
 	test("returns a generic fallback for a non error", () => {

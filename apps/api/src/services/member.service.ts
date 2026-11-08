@@ -16,6 +16,7 @@ import { user } from "../db/auth-schema";
 import { authErrorMessage, readAuthErrorCode } from "../lib/auth-error";
 import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 import type { TenantContext } from "../middleware/tenant";
+import { publishMemberRevocation } from "../realtime/bus";
 import { syncOrganizationOwnerToProjects } from "./project.service";
 
 /**
@@ -446,6 +447,15 @@ export async function bulkRemoveMembers(
 				},
 				headers,
 			});
+
+			// The membership is gone, so every stream this person had open in
+			// the workspace has to close. Fire and forget: a Redis hiccup falls
+			// back to a local close and must never fail the removal.
+			void publishMemberRevocation({
+				type: "revoke.member",
+				organizationId: tenant.organizationId,
+				userId: member.userId,
+			}).catch(() => undefined);
 
 			if (isOwnerRole(member.role)) {
 				ownersRemaining -= 1;

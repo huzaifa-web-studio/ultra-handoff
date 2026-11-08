@@ -203,12 +203,12 @@ describe("project member management", () => {
 		expect(canManageProjectTarget("admin", "owner")).toBe(false);
 	});
 
-	test("the predicate only inspects the target; the caller checks the actor first", () => {
-		// The service calls canManageProjectMembers before this helper, so a
-		// plain member never reaches it in a real request. The result below
-		// describes the target role, not the actor's authority.
-		expect(canManageProjectTarget("member", "client")).toBe(true);
-		expect(canManageProjectTarget("member", "admin")).toBe(false);
+	test("a member or client cannot manage anyone", () => {
+		// The actor check is part of the predicate, so a caller that forgets
+		// the manager guard still gets a safe answer.
+		expect(canManageProjectTarget("member", "client")).toBe(false);
+		expect(canManageProjectTarget("member", "member")).toBe(false);
+		expect(canManageProjectTarget("client", "client")).toBe(false);
 	});
 });
 

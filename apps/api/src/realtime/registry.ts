@@ -49,6 +49,14 @@ function milestoneKey(projectId: string, milestoneId: string): string {
 	return `${projectId}:${milestoneId}`;
 }
 
+/**
+ * Close code used when a membership change revokes a connection.
+ *
+ * 4403 matches the forbidden code the upgrade already uses, so the browser
+ * policy treats a revocation as terminal instead of reconnecting into a wall.
+ */
+export const REALTIME_CLOSE_REVOKED = 4403;
+
 export class RealtimeRegistry {
 	private readonly byId = new Map<string, RealtimeConnection>();
 	private readonly byProject = new Map<string, Set<string>>();
@@ -99,6 +107,44 @@ export class RealtimeRegistry {
 	/** Look up a connection by its id, or null when it already left. */
 	get(id: string): RealtimeConnection | null {
 		return this.byId.get(id) ?? null;
+	}
+
+	/**
+	 * Remove and close every connection the predicate accepts.
+	 *
+	 * Why on the registry: a membership change is not tied to one socket, and
+	 * the registry is the only place holding every socket handle. Closing from
+	 * here keeps the transport detail out of the services that revoke access.
+	 *
+	 * Iterates over a snapshot so `remove` can mutate the map safely, and the
+	 * close failure path mirrors `retire` in the gateway.
+	 */
+	retireWhere(
+		predicate: (connection: RealtimeConnection) => boolean,
+		code: number,
+		reason: string,
+	): number {
+		let retired = 0;
+
+		for (const connection of [...this.byId.values()]) {
+			if (!predicate(connection)) continue;
+
+			this.remove(connection.id);
+
+			try {
+				connection.socket.close(code, reason);
+			} catch {
+				try {
+					connection.socket.terminate();
+				} catch {
+					// Already gone. Nothing left to clean up.
+				}
+			}
+
+			retired += 1;
+		}
+
+		return retired;
 	}
 
 	/** Every live connection, newest state included. */

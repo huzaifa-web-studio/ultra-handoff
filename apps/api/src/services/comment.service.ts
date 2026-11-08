@@ -758,9 +758,10 @@ function findChecklistItem(
 /**
  * Flip one checklist item.
  *
- * Anyone who can comment may do this, including a client. The comment text is
- * untouched, the author's edited marker does not move, and the row lock keeps
- * two readers checking different items from dropping each other's change.
+ * Author only, matching the rule for editing the comment text: a checklist is
+ * part of the body, and the product rule is that only its author changes it.
+ * The comment text is untouched, the edited marker does not move, and the row
+ * lock keeps the author's two tabs from dropping each other's change.
  */
 export async function toggleMilestoneChecklistItem(
 	tenant: TenantContext,
@@ -806,6 +807,16 @@ export async function toggleMilestoneChecklistItem(
 					message: "That comment was deleted and can no longer be changed.",
 				});
 			}
+
+			// A checklist item lives inside the comment body, so a toggle is a
+			// comment change. Using the author rule keeps the write honest and
+			// avoids a silent edit with no attribution.
+			assertCanModifyComment({
+				viewerId: tenant.userId,
+				authorId: record.authorId,
+				deletedAt: record.deletedAt,
+				locked: access.row.archivedAt !== null,
+			});
 
 			const body = structuredClone(record.body);
 			const item = findChecklistItem(body, input.itemId);

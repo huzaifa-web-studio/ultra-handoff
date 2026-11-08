@@ -19,6 +19,7 @@
 
 import Redis from "ioredis";
 import { getRedis, redisConnectionOptions } from "../lib/redis";
+import { type MemberRevocation, REALTIME_CONTROL_CHANNEL } from "./control";
 import {
 	createRealtimeEnvelope,
 	parseRealtimeEnvelope,
@@ -26,6 +27,7 @@ import {
 	REALTIME_CHANNEL,
 	type RealtimeEventType,
 } from "./protocol";
+import { applyRevocation, handleControlMessage } from "./revoke";
 
 /** Local fan-out into one Bun topic. Installed by the gateway lifecycle. */
 type LocalPublisher = (topic: string, payload: string) => void;
@@ -111,11 +113,22 @@ export function startRealtimeBus(): void {
 	// Without an error listener, an EventEmitter error would be unhandled and
 	// take the process down. A bus failure degrades realtime, not the API.
 	client.on("error", () => undefined);
-	client.on("message", (_channel, message) => deliverLocally(message));
+	client.on("message", (channel, message) => {
+		// Control frames are instructions for this process, not content for a
+		// browser, so they stop here instead of reaching a project topic.
+		if (channel === REALTIME_CONTROL_CHANNEL) {
+			handleControlMessage(message);
+			return;
+		}
+
+		deliverLocally(message);
+	});
 
 	subscriber = client;
 
-	void client.subscribe(REALTIME_CHANNEL).catch(() => undefined);
+	void client
+		.subscribe(REALTIME_CHANNEL, REALTIME_CONTROL_CHANNEL)
+		.catch(() => undefined);
 }
 
 /** Close the subscriber. Safe to call when it never started. */
@@ -159,5 +172,29 @@ export async function publishRealtimeEvent<T>(
 		await redis.publish(REALTIME_CHANNEL, raw);
 	} catch {
 		deliverLocally(raw);
+	}
+}
+
+/**
+ * Publish one membership revocation to every API instance.
+ *
+ * Follows the same degraded rule as project events: a Redis outage closes the
+ * matching local sockets immediately instead of queueing a stale instruction
+ * that would fire after the member was re-added.
+ */
+export async function publishMemberRevocation(
+	revocation: MemberRevocation,
+): Promise<void> {
+	const redis = getRedis();
+
+	if (!(await waitForReady(redis, PUBLISH_READY_TIMEOUT_MS))) {
+		applyRevocation(revocation);
+		return;
+	}
+
+	try {
+		await redis.publish(REALTIME_CONTROL_CHANNEL, JSON.stringify(revocation));
+	} catch {
+		applyRevocation(revocation);
 	}
 }

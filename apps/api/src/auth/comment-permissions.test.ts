@@ -107,4 +107,15 @@ describe("assertions", () => {
 			}),
 		).toThrow("That comment was deleted");
 	});
+
+	test("assertCanModifyComment rejects a non author, including a checklist toggle", () => {
+		expect(() =>
+			assertCanModifyComment({
+				viewerId: "user-2",
+				authorId: "user-1",
+				deletedAt: null,
+				locked: false,
+			}),
+		).toThrow("Only the person who wrote");
+	});
 });

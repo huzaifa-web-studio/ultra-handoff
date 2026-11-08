@@ -194,4 +194,45 @@ describe("RealtimeRegistry", () => {
 
 		expect(registry.consumeFrame("missing", 5)).toBe(false);
 	});
+
+	it("retires only the connections a predicate accepts", () => {
+		const registry = createRealtimeRegistry();
+		const kept: Array<{ code?: number; reason?: string }> = [];
+		const retired: Array<{ code?: number; reason?: string }> = [];
+
+		registry.add(
+			createConnection({
+				id: "retired",
+				userId: "user-1",
+				socket: {
+					ping: () => undefined,
+					close: (code, reason) => retired.push({ code, reason }),
+					terminate: () => undefined,
+				},
+			}),
+		);
+		registry.add(
+			createConnection({
+				id: "kept",
+				userId: "user-2",
+				socket: {
+					ping: () => undefined,
+					close: (code, reason) => kept.push({ code, reason }),
+					terminate: () => undefined,
+				},
+			}),
+		);
+
+		const count = registry.retireWhere(
+			(connection) => connection.userId === "user-1",
+			4403,
+			"membership revoked",
+		);
+
+		expect(count).toBe(1);
+		expect(registry.get("retired")).toBeNull();
+		expect(registry.get("kept")).not.toBeNull();
+		expect(retired).toEqual([{ code: 4403, reason: "membership revoked" }]);
+		expect(kept).toHaveLength(0);
+	});
 });

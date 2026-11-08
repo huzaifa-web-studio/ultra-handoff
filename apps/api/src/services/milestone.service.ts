@@ -410,6 +410,35 @@ async function requireMilestoneRecord(
 }
 
 /**
+ * True when a milestone belongs to the given project inside the organization.
+ *
+ * Why a boolean and not the record: the realtime gateway only needs to know
+ * whether a `presence.join` frame names a milestone the socket may observe. It
+ * already proved project access at upgrade, so this is the one extra check that
+ * stops a frame from subscribing to another project's milestone.
+ */
+export async function milestoneExistsInProject(
+	tx: TenantTx,
+	organizationId: string,
+	projectId: string,
+	milestoneId: string,
+): Promise<boolean> {
+	const [row] = await tx
+		.select({ id: milestone.id })
+		.from(milestone)
+		.where(
+			and(
+				eq(milestone.organizationId, organizationId),
+				eq(milestone.projectId, projectId),
+				eq(milestone.id, milestoneId),
+			),
+		)
+		.limit(1);
+
+	return Boolean(row);
+}
+
+/**
  * Load the project access and the milestone in one call.
  *
  * Why exported: the comment service needs exactly the same two answers before
@@ -993,6 +1022,31 @@ export async function updateMilestone(
 				milestoneId,
 			);
 
+			// Autosave can fire with an empty body, for example when a field
+			// was focused and blurred without a change. Writing here would move
+			// `updatedAt` and attribute an edit that never happened, so the
+			// current detail is returned untouched.
+			const hasRecognisedField =
+				input.title !== undefined ||
+				input.status !== undefined ||
+				input.description !== undefined ||
+				input.startDate !== undefined ||
+				input.dueDate !== undefined ||
+				input.estimateMinutes !== undefined ||
+				input.assigneeUserIds !== undefined;
+
+			if (!hasRecognisedField) {
+				const detail = await loadDetail(
+					tx,
+					tenant,
+					projectId,
+					milestoneId,
+					toViewer(tenant, access),
+				);
+
+				return { detail, changed: [], eventRows: [] };
+			}
+
 			const patch: Partial<typeof milestone.$inferInsert> = {
 				updatedBy: tenant.userId,
 			};
@@ -1027,11 +1081,19 @@ export async function updateMilestone(
 			if (input.description !== undefined) {
 				const description = sanitizeRichText(input.description);
 				await assertCommentMentions(tx, tenant, projectId, description.value);
+
+				// The value is a Plate array of plain JSON, so a string compare
+				// is a faithful "did the body actually change" check. Listing an
+				// unchanged body would tell the client a save happened when it
+				// did not.
+				const descriptionChanged =
+					JSON.stringify(description.value) !==
+					JSON.stringify(record.description);
+
 				patch.description = description.value;
 				patch.descriptionText = description.text;
-				// The body is not broadcast, but listing the field lets a future
-				// client tell a body save from a title save.
-				changed.push("description");
+
+				if (descriptionChanged) changed.push("description");
 			}
 
 			// The range check needs both sides, so a one sided patch is compared
@@ -1084,6 +1146,25 @@ export async function updateMilestone(
 					events.push(estimateEvent);
 					changed.push("estimateMinutes");
 				}
+			}
+
+			// A PATCH that names fields but changes none of them is also a no-op.
+			// Assignees are excluded because their set is replaced even when the
+			// derived event list is empty, so that path still has to run.
+			if (
+				changed.length === 0 &&
+				events.length === 0 &&
+				input.assigneeUserIds === undefined
+			) {
+				const detail = await loadDetail(
+					tx,
+					tenant,
+					projectId,
+					milestoneId,
+					toViewer(tenant, access),
+				);
+
+				return { detail, changed: [], eventRows: [] };
 			}
 
 			await tx

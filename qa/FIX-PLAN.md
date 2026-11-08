@@ -70,7 +70,7 @@ bun test
 | 2 | File access and object lifecycle | High | Done | none | 8 Nov 2026 | 3a45be7 |
 | 3 | Redis and storage resilience | High | Done | none | 9 Nov 2026 | 105eee6 |
 | 4 | Production and environment gate | High (deployment) | Done | none | 9 Nov 2026 | 685dd35 |
-| 5 | Authorization and error handling | Medium | Not started | Batch 1 (same auth files) | 8 Nov 2026 | none |
+| 5 | Authorization and error handling | Medium | Done | Batch 1 (same auth files) | 9 Nov 2026 | ce01571 |
 | 6 | Web shell, headers and UX | Medium | Not started | Batch 4 (API origin) | 8 Nov 2026 | none |
 | 7 | Performance | Medium | Not started | none | 8 Nov 2026 | none |
 | 8 | Tooling, CI and test harness | Medium | Not started | none | 8 Nov 2026 | none |
@@ -390,67 +390,70 @@ It lives in the same `if (isDevelopment)` block as Bull Board. Changing the defa
 ## 8. Batch 5: Authorization and error handling
 
 **Risk:** Medium. Mostly hardening and consistency.
-**Status:** `Not started`
+**Status:** `Done`
 **Depends on:** Batch 1 for the same auth file (avoid conflicts)
 **Files:** `apps/api/src/lib/auth-error.ts`, `services/milestone.service.ts`, `realtime/gateway.ts`, `services/comment.service.ts`, `auth/permissions.ts`, `auth/project-permissions.ts`
 
 ### P1-M2: Unknown errors become 409 and raw messages reach clients
 
-- [ ] Not started
+- [x] Done: unknown and server side failures now answer 500, and only an `APIError` with a client status reaches the browser as text.
+
+**Implemented:** `authErrorStatus` returns 500 for a non `APIError` and for any unknown or 5xx status. `authErrorMessage` keeps the mapped code table, then surfaces `body.message` only when the error is an `APIError` that resolves to a client status (400, 401, 403, 404, 422, 429). Anything else is logged with its caller fallback as context and replaced by that fallback. The log is dev only and silent under `NODE_ENV=test`, matching the Redis logger until a production logger exists.
 
 **Where:** `apps/api/src/lib/auth-error.ts`.
-**Fix:** Return 500 for unknown errors, not 409. Only return `APIError.body.message` for known API errors; for unknown errors, log with context and return the caller's generic fallback. Keep the known code map.
-**Done when:** A forced driver error returns a generic 500 and the raw message appears only in the server log.
+**Done when:** A forced driver error returns a generic 500 and the raw message appears only in the server log. Covered by `auth-error.test.ts`.
 
 ### P1-M9: Presence join accepts any milestone id
 
-- [ ] Not started
+- [x] Done: `presence.join` now confirms the milestone belongs to the connection's project before subscribing.
+
+**Implemented:** `milestoneExistsInProject` in `milestone.service.ts` is a tenant scoped id check. The gateway message path moved into an async `handleMessage`, and `presence.join` runs that check through `withTenant` before `subscribeMilestone`. A frame naming another project's milestone, a missing milestone, or a membership that changed mid frame is ignored; `presence.leave` stays unvalidated because unsubscribing grants nothing.
 
 **Where:** `apps/api/src/realtime/gateway.ts`, `presence.join`.
-**Fix:** Validate the milestone against the connection's project before subscribing, or reject presence frames until the feature is implemented. Use the same access helper as the HTTP routes.
 **Done when:** A milestone id from another project is rejected or ignored, and a valid one still subscribes.
 
 ### P1-M10: Revoked members keep receiving events
 
-- [ ] Not started, decision required
+- [x] Done: revocation rides a Redis control channel and closes the matching sockets on every instance.
+
+**Decision: revocation broadcast.**
+**Implemented:** `realtime/control.ts` owns a dedicated `realtime:control` channel with a strict `revoke.member` frame (`organizationId`, `userId`, optional `projectId`). The bus subscribes to it and handles it before any project topic fan-out, so no control frame ever reaches a browser. `realtime/revoke.ts` matches connections by user, organization and, when present, project, and `RealtimeRegistry.retireWhere` removes then closes them with 4403. `publishMemberRevocation` follows the same 250ms ready wait and local fallback as project events, so a Redis outage still closes the local sockets instead of queueing a stale instruction. Hooks publish after a successful organization member removal (`member.service.ts`) and project member removal (`project.service.ts`). `maxConnectionMs` stays at 30 minutes as a backstop, because leaving an organization goes through `authClient.organization.leave` on the client and never reaches the API.
 
 **Where:** `apps/api/src/realtime/gateway.ts`, `maxConnectionMs` in `lib/env.ts`.
-**Options:** Publish a revocation event on member removal and close matching sockets, or shorten the hard connection lifetime (for example 5 minutes) and document the trade-off.
-**Recommendation:** Add the revocation event if realtime carries client data; otherwise shorten the TTL.
-**Done when:** The chosen behaviour is implemented and written in this file.
+**Done when:** The chosen behaviour is implemented and written in this file. Covered by `control.test.ts`, `revoke.test.ts` and the new `registry.test.ts` case.
 
 ### P1-M19: Any project member can toggle checklists in another person's comment
 
-- [ ] Not started, decision required
+- [x] Done: author only.
+
+**Decision: author only.** A checklist item is part of the comment body, so `toggleMilestoneChecklistItem` now calls `assertCanModifyComment` after loading the row, exactly like a text edit. The web checkbox uses `comment.canEdit` instead of `canComment`. The module comment in `comment.service.ts` and the `comment-checklist.tsx` header now describe the author rule.
 
 **Where:** `services/comment.service.ts`, `toggleMilestoneChecklistItem`; `auth/comment-permissions.ts`.
-**Options:**
-1. Shared checklist: record who toggled and when, and update the comment copy.
-2. Author-only: use `assertCanModifyComment` and update the UI copy.
-**Recommendation:** Pick one. Shared is fine for a client collaboration product, but it must be explicit and attributable.
-**Done when:** The rule is consistent between the code, the copy and the tests.
+**Done when:** The rule is consistent between the code, the copy and the tests. Covered by the new `comment-permissions.test.ts` assertion.
 
 ### P1-M20: Empty milestone PATCH still writes
 
-- [ ] Not started
+- [x] Done: an empty or no-op patch returns the current detail without an update.
+
+**Implemented:** `updateMilestone` returns the current detail when no recognized field is present, and also skips the write when the named fields produced no change, no timeline event and no assignee replacement. The `description` field is only listed in `changed` when the sanitized Plate array differs from the stored one. The PATCH route only publishes a realtime update when there is a change or a timeline row.
 
 **Where:** `services/milestone.service.ts`, `updateMilestone`.
-**Fix:** If no recognised field is present, return the current detail without an update. Also avoid pushing `"description"` to `changed` when the sanitized body did not change.
 **Done when:** `PATCH {}` leaves `updatedAt` and `updatedBy` unchanged.
 
 ### P2-F2: Target-only permission predicates
 
-- [ ] Not started
+- [x] Done: the actor check is part of both predicates.
+
+**Implemented:** `canManageTarget` returns false unless the actor is owner or admin, and `canManageProjectTarget` returns false unless the actor is a project owner or admin. Every current caller already asserts the manager role first, so valid requests are unchanged, and a caller that forgets the guard now gets a safe answer.
 
 **Where:** `auth/permissions.ts`, `canManageTarget`; `auth/project-permissions.ts`, `canManageProjectTarget`.
-**Fix:** Fold the actor check into the predicate, or rename to `isManageableTarget` and document the precondition. Folding is safer; every current caller is already a manager, so the result does not change.
 **Done when:** `canManageTarget("member", "member")` is false, and the member and project role tests still pass.
 
 ### Batch 5 exit criteria
 
-- [ ] All items ticked, closed or marked as a documented decision.
-- [ ] New tests for the error mapping and the predicates.
-- [ ] Integration suite green.
+- [x] All items ticked, closed or marked as a documented decision.
+- [x] New tests for the error mapping and the predicates.
+- [x] Integration suite green.
 
 ---
 
@@ -657,6 +660,7 @@ Append one row per session. Do not rewrite old rows.
 | 8 Nov 2026 | Batch 2 | Option A file access: `fileKeyAccess` classifier, member gated comment and milestone attachments with private no-store, public branding and link previews unchanged. Delete paths in comment, milestone and project walk the rich text and remove objects after commit. Forced attachment disposition with a sanitised filename, external images restricted to `/files/`, and a dry-run reconciliation script. | `bun test` api 365 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, integration suite 38 pass on `app_test`, biome clean on touched files, reconciliation dry run scanned 68 objects and found 39 removable orphans, live curl check returned 404 for a private milestone image, 200 with the immutable cache for a public project logo, and 404 for an unknown prefix | 3a45be7 | Authenticated upload and delete click-through still outstanding. Start Batch 3 next. |
 | 9 Nov 2026 | Batch 3 | Split Redis options into a fail fast application client and a permissive BullMQ set. Added a 250ms deadline around every secondary storage call so Better Auth falls back to Postgres, a bounded command timeout, throttled Redis logging on the app client and every BullMQ emitter, URL credential parsing, deadlines on all storage calls plus a 60s worker backstop, and a `/ready` probe that keeps `/health` as liveness and reports Redis as degraded rather than taking the instance out of rotation. | `bun test` api 379 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, biome clean on the touched files, `bun run check:redis` returned 250 to 251ms for every auth call against a silent server. Live stack with Docker: authenticated request 200 in 14 to 30ms while Redis was stopped, `/ready` 200 degraded in 2ms, `/health` 200, 6 throttled log lines in 30s instead of 57 unthrottled, then 10 to 20ms and `/ready` ok after Redis restarted. | 105eee6 | Start Batch 4. |
 | 9 Nov 2026 | Batch 4 | Fail-closed production config: `NODE_ENV` defaults to production, `validate-env.ts` with `validate-boot.ts` rejects an incomplete env before auth or database clients load, `compose.yaml` has no secret or public URL defaults, `.env.example` is the production template with a new `.env.example.dev`, the web bundle requires `VITE_API_URL` at build time through one origin resolver, SeaweedFS reads its credentials from env, and the dev API port is loopback only. | `bun test` api 388 pass / 40 skip, web 71 pass, tsc clean for api, web and ui, biome clean on touched files (repo-wide still the 17 pre-existing Batch 8 errors), `docker compose --env-file .env.example config` exited 1 with the missing values, a complete temp env exited 0, production boot on 127.0.0.1:3101 returned 200 for `/health` and `/`, 404 for `/bull-board` and `/openapi`, the web build inlined `VITE_API_URL=https://api.example.com` and failed without it, and `ss` showed the dev API on 127.0.0.1:3001. | 685dd35 | Start Batch 5. |
+| 9 Nov 2026 | Batch 5 | Unknown failures answer 500 and are logged instead of echoed. `presence.join` verifies the milestone belongs to the connection's project. Membership revocation is broadcast on a dedicated Redis control channel and closes matching sockets on every instance, with hooks after organization and project member removal. Checklist toggles are author only. An empty or no-op milestone PATCH no longer writes. Both target predicates now include the actor check. | `bun test` api 399 pass / 40 skip, web 71 pass, tsc clean for api, web and ui, integration suite 437 pass on `app_test`, biome clean on touched files. | ce01571 | Start Batch 6. |
 
 **Template for a new row**
 
@@ -684,15 +688,15 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-H4 | High | 2 | Done |
 | P1-H5 | Disproved | 3 | Closed |
 | P1-M1 | Medium, deployment | 4 | Done |
-| P1-M2 | Medium | 5 | Not started |
+| P1-M2 | Medium | 5 | Done |
 | P1-M3 | Medium | 7 | Not started |
 | P1-M4 | Medium | 7 | Not started |
 | P1-M5 | Medium | 7 | Not started |
 | P1-M6 | Medium | 3 | Done |
 | P1-M7 | Medium | 2 | Done |
 | P1-M8 | Medium | 1 | Done |
-| P1-M9 | Medium | 5 | Not started |
-| P1-M10 | Medium | 5 | Not started |
+| P1-M9 | Medium | 5 | Done |
+| P1-M10 | Medium | 5 | Done |
 | P1-M11 | Medium | 6 | Not started |
 | P1-M12 | Medium | 6 | Not started |
 | P1-M13 | Low | 6 | Not started |
@@ -701,15 +705,15 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M16 | Low | 7 | Not started |
 | P1-M17 | Low | 2 | Done |
 | P1-M18 | Low | 2 | Done |
-| P1-M19 | Low | 5 | Not started |
-| P1-M20 | Low | 5 | Not started |
+| P1-M19 | Low | 5 | Done |
+| P1-M20 | Low | 5 | Done |
 | P1-M21 | Low | 8 | Not started |
 | P1-M22 | Low | 8 | Not started |
 | P1-M23 | Low, dev only | 4 | Covered by P1-M1 |
 | P1-M24 | Low | 2 | Done |
 | P1-M25 | Low | 1 | Decision: option 3 |
 | P2-F1 | Low | 6 | Not started |
-| P2-F2 | Low | 5 | Not started |
+| P2-F2 | Low | 5 | Done |
 | P2-F3 | Medium | 8 | Not started |
 | P2-F4 | Medium | 8 | Not started |
 | P2-F5 | Medium | 8 | Not started |

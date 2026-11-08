@@ -3,11 +3,11 @@
 /**
  * Interactive checklists in a rendered comment.
  *
- * Why this exists: a checklist item is shared state. Anyone who can comment
- * should be able to tick it, even though they cannot edit the author's text. The
- * static Plate renderer would normally disable every form control, so this
- * replaces only the checklist item renderer with one that calls a dedicated
- * toggle endpoint.
+ * Why this exists: a checklist item is part of the comment body, so only the
+ * comment's author may tick it, the same rule as editing the text. The static
+ * Plate renderer would normally disable every form control, so this replaces
+ * only the checklist item renderer with one that calls a dedicated toggle
+ * endpoint.
  *
  * The checkbox is controlled by the stored comment body. A successful toggle
  * patches the cache, the body remounts, and the box shows the new state.

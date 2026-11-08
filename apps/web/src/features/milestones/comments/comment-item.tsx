@@ -163,9 +163,8 @@ export function CommentItem({
 	/**
 	 * Tick a checklist item without entering edit mode.
 	 *
-	 * The endpoint is open to anyone who can comment, so the author and every
-	 * other participant use the same path. A failed toggle is a toast because
-	 * the checkbox itself reverts to the stored value.
+	 * Only the author may do this, matching the comment edit rule. A failed
+	 * toggle is a toast because the checkbox itself reverts to the stored value.
 	 */
 	async function handleToggleChecklist(itemId: string, checked: boolean) {
 		try {
@@ -354,7 +353,7 @@ export function CommentItem({
 							value={comment.body}
 							ariaLabel={`Comment by ${authorName}`}
 							organizationSlug={orgSlug}
-							canToggleChecklist={canComment}
+							canToggleChecklist={comment.canEdit}
 							checklistPending={toggleChecklist.isPending}
 							onToggleChecklist={handleToggleChecklist}
 						/>

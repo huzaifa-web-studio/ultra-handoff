@@ -244,11 +244,16 @@ export function assertProjectActive(archivedAt: Date | null): void {
  * Mirrors the organization rule: a project owner manages everyone, a project
  * admin manages members and clients only. This stops two admins from removing
  * each other.
+ *
+ * The actor check is part of the predicate so a caller that forgets the
+ * manager check first cannot act on a member's or client's behalf.
  */
 export function canManageProjectTarget(
 	actorRole: ProjectRole,
 	targetRole: string,
 ): boolean {
+	if (actorRole !== "owner" && actorRole !== "admin") return false;
+
 	if (actorRole === "owner") return true;
 
 	return targetRole === "member" || targetRole === "client";
