@@ -9,6 +9,10 @@
  */
 
 import { closeRedis } from "../lib/redis";
+import {
+	startAccountCleanupWorker,
+	stopAccountCleanupWorker,
+} from "../queues/account-cleanup";
 import { startEmailWorker, stopEmailWorker } from "../queues/email";
 import {
 	startLinkPreviewWorker,
@@ -30,12 +34,14 @@ export function startWorkers(): () => Promise<void> {
 	startEmailWorker();
 	startUploadVerificationWorker();
 	startLinkPreviewWorker();
+	startAccountCleanupWorker();
 
 	return async () => {
 		// Close the workers before the shared Redis client they depend on.
 		await stopEmailWorker();
 		await stopUploadVerification();
 		await stopLinkPreviewWorker();
+		await stopAccountCleanupWorker();
 		await closeRedis();
 	};
 }

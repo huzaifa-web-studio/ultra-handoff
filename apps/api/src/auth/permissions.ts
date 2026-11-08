@@ -51,6 +51,17 @@ export const MAGIC_LINK_TTL_SECONDS = 60 * 10;
 export const MAGIC_LINK_COOLDOWN_SECONDS = 60;
 
 /**
+ * Extra abuse bounds for the public invitation magic-link route.
+ *
+ * Why: the invitation id is a bearer token, so a leaked link can trigger mail
+ * to the invitee. The cooldown spaces requests; these caps bound the total and
+ * stop one client walking many leaked ids.
+ */
+export const MAGIC_LINK_IP_LIMIT = 5;
+export const MAGIC_LINK_IP_WINDOW_SECONDS = 60 * 60;
+export const MAGIC_LINK_TOTAL_LIMIT = 5;
+
+/**
  * Slugs that would collide with a root level web route or an API prefix.
  *
  * An organization lives at `/<slug>`, so a slug like `account` would make the

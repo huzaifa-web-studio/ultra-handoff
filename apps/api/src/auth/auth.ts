@@ -18,6 +18,14 @@ import {
 	resolveSignInOrganization,
 } from "../services/organization.service";
 import { deletePreviousAvatar } from "../services/upload.service";
+import { ACCOUNT_LINKING_OPTIONS } from "./account-linking";
+import {
+	canRequestMagicLink,
+	MAGIC_LINK_PATH,
+	normalizeMagicLinkEmail,
+	resolveMagicLinkCallback,
+} from "./magic-link-gate";
+import { hasPendingInvitationForEmail } from "./magic-link-invitation";
 import {
 	assertAllowedRoles,
 	MAGIC_LINK_TTL_SECONDS,
@@ -67,6 +75,10 @@ export const auth = betterAuth({
 			"/sign-up/email": { window: 60, max: 5 },
 			"/sign-in/email": { window: 60, max: 10 },
 			"/send-verification-email": { window: 60, max: 3 },
+			// The invitation route calls this endpoint on the server, so the
+			// library default is not the only guard. This tighter rule limits a
+			// direct caller probing the endpoint or flooding one inbox.
+			[MAGIC_LINK_PATH]: { window: 60, max: 3 },
 		},
 	},
 	user: {
@@ -169,17 +181,15 @@ export const auth = betterAuth({
 	/**
 	 * Social sign-in and existing accounts.
 	 *
-	 * A person invited to a workspace may already have a password account, or
-	 * may prefer GitHub or Google. Implicit linking lets a same-email social
-	 * sign-in attach to the existing user, so the invitation's email match
-	 * still identifies them. GitHub and Google only report verified email
-	 * addresses, which is why they are trusted here.
+	 * Implicit same-email linking stays on so a person with a verified password
+	 * account can also use GitHub or Google. The takeover case is closed by
+	 * `requireLocalEmailVerified` in `ACCOUNT_LINKING_OPTIONS`: an attacker's
+	 * pre-registered but unverified row at a victim's address cannot receive
+	 * the victim's OAuth identity, so the attacker's password never becomes
+	 * usable.
 	 */
 	account: {
-		accountLinking: {
-			enabled: true,
-			trustedProviders: ["github", "google"],
-		},
+		accountLinking: ACCOUNT_LINKING_OPTIONS,
 	},
 	emailVerification: {
 		// One hour is Better Auth's default, stated here because the
@@ -267,12 +277,58 @@ export const auth = betterAuth({
 	},
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
+			/**
+			 * Gate the one endpoint that can create a user from an address
+			 * alone.
+			 *
+			 * An existing user may always ask for a link. A new address is
+			 * allowed only while a pending invitation proves the mailbox was
+			 * expected, which is what keeps the invitation flow working.
+			 * Everything else gets the same success shape as a real request.
+			 * Returning from a before hook short circuits the endpoint, so no
+			 * mail is queued and no user row is created.
+			 */
+			if (ctx.path === MAGIC_LINK_PATH) {
+				const email = normalizeMagicLinkEmail(ctx.body?.email);
+
+				if (email) {
+					const existing =
+						await ctx.context.internalAdapter.findUserByEmail(email);
+					const userExists = Boolean(existing?.user);
+					const invitationPending = userExists
+						? false
+						: await hasPendingInvitationForEmail(email);
+
+					if (!canRequestMagicLink({ userExists, invitationPending })) {
+						return ctx.json({ status: true });
+					}
+				}
+
+				// A direct request often carries no callback, which would land
+				// on the API root. Resolve it onto the web origin; an invitation
+				// callback is already absolute and passes through unchanged.
+				return {
+					context: {
+						...ctx,
+						body: {
+							...ctx.body,
+							callbackURL: resolveMagicLinkCallback(
+								ctx.body?.callbackURL,
+								serverEnv.webUrl,
+							),
+						},
+					},
+				};
+			}
+
 			// Sign-up with an existing email must fail loudly. Better Auth
 			// answers with a generic error for a taken address, which leaves
 			// the person guessing whether to sign in or pick another name.
 			// The trade-off is that this reveals whether an address is
 			// registered, which is acceptable for a client-facing app where
-			// the user needs a clear next step.
+			// the user needs a clear next step. The /sign-up/email rate limit
+			// above runs before this lookup (Better Auth rate limits at the
+			// router, before hooks), so the exposure is throttled.
 			if (ctx.path === "/sign-up/email") {
 				const email = ctx.body?.email;
 
@@ -308,6 +364,8 @@ export const auth = betterAuth({
 					});
 				}
 			}
+
+			return;
 		}),
 	},
 	// Redirect-style auth errors (OAuth callbacks, email verification,

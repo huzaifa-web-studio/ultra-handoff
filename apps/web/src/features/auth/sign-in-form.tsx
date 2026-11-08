@@ -12,6 +12,7 @@ import { toFieldErrors } from "#/lib/form-errors";
 import { EMAIL_MAX } from "#/lib/limits";
 import { PASSWORD_MAX } from "#/lib/password";
 import { authClient } from "./client";
+import { resolveAuthErrorMessage } from "./error-messages";
 import { signInSchema } from "./schema";
 import { closeAuthDialog, openForgotPassword } from "./store";
 import { broadcastAuth } from "./sync";
@@ -190,7 +191,11 @@ export function AuthSignInForm() {
 
 						if (socialError) {
 							setError(
-								socialError.message ?? "Could not continue with GitHub.",
+								resolveAuthErrorMessage(
+									(socialError as { code?: string }).code,
+									socialError.message,
+									"Could not continue with GitHub.",
+								),
 							);
 						}
 					}}
@@ -209,7 +214,11 @@ export function AuthSignInForm() {
 
 						if (socialError) {
 							setError(
-								socialError.message ?? "Could not continue with Google.",
+								resolveAuthErrorMessage(
+									(socialError as { code?: string }).code,
+									socialError.message,
+									"Could not continue with Google.",
+								),
 							);
 						}
 					}}

@@ -64,11 +64,16 @@ export const publicInvitationRoutes = new Elysia({
 	 */
 	.post(
 		"/invitations/:invitationId/magic-link",
-		async ({ params, request, status }) => {
+		async ({ params, request, status, server }) => {
 			try {
+				// The real socket address, not a forwarded header, so the
+				// per-IP bound cannot be bypassed by the caller.
+				const clientIp = server?.requestIP(request)?.address ?? null;
+
 				return await sendInvitationMagicLink(
 					params.invitationId,
 					request.headers,
+					clientIp,
 				);
 			} catch (error) {
 				return status(authErrorStatus(error), {

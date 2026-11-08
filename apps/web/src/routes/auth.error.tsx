@@ -21,22 +21,12 @@ import {
 } from "@org/ui/components/card";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
-/**
- * Map well-known Better Auth error codes to friendly copy. Unknown codes fall
- * back to `error_description` and then to the raw code.
- */
-const ERROR_MESSAGES: Record<string, string> = {
-	INVALID_TOKEN: "This link is invalid, expired, or already used.",
-	TOKEN_EXPIRED: "This link has expired. Request a new one.",
-	USER_NOT_FOUND: "We could not find an account for this request.",
-	FAILED_TO_GET_USER_INFO:
-		"We could not load your account. Please sign in again.",
-	SESSION_EXPIRED: "Your session expired. Please sign in again.",
-	account_not_linked:
-		"This account is not linked to your profile. Link it from account settings.",
-	internal_server_error: "Something went wrong on our side. Please try again.",
-};
+import { resolveAuthErrorMessage } from "#/features/auth/error-messages";
 
+/**
+ * Known codes are mapped in src/features/auth/error-messages.ts. Unknown codes
+ * fall back to `error_description` and then to the raw code.
+ */
 export const Route = createFileRoute("/auth/error")({
 	validateSearch: (
 		search: Record<string, unknown>,
@@ -74,10 +64,7 @@ function AuthErrorPage() {
 	const { error, error_description, callbackURL } = Route.useSearch();
 	const navigate = useNavigate();
 
-	const message =
-		(error && ERROR_MESSAGES[error]) ||
-		error_description ||
-		(error ? `Error: ${error}` : "Something went wrong. Please try again.");
+	const message = resolveAuthErrorMessage(error, error_description);
 
 	return (
 		<div className="flex min-h-screen flex-col bg-app-canvas">

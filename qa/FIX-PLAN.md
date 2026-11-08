@@ -66,7 +66,7 @@ bun test
 
 | Batch | Theme | Highest risk | Status | Depends on | Last updated | Commit |
 |---|---|---|---|---|---|---|
-| 1 | Authentication abuse | High | Not started | none | 8 Nov 2026 | none |
+| 1 | Authentication abuse | High | Done | none | 8 Nov 2026 | uncommitted |
 | 2 | File access and object lifecycle | High | Not started | none | 8 Nov 2026 | none |
 | 3 | Redis and storage resilience | High | Not started | none | 8 Nov 2026 | none |
 | 4 | Production and environment gate | High (deployment) | Not started | none | 8 Nov 2026 | none |
@@ -93,13 +93,15 @@ Suggested order: **3, 1, 2, 4, 5, 6, 7, 8.** Batch 3 first because the Redis han
 ## 4. Batch 1: Authentication abuse
 
 **Risk:** High. Real in every environment.
-**Status:** `Not started`
+**Status:** `Done`
 **Depends on:** none
 **Files:** `apps/api/src/auth/auth.ts`, `apps/web/src/features/auth/*`
 
 ### P1-H1: Magic link allows open sign-up for any email
 
-- [ ] Not started
+- [x] Done: `hooks.before` gate in `apps/api/src/auth/magic-link-gate.ts`, backed by `hasPendingInvitationForEmail`. A blocked request returns `200 {"status":true}`, so it is indistinguishable from a real request, and no mail or user row is produced.
+
+**Implemented:** The gate allows an existing user or a pending, unexpired invitation. The plan's neutral `BAD_REQUEST` was replaced with a `ctx.json({ status: true })` short circuit, because a 400 would still reveal that the address is unknown. `rateLimit.customRules["/sign-in/magic-link"]` is now `{ window: 60, max: 3 }`.
 
 **Where:** `apps/api/src/auth/auth.ts`, `magicLink({ ... })` (around line 341).
 **Problem:** The plugin has no `disableSignUp`, so `POST /api/auth/sign-in/magic-link` creates a user for any address and sends a link. Confirmed live: a random address received a link, and verifying it created a verified user with no invitation.
@@ -131,7 +133,11 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 
 ### P1-H2: Implicit account linking enables pre-registration hijacking
 
-- [ ] Not started
+- [x] Closed: not reachable with this configuration. Better Auth defaults `accountLinking.requireLocalEmailVerified` to `true`, and the source guard rejects linking into an existing local row whose address is unverified. Sign-up always writes `emailVerified: false` and this app requires verification before a password sign-in, so an attacker who pre-registers a victim's address can never verify it. The victim's OAuth sign-in is rejected instead of activating the attacker's password.
+
+**Verdict:** `disableImplicitLinking: true` was implemented first and then reverted. It added no protection given `requireEmailVerification: true` plus `requireLocalEmailVerified: true`, and it broke legitimate same-email GitHub and Google sign-in for verified users. `apps/api/src/auth/account-linking.ts` now keeps implicit linking on and states `requireLocalEmailVerified: true` explicitly, so a future library default change or the option's removal surfaces in review. The `account_not_linked` copy still guides an unverified local account.
+
+**Optional hardening implemented:** an hourly BullMQ sweep in `apps/api/src/queues/account-cleanup.ts` removes unverified users older than 7 days, using the rules in `apps/api/src/services/account-cleanup.service.ts`. Users who hold a workspace seat are skipped. This stops an abandoned or mistyped address from reserving the email forever.
 
 **Where:** `apps/api/src/auth/auth.ts`, `account.accountLinking` (around line 178).
 **Problem:** Same-email OAuth sign-in is implicitly linked to an existing user. An attacker can pre-register a victim's email with a password they choose; when the victim later signs in with Google, the accounts link and the attacker's password remains valid.
@@ -148,7 +154,7 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 
 ### P3-F5: Generic magic-link route lands on the API origin
 
-- [ ] Not started
+- [x] Done: `resolveMagicLinkCallback` in the magic-link hook. A missing or foreign callback becomes `${serverEnv.webUrl}/`, a relative callback resolves against the web origin, and a trusted absolute invitation callback passes through unchanged.
 
 **Where:** `apps/api/src/auth/auth.ts`, magic-link hook.
 **Problem:** A direct request without `callbackURL` lands on `http://localhost:3001/` and shows the leftover `"Hello Huzaifa"` string.
@@ -157,7 +163,9 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 
 ### P1-M8: Invitation magic-link endpoint can be spammed
 
-- [ ] Not started
+- [x] Done: per-IP cap of 5 per hour and a total cap of 5 per invitation in `sendInvitationMagicLink`. The route passes `server.requestIP(request)`, so a client cannot spoof the address with a header.
+
+**Implemented:** Limits live in `apps/api/src/auth/permissions.ts`. Manual checks: the 6th request on one invitation returned 429 with the total-cap copy, and the IP cap returned 429 with its own copy.
 
 **Where:** `apps/api/src/services/invitation.service.ts`, `sendInvitationMagicLink`.
 **Problem:** The public route uses the invitation id as a bearer token and only has a 60 second cooldown per invitation. A leaked link can trigger one email per minute for the invitation lifetime.
@@ -166,7 +174,9 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 
 ### P1-M25: Sign-up reveals whether an email is registered
 
-- [ ] Not started, decision required
+- [x] Decision: option 3. Keep the friendly message and document the trade-off. Better Auth applies rate limits at the router before hooks, so the existing `/sign-up/email` rule of 5 per 60 seconds already runs before the duplicate lookup.
+
+**Decision note:** Option 2 was rejected because `requireEmailVerification` makes Better Auth answer a duplicate sign-up with a generic success and no email, which would leave the person waiting for mail that never arrives. The accepted exposure is throttled to five probes per minute.
 
 **Where:** `apps/api/src/auth/auth.ts`, sign-up pre-check (around line 276).
 **Problem:** The friendly message tells an attacker whether an address has an account.
@@ -180,11 +190,11 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 
 ### Batch 1 exit criteria
 
-- [ ] All five items ticked or explicitly closed.
-- [ ] New/updated tests for the hook gate and the error map.
-- [ ] API and web tests green, typecheck clean.
-- [ ] Manual verification recorded in the session log.
-- [ ] No new lint errors.
+- [x] All five items ticked or explicitly closed.
+- [x] New/updated tests for the hook gate and the error map.
+- [x] API and web tests green, typecheck clean.
+- [x] Manual verification recorded in the session log.
+- [x] No new lint errors.
 
 ---
 
@@ -641,6 +651,9 @@ Append one row per session. Do not rewrite old rows.
 | Date | Batch | What changed | Verify | Commit | Next session |
 |---|---|---|---|---|---|
 | 8 Nov 2026 | none | Baseline reports only | Phase 1, 2 and 3 complete | none | Start Batch 1 |
+| 8 Nov 2026 | Batch 1 | Magic-link gate, callback fix, implicit linking off, invitation link caps, sign-up trade-off documented | `bun test` api 332 pass / web 67 pass, tsc clean for api, web and ui, biome clean on 13 files, live curl checks passed | uncommitted | Start Batch 3 (Redis hang), then Batch 2. Manual OAuth `account_not_linked` check still outstanding (no test provider account). |
+| 8 Nov 2026 | Batch 1 correction | Reverted `disableImplicitLinking` after confirming Better Auth defaults `requireLocalEmailVerified` to true and blocks linking into unverified rows. Kept implicit linking, pinned the real guard, updated copy. | `bun test` api 332 pass / web 67 pass, tsc clean | uncommitted | P1-H2 closed as not reachable. Start Batch 3, then Batch 2. |
+| 8 Nov 2026 | Batch 1 follow-up | Added an hourly BullMQ sweep that deletes unverified accounts older than 7 days, skipping workspace members. | `bun test` api 338 pass, tsc clean, live job removed an 8 day fake row and kept a 6 day one | uncommitted | Start Batch 3, then Batch 2. |
 
 **Template for a new row**
 
@@ -662,8 +675,8 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | Finding | Severity | Batch | Status |
 |---|---|---|---|
 | P1-C1 | High, dev only | 4 | Not started |
-| P1-H1 | High | 1 | Not started |
-| P1-H2 | High | 1 | Not started |
+| P1-H1 | High | 1 | Done |
+| P1-H2 | High | 1 | Closed: not reachable (requireLocalEmailVerified) |
 | P1-H3 | High, deployment | 4 | Not started |
 | P1-H4 | High | 2 | Not started |
 | P1-H5 | Disproved | 3 | Closed |
@@ -674,7 +687,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M5 | Medium | 7 | Not started |
 | P1-M6 | Medium | 3 | Not started |
 | P1-M7 | Medium | 2 | Not started |
-| P1-M8 | Medium | 1 | Not started |
+| P1-M8 | Medium | 1 | Done |
 | P1-M9 | Medium | 5 | Not started |
 | P1-M10 | Medium | 5 | Not started |
 | P1-M11 | Medium | 6 | Not started |
@@ -691,7 +704,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M22 | Low | 8 | Not started |
 | P1-M23 | Low, dev only | 4 | Covered |
 | P1-M24 | Low | 2 | Not started |
-| P1-M25 | Low | 1 | Decision |
+| P1-M25 | Low | 1 | Decision: option 3 |
 | P2-F1 | Low | 6 | Not started |
 | P2-F2 | Low | 5 | Not started |
 | P2-F3 | Medium | 8 | Not started |
@@ -704,7 +717,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P3-F2 | Medium | 6 | Not started |
 | P3-F3 | Low | 6 | Not started |
 | P3-F4 | Low | 6 | Not started |
-| P3-F5 | Low | 1 | Not started |
+| P3-F5 | Low | 1 | Done |
 | P3-F6 | Low | 6 | Not started |
 
 ---
