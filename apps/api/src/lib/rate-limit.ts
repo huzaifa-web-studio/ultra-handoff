@@ -1,5 +1,4 @@
-import { isProduction } from "./env";
-import { getRedis } from "./redis";
+import { getRedis, logRedisIssue } from "./redis";
 
 /**
  * Redis backed throttles for actions that send email.
@@ -36,9 +35,7 @@ export async function consumeRateLimit(
 
 		return count <= limit;
 	} catch (error) {
-		if (!isProduction) {
-			console.error("[rate-limit] check failed, allowing request:", error);
-		}
+		logRedisIssue("rate-limit check", error);
 
 		return true;
 	}
@@ -61,9 +58,7 @@ export async function startCooldown(
 
 		return result === "OK";
 	} catch (error) {
-		if (!isProduction) {
-			console.error("[rate-limit] cooldown failed, allowing request:", error);
-		}
+		logRedisIssue("rate-limit cooldown", error);
 
 		return true;
 	}

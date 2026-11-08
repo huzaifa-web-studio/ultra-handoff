@@ -23,14 +23,26 @@ import {
 	UPLOAD_POLICIES,
 	type UploadSession,
 } from "../lib/storage";
+import { TimeoutError, withDeadline } from "../lib/timeout";
 import {
 	markUploadRejected,
 	markUploadVerified,
 	markUploadVerifying,
 } from "../services/upload.service";
-import { createQueue } from "./index";
+import { createQueue, logQueueErrors } from "./index";
 
 export const UPLOAD_QUEUE_NAME = "upload-verification";
+
+/**
+ * Hard cap for one verification attempt.
+ *
+ * BullMQ 6 has no per job timeout option, so the backstop is a deadline around
+ * the processor itself. Every storage call already has its own smaller
+ * deadline; this catches anything else that could keep a worker slot busy
+ * (a stalled session read, a slow database write) and turns it into a normal
+ * failure that BullMQ retries with the configured backoff.
+ */
+const JOB_DEADLINE_MS = 60_000;
 
 type VerificationJob = { uploadId: string };
 
@@ -50,6 +62,7 @@ export const uploadQueue = createQueue(UPLOAD_QUEUE_NAME);
 const queueEvents = new QueueEvents(UPLOAD_QUEUE_NAME, {
 	connection: redisConnectionOptions,
 });
+logQueueErrors(queueEvents, `${UPLOAD_QUEUE_NAME} events`);
 
 /** Reject and remember why, so the route and the UI can explain it. */
 async function reject(
@@ -148,6 +161,15 @@ async function verifyUpload(
 	}
 }
 
+/** Run one verification job under the hard deadline. */
+function processVerificationJob(
+	job: Job<VerificationJob>,
+): Promise<VerificationResult> {
+	return withDeadline(verifyUpload(job), JOB_DEADLINE_MS, () => {
+		throw new TimeoutError("Upload verification timed out");
+	});
+}
+
 /** Create the verification job. Job id deduplicates repeated complete calls. */
 export async function enqueueUploadVerification(
 	uploadId: string,
@@ -193,12 +215,13 @@ export function startUploadVerificationWorker(): void {
 
 	worker = new Worker<VerificationJob, VerificationResult>(
 		UPLOAD_QUEUE_NAME,
-		verifyUpload,
+		processVerificationJob,
 		{
 			connection: redisConnectionOptions,
 			concurrency: 5,
 		},
 	);
+	logQueueErrors(worker, UPLOAD_QUEUE_NAME);
 
 	worker.on("failed", (job, _error) => {
 		if (!job) return;

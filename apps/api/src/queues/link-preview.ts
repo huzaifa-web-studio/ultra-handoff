@@ -22,7 +22,7 @@ import {
 } from "../lib/link-preview/url";
 import { redisConnectionOptions } from "../lib/redis";
 import { storeResolvedPreview } from "../services/link-preview.service";
-import { createQueue } from "./index";
+import { createQueue, logQueueErrors } from "./index";
 
 export const LINK_PREVIEW_QUEUE_NAME = "link-preview";
 
@@ -134,6 +134,7 @@ export function startLinkPreviewWorker(): void {
 		// enough and keeps a burst from looking like a scan.
 		concurrency: 3,
 	});
+	logQueueErrors(worker, LINK_PREVIEW_QUEUE_NAME);
 
 	worker.on("failed", (job, error) => {
 		if (!job) return;

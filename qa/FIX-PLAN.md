@@ -68,7 +68,7 @@ bun test
 |---|---|---|---|---|---|---|
 | 1 | Authentication abuse | High | Done | none | 8 Nov 2026 | uncommitted |
 | 2 | File access and object lifecycle | High | Done | none | 8 Nov 2026 | 3a45be7 |
-| 3 | Redis and storage resilience | High | Not started | none | 8 Nov 2026 | none |
+| 3 | Redis and storage resilience | High | Done | none | 9 Nov 2026 | uncommitted |
 | 4 | Production and environment gate | High (deployment) | Not started | none | 8 Nov 2026 | none |
 | 5 | Authorization and error handling | Medium | Not started | Batch 1 (same auth files) | 8 Nov 2026 | none |
 | 6 | Web shell, headers and UX | Medium | Not started | Batch 4 (API origin) | 8 Nov 2026 | none |
@@ -245,13 +245,24 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 ## 6. Batch 3: Redis and storage resilience
 
 **Risk:** High. Confirmed 30 second hang on authenticated requests during a Redis outage.
-**Status:** `Not started`
+**Status:** `Done`
 **Depends on:** none
-**Files:** `apps/api/src/lib/redis.ts`, `apps/api/src/auth/secondary-storage.ts`, `apps/api/src/lib/storage/client.ts`, `apps/api/src/index.ts`
+**Files:** `apps/api/src/lib/redis.ts`, `apps/api/src/lib/timeout.ts`, `apps/api/src/auth/secondary-storage.ts`, `apps/api/src/lib/storage/client.ts`, `apps/api/src/routes/health.ts`, `apps/api/src/queues/*.ts`, `apps/api/src/index.ts`, `apps/api/scripts/check-redis-deadline.ts`
 
 ### P3-F1: Redis outage hangs authenticated requests
 
-- [ ] Not started
+- [x] Done: the connection options are now split. `redisClientOptions` gives our client `enableOfflineQueue: false`, `connectTimeout` 1s, `commandTimeout` 500ms and `maxRetriesPerRequest: 1`, while `redisConnectionOptions` stays permissive for BullMQ, whose blocking reads cannot survive those limits. `failSoft` runs every secondary storage call through a 250ms `withDeadline`, so a connected but silent Redis now returns the fallback and Better Auth reads the Postgres copy. One throttled `logRedisIssue` (30s per key, dev only) replaces the per failure logging and is now attached to every BullMQ queue, worker and queue events emitter, because BullMQ otherwise falls back to an unthrottled `console.error` per reconnect. `/ready` pings the same client through `pingRedis` and reports Redis as `degraded`, not down.
+
+**Measured this session, live stack:**
+- Healthy Redis, authenticated `GET /orgs/qa-studio-p3203518/projects`: 10 to 22ms.
+- Redis stopped, same request: 200 in 14 to 30ms, served from the Postgres session copy. The phase 3 report measured 29.7s and a fetch failure.
+- Redis stopped, `/ready`: 200 in 2ms with `{"status":"degraded","checks":{"database":"ok","redis":"down"}}`, and `/health` stayed 200.
+- Redis stopped, API log: 6 throttled lines in 30s, one per BullMQ emitter, down from 57 unthrottled DNS lines in a short window.
+- Redis started again: 10 to 20ms, and `/ready` returned `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`.
+- Silent peer check (`bun run check:redis`): auth read 251ms, increment 250ms, write 251ms, readiness ping 250ms, each returning its fallback.
+- Live Redis in the same script: ping 1ms, write 1ms, read 1ms.
+
+**Known, accepted:** a command issued before the client first reaches the ready state fails fast and falls back to Postgres, so the first requests after boot may skip the cache. That is a miss, not an error, and it keeps boot from blocking on Redis.
 
 **Where:** `apps/api/src/auth/secondary-storage.ts`, `apps/api/src/lib/redis.ts`.
 **Problem:** With Redis stopped, `/health` stays 200 but `GET /orgs/:slug/projects` hung for 29.7 seconds and then failed. ioredis queues commands while disconnected and retries, so the `failSoft` wrapper never receives a rejection and never falls back to the database.
@@ -264,15 +275,24 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 
 **Verify:**
 ```bash
+cd apps/api
+bun run check:redis
+# expect each auth call under 1s with its fallback, then "Redis deadline check passed"
+```
+
+Full end to end check, when Docker is approved:
+```bash
 docker stop ultra-dev-redis-1
 # authenticated request: expect < 1s, 200 from DB or a clean 503
+curl -i http://localhost:3001/ready     # 200, status "degraded", checks.redis "down"
+curl -i http://localhost:3001/health    # still 200, liveness is unchanged
 docker start ultra-dev-redis-1
-# request: 200, single digit ms
+# request: 200, single digit ms, and /ready reports status "ok"
 ```
 
 ### P1-M6: Storage reads and deletes have no deadline
 
-- [ ] Not started
+- [x] Done: `headObject`, `readHeadBytes`, `deleteObject` and the response acquisition inside `openObject` all run through the shared `withDeadline`, with 10s metadata and 15s transfer deadlines. `openObject` bounds only the response, never the stream. The upload worker also wraps its processor in a 60s backstop, because BullMQ 6 has no per job timeout option. `routes/files.ts` maps `TimeoutError` to 504 so a hung gateway is distinguishable from a server bug.
 
 **Where:** `apps/api/src/lib/storage/client.ts`.
 **Fix:** Wrap `headObject`, `readHeadBytes`, `openObject` and `deleteObject` in the existing `withStorageTimeout`, and add a BullMQ job timeout as a backstop.
@@ -280,7 +300,7 @@ docker start ultra-dev-redis-1
 
 ### P1-M14: Redis password in `REDIS_URL` is ignored
 
-- [ ] Not started
+- [x] Done: `parseRedisUrl` now returns `username` and `password` and percent decodes them. `resolveRedisAuth` prefers `REDIS_PASSWORD` and falls back to the URL password, and the username always comes from the URL. Tests cover `redis://:secret@host`, an explicit user, and encoded credentials.
 
 **Where:** `apps/api/src/lib/redis.ts`, `parseRedisUrl`.
 **Fix:** Read `parsed.password` and `parsed.username` as fallbacks when `REDIS_PASSWORD` is empty, or construct the client from the URL and let ioredis parse it.
@@ -288,15 +308,15 @@ docker start ultra-dev-redis-1
 
 ### P1-H5: Shared Redis client has no error listener
 
-- [ ] Closed, disproved in phase 3
+- [x] Closed, disproved in phase 3
 
-The API did not crash during the outage. The remaining action is the throttled error listener in P3-F1. Keep this line for traceability.
+The API did not crash during the outage. The throttled `error` listener now lives in `apps/api/src/lib/redis.ts`, and `logRedisIssue` is shared with the auth and rate limit fallbacks, so this stays closed.
 
 ### Batch 3 exit criteria
 
-- [ ] All items ticked or closed.
-- [ ] A repeatable outage test is written down (script or manual steps).
-- [ ] Recovery verified in the log.
+- [x] All items ticked or closed.
+- [x] A repeatable outage test is written down: `apps/api/scripts/check-redis-deadline.ts` (`bun run check:redis`) plus the Docker steps above. The script uses a proxy that goes silent after the handshake, which is the exact failure mode from phase 3.
+- [x] Recovery verified: after `docker start ultra-dev-redis-1`, the authenticated request returned in 10 to 20ms and `/ready` reported `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`. The bounded client adds no latency on the healthy path.
 
 ---
 
@@ -627,6 +647,7 @@ Append one row per session. Do not rewrite old rows.
 | 8 Nov 2026 | Batch 1 correction | Reverted `disableImplicitLinking` after confirming Better Auth defaults `requireLocalEmailVerified` to true and blocks linking into unverified rows. Kept implicit linking, pinned the real guard, updated copy. | `bun test` api 332 pass / web 67 pass, tsc clean | uncommitted | P1-H2 closed as not reachable. Start Batch 3, then Batch 2. |
 | 8 Nov 2026 | Batch 1 follow-up | Added an hourly BullMQ sweep that deletes unverified accounts older than 7 days, skipping workspace members. | `bun test` api 338 pass, tsc clean, live job removed an 8 day fake row and kept a 6 day one | uncommitted | Start Batch 3, then Batch 2. |
 | 8 Nov 2026 | Batch 2 | Option A file access: `fileKeyAccess` classifier, member gated comment and milestone attachments with private no-store, public branding and link previews unchanged. Delete paths in comment, milestone and project walk the rich text and remove objects after commit. Forced attachment disposition with a sanitised filename, external images restricted to `/files/`, and a dry-run reconciliation script. | `bun test` api 365 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, integration suite 38 pass on `app_test`, biome clean on touched files, reconciliation dry run scanned 68 objects and found 39 removable orphans, live curl check returned 404 for a private milestone image, 200 with the immutable cache for a public project logo, and 404 for an unknown prefix | 3a45be7 | Authenticated upload and delete click-through still outstanding. Start Batch 3 next. |
+| 9 Nov 2026 | Batch 3 | Split Redis options into a fail fast application client and a permissive BullMQ set. Added a 250ms deadline around every secondary storage call so Better Auth falls back to Postgres, a bounded command timeout, throttled Redis logging on the app client and every BullMQ emitter, URL credential parsing, deadlines on all storage calls plus a 60s worker backstop, and a `/ready` probe that keeps `/health` as liveness and reports Redis as degraded rather than taking the instance out of rotation. | `bun test` api 379 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, biome clean on the touched files, `bun run check:redis` returned 250 to 251ms for every auth call against a silent server. Live stack with Docker: authenticated request 200 in 14 to 30ms while Redis was stopped, `/ready` 200 degraded in 2ms, `/health` 200, 6 throttled log lines in 30s instead of 57 unthrottled, then 10 to 20ms and `/ready` ok after Redis restarted. | uncommitted | Start Batch 4. |
 
 **Template for a new row**
 
@@ -658,7 +679,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M3 | Medium | 7 | Not started |
 | P1-M4 | Medium | 7 | Not started |
 | P1-M5 | Medium | 7 | Not started |
-| P1-M6 | Medium | 3 | Not started |
+| P1-M6 | Medium | 3 | Done |
 | P1-M7 | Medium | 2 | Done |
 | P1-M8 | Medium | 1 | Done |
 | P1-M9 | Medium | 5 | Not started |
@@ -666,7 +687,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M11 | Medium | 6 | Not started |
 | P1-M12 | Medium | 6 | Not started |
 | P1-M13 | Low | 6 | Not started |
-| P1-M14 | Low | 3 | Not started |
+| P1-M14 | Low | 3 | Done |
 | P1-M15 | Low, deployment | 4 | Not started |
 | P1-M16 | Low | 7 | Not started |
 | P1-M17 | Low | 2 | Done |
@@ -686,7 +707,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P2-F6 | Medium | 8 | Not started |
 | P2-F7 | Info | 8 | Closed |
 | P2-F8 | Info | 8 | Closed |
-| P3-F1 | High | 3 | Not started |
+| P3-F1 | High | 3 | Done |
 | P3-F2 | Medium | 6 | Not started |
 | P3-F3 | Low | 6 | Not started |
 | P3-F4 | Low | 6 | Not started |

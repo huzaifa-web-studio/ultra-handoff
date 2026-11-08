@@ -27,6 +27,7 @@ import {
 	openObject,
 	safeDownloadName,
 } from "../lib/storage";
+import { TimeoutError } from "../lib/timeout";
 import { isOrganizationMember } from "../middleware/tenant";
 
 /** Prefixes whose objects are downloads rather than inline content. */
@@ -126,6 +127,12 @@ export const fileRoutes = new Elysia().get(
 		} catch (error) {
 			if (isNotFoundError(error)) {
 				return status(404);
+			}
+
+			// A deadline means the storage gateway accepted the call and never
+			// answered. That is an upstream timeout, not a bug in this route.
+			if (error instanceof TimeoutError) {
+				return status(504);
 			}
 
 			return status(500);

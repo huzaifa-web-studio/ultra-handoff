@@ -26,7 +26,7 @@ import {
 	removeStaleUnverifiedAccounts,
 	type StaleAccountCleanupDeps,
 } from "../services/account-cleanup.service";
-import { createQueue } from "./index";
+import { createQueue, logQueueErrors } from "./index";
 
 export const ACCOUNT_CLEANUP_QUEUE_NAME = "account-cleanup";
 
@@ -96,6 +96,7 @@ export function startAccountCleanupWorker(): void {
 		},
 		{ connection: redisConnectionOptions, concurrency: 1 },
 	);
+	logQueueErrors(worker, ACCOUNT_CLEANUP_QUEUE_NAME);
 
 	worker.on("failed", (job, error) => {
 		if (!job) return;

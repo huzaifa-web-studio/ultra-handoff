@@ -9,11 +9,16 @@
  * so Better Auth falls back to the database copy, writes become no-ops and
  * rate limit counters fail open. The API stays usable during a Redis restart.
  *
+ * The deadline in `failSoft` is what actually delivers that promise. Catching a
+ * rejection is not enough, because ioredis can leave a command pending for the
+ * whole reconnect window, and until it settles Better Auth never reaches the
+ * database copy.
+ *
  * Used by: src/auth/auth.ts.
  */
 
-import { isProduction } from "../lib/env";
-import { getRedis } from "../lib/redis";
+import { getRedis, logRedisIssue, REDIS_READ_DEADLINE_MS } from "../lib/redis";
+import { withDeadline } from "../lib/timeout";
 
 /** Namespace so auth keys cannot collide with upload keys in the same Redis. */
 const KEY_PREFIX = "auth:";
@@ -37,10 +42,12 @@ function redisKey(key: string): string {
 }
 
 /**
- * Run one Redis operation and degrade gracefully when it fails.
+ * Run one Redis operation and degrade gracefully when it fails or stalls.
  *
- * Dev only logging: the app has no production logger yet, and an auth request
- * must never fail because a cache write did.
+ * The deadline matters as much as the catch: a command stuck on a reconnecting
+ * socket never rejects, so without it the fallback would never be returned and
+ * the request would wait out ioredis. Dev only logging, throttled so a long
+ * outage cannot flood the log.
  */
 async function failSoft<T>(
 	operation: string,
@@ -48,11 +55,9 @@ async function failSoft<T>(
 	run: () => Promise<T>,
 ): Promise<T> {
 	try {
-		return await run();
+		return await withDeadline(run(), REDIS_READ_DEADLINE_MS, () => fallback);
 	} catch (error) {
-		if (!isProduction) {
-			console.error(`[auth] redis ${operation} failed`, error);
-		}
+		logRedisIssue(`auth ${operation}`, error);
 
 		return fallback;
 	}

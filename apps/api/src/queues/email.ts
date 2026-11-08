@@ -16,7 +16,7 @@ import { type Job, Worker } from "bullmq";
 import { isProduction } from "../lib/env";
 import { deliverEmail, type EmailJobData } from "../lib/mailer";
 import { redisConnectionOptions } from "../lib/redis";
-import { createQueue } from "./index";
+import { createQueue, logQueueErrors } from "./index";
 
 export const EMAIL_QUEUE_NAME = "email";
 
@@ -68,6 +68,7 @@ export function startEmailWorker(): void {
 			concurrency: 5,
 		},
 	);
+	logQueueErrors(worker, EMAIL_QUEUE_NAME);
 
 	worker.on("failed", (job, error) => {
 		if (!job) return;

@@ -10,6 +10,7 @@ import { realtimeRoutes } from "./realtime/gateway";
 import { accountRoutes } from "./routes/account";
 import { commentRoutes } from "./routes/comments";
 import { fileRoutes } from "./routes/files";
+import { healthRoutes } from "./routes/health";
 import { publicInvitationRoutes } from "./routes/invitations";
 import { linkPreviewRoutes } from "./routes/link-previews";
 import { memberRoutes } from "./routes/members";
@@ -65,8 +66,9 @@ async function buildApp() {
 		.use(linkPreviewRoutes)
 		// Invitation preview and magic link request for the public accept page.
 		.use(publicInvitationRoutes)
-		.get("/", () => "Hello Huzaifa")
-		.get("/health", () => ({ status: "ok" }));
+		// Liveness and readiness. `/ready` exercises the session fast path.
+		.use(healthRoutes)
+		.get("/", () => "Hello Huzaifa");
 
 	if (isDevelopment) {
 		const { openapi } = await import("@elysiajs/openapi");

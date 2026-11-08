@@ -33,31 +33,24 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { s3Env } from "../env";
+import { TimeoutError, withDeadline } from "../timeout";
+
+/** Deadline for a call that only needs object metadata. */
+const STORAGE_METADATA_TIMEOUT_MS = 10_000;
+
+/** Deadline for a call that moves object bytes. */
+const STORAGE_TRANSFER_TIMEOUT_MS = 15_000;
 
 /**
  * Bound an SDK call that has no timeout of its own.
  *
  * The S3 client retries transient failures, but a hung connection to the
- * storage service has no upper bound. A background job must not hold a worker
- * slot forever, so every write is wrapped in a deadline.
+ * storage service has no upper bound. A request or a background job must not
+ * hold its slot forever, so every call goes through a deadline.
  */
 function withStorageTimeout<T>(operation: Promise<T>, ms: number): Promise<T> {
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(
-			() => reject(new Error("Storage request timed out")),
-			ms,
-		);
-
-		operation.then(
-			(value) => {
-				clearTimeout(timer);
-				resolve(value);
-			},
-			(error) => {
-				clearTimeout(timer);
-				reject(error);
-			},
-		);
+	return withDeadline(operation, ms, () => {
+		throw new TimeoutError("Storage request timed out");
 	});
 }
 
@@ -102,12 +95,13 @@ export function ensureBucket(): Promise<void> {
 		// The timeout matters as much as the reset: without it a hung HEAD
 		// would leave the memoised promise pending forever and every later
 		// upload would wait on the same dead call.
-		bucketReady = withStorageTimeout(createBucketIfMissing(), 10_000).catch(
-			(error) => {
-				bucketReady = null;
-				throw error;
-			},
-		);
+		bucketReady = withStorageTimeout(
+			createBucketIfMissing(),
+			STORAGE_METADATA_TIMEOUT_MS,
+		).catch((error) => {
+			bucketReady = null;
+			throw error;
+		});
 	}
 	return bucketReady;
 }
@@ -166,8 +160,11 @@ export async function signPutUrl(
 
 /** Read object metadata without downloading the body. */
 export function headObject(key: string) {
-	return internalClient.send(
-		new HeadObjectCommand({ Bucket: s3Env.bucket, Key: key }),
+	return withStorageTimeout(
+		internalClient.send(
+			new HeadObjectCommand({ Bucket: s3Env.bucket, Key: key }),
+		),
+		STORAGE_METADATA_TIMEOUT_MS,
 	);
 }
 
@@ -200,7 +197,7 @@ export async function putObject(
 				CacheControl: "public, max-age=31536000, immutable",
 			}),
 		),
-		15_000,
+		STORAGE_TRANSFER_TIMEOUT_MS,
 	);
 }
 
@@ -214,12 +211,15 @@ export async function readHeadBytes(
 	key: string,
 	length: number,
 ): Promise<Uint8Array> {
-	const response = await internalClient.send(
-		new GetObjectCommand({
-			Bucket: s3Env.bucket,
-			Key: key,
-			Range: `bytes=0-${Math.max(length - 1, 0)}`,
-		}),
+	const response = await withStorageTimeout(
+		internalClient.send(
+			new GetObjectCommand({
+				Bucket: s3Env.bucket,
+				Key: key,
+				Range: `bytes=0-${Math.max(length - 1, 0)}`,
+			}),
+		),
+		STORAGE_TRANSFER_TIMEOUT_MS,
 	);
 
 	if (!response.Body) {
@@ -231,8 +231,11 @@ export async function readHeadBytes(
 
 /** Remove an object. Used for rejected uploads and replaced avatars. */
 export async function deleteObject(key: string): Promise<void> {
-	await internalClient.send(
-		new DeleteObjectCommand({ Bucket: s3Env.bucket, Key: key }),
+	await withStorageTimeout(
+		internalClient.send(
+			new DeleteObjectCommand({ Bucket: s3Env.bucket, Key: key }),
+		),
+		STORAGE_METADATA_TIMEOUT_MS,
 	);
 }
 
@@ -263,7 +266,7 @@ export async function listObjectKeys(): Promise<StoredObject[]> {
 					ContinuationToken: continuationToken,
 				}),
 			),
-			15_000,
+			STORAGE_TRANSFER_TIMEOUT_MS,
 		);
 
 		for (const item of page.Contents ?? []) {
@@ -291,8 +294,13 @@ export async function listObjectKeys(): Promise<StoredObject[]> {
  * web stream, which can be handed straight to a `Response`.
  */
 export async function openObject(key: string) {
-	const response = await internalClient.send(
-		new GetObjectCommand({ Bucket: s3Env.bucket, Key: key }),
+	// Only the response acquisition is bounded. The returned body stream keeps
+	// streaming to the browser after this deadline has been cleared.
+	const response = await withStorageTimeout(
+		internalClient.send(
+			new GetObjectCommand({ Bucket: s3Env.bucket, Key: key }),
+		),
+		STORAGE_TRANSFER_TIMEOUT_MS,
 	);
 
 	if (!response.Body) {
