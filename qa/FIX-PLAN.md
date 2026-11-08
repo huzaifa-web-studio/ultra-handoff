@@ -69,7 +69,7 @@ bun test
 | 1 | Authentication abuse | High | Done | none | 8 Nov 2026 | uncommitted |
 | 2 | File access and object lifecycle | High | Done | none | 8 Nov 2026 | 3a45be7 |
 | 3 | Redis and storage resilience | High | Done | none | 9 Nov 2026 | 105eee6 |
-| 4 | Production and environment gate | High (deployment) | In progress | none | 9 Nov 2026 | uncommitted, awaiting review |
+| 4 | Production and environment gate | High (deployment) | Done | none | 9 Nov 2026 | 685dd35 |
 | 5 | Authorization and error handling | Medium | Not started | Batch 1 (same auth files) | 8 Nov 2026 | none |
 | 6 | Web shell, headers and UX | Medium | Not started | Batch 4 (API origin) | 8 Nov 2026 | none |
 | 7 | Performance | Medium | Not started | none | 8 Nov 2026 | none |
