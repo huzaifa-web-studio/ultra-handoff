@@ -13,6 +13,7 @@ import {
 	type MilestonePages,
 	patchMilestoneRow,
 	removeMilestoneRow,
+	setMilestoneStatusInPages,
 } from "./cache";
 
 /** One summary with the fields the list renders. */
@@ -147,5 +148,42 @@ describe("removeMilestoneRow", () => {
 		const next = removeMilestoneRow(pages, "missing");
 
 		expect(next.pages[0]?.milestones.map((row) => row.id)).toEqual(["a"]);
+	});
+});
+
+describe("setMilestoneStatusInPages", () => {
+	it("changes only the matching row's status", () => {
+		const pages = makePages(["a", "b"]);
+		const next = setMilestoneStatusInPages(pages, "b", "done");
+
+		expect(next.pages[0]?.milestones[0]?.status).toBe("todo");
+		expect(next.pages[0]?.milestones[1]?.status).toBe("done");
+	});
+
+	it("keeps every other field of the row", () => {
+		const pages = makePages(["a"]);
+		const before = pages.pages[0]?.milestones[0];
+		const next = setMilestoneStatusInPages(pages, "a", "in_progress");
+		const after = next.pages[0]?.milestones[0];
+
+		expect(after).toEqual({ ...before, status: "in_progress" });
+	});
+
+	it("updates the row across every loaded page", () => {
+		const pages: MilestonePages = {
+			pages: [makePage(["a"], 1), makePage(["a"], 2)],
+			pageParams: [1, 2],
+		};
+		const next = setMilestoneStatusInPages(pages, "a", "blocked");
+
+		expect(next.pages[0]?.milestones[0]?.status).toBe("blocked");
+		expect(next.pages[1]?.milestones[0]?.status).toBe("blocked");
+	});
+
+	it("is a no-op for an unknown id", () => {
+		const pages = makePages(["a"]);
+		const next = setMilestoneStatusInPages(pages, "missing", "done");
+
+		expect(next.pages[0]?.milestones[0]?.status).toBe("todo");
 	});
 });

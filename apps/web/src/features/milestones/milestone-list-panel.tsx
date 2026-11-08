@@ -26,6 +26,7 @@ import { cn } from "cn";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import type { MilestoneCounts, MilestoneDetail, MilestoneSummary } from "./api";
+import { useSetMilestoneStatus } from "./hooks";
 import type { AssignableMember } from "./milestone-assignee-field";
 import { MilestoneCreateDialog } from "./milestone-create-dialog";
 import { MilestoneListItem } from "./milestone-list-item";
@@ -128,6 +129,7 @@ export function MilestoneListPanel({
 	registerRowRef: (id: string, element: HTMLButtonElement | null) => void;
 }) {
 	const [createOpen, setCreateOpen] = useState(false);
+	const statusMutation = useSetMilestoneStatus(orgSlug, projectId);
 
 	const filtered = filters.search.length > 0 || filters.status !== "active";
 	const noMilestonesAtAll = counts !== null && counts.all === 0;
@@ -328,6 +330,17 @@ export function MilestoneListPanel({
 										milestone={milestone}
 										selected={milestone.id === selectedId}
 										onSelect={() => onSelect(milestone.id)}
+										canWrite={canWrite}
+										onChangeStatus={(status) =>
+											statusMutation.mutate({
+												milestoneId: milestone.id,
+												status,
+											})
+										}
+										isStatusPending={
+											statusMutation.isPending &&
+											statusMutation.variables?.milestoneId === milestone.id
+										}
 										buttonRef={(element) =>
 											registerRowRef(milestone.id, element)
 										}

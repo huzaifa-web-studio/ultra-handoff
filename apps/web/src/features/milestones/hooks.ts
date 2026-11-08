@@ -24,6 +24,7 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 import { ApiRequestError } from "#/lib/api";
 import {
@@ -42,8 +43,13 @@ import {
 	type MilestonePages,
 	patchMilestoneRow,
 	removeMilestoneRow,
+	setMilestoneStatusInPages,
 } from "./cache";
-import { type MilestoneFilters, normalizeDay } from "./schema";
+import {
+	type MilestoneFilters,
+	type MilestoneStatus,
+	normalizeDay,
+} from "./schema";
 
 /** Prefix shared by every milestone query in one project. */
 export function milestonesKey(orgSlug: string, projectId: string) {
@@ -287,6 +293,55 @@ export function useUpdateMilestone(orgSlug: string, projectId: string) {
 			if (variables.patch.status !== undefined) {
 				void invalidateList();
 			}
+		},
+	});
+}
+
+/**
+ * Change one milestone's status from the list.
+ *
+ * Why optimistic: the badge is the control, so waiting for the round trip would
+ * make the click look ignored. The row is patched at once and restored if the
+ * request fails. The list is invalidated afterwards because a status change
+ * moves the row between filters and changes the counts.
+ */
+export function useSetMilestoneStatus(orgSlug: string, projectId: string) {
+	const queryClient = useQueryClient();
+	const listQuery = {
+		queryKey: [...milestonesKey(orgSlug, projectId), "list"],
+	};
+
+	return useMutation({
+		mutationFn: ({
+			milestoneId,
+			status,
+		}: {
+			milestoneId: string;
+			status: MilestoneStatus;
+		}) => updateMilestone(orgSlug, projectId, milestoneId, { status }),
+		onMutate: async ({ milestoneId, status }) => {
+			await queryClient.cancelQueries(listQuery);
+
+			const previous = queryClient.getQueriesData<MilestonePages>(listQuery);
+
+			queryClient.setQueriesData<MilestonePages>(listQuery, (data) =>
+				data ? setMilestoneStatusInPages(data, milestoneId, status) : data,
+			);
+
+			return { previous };
+		},
+		onError: (error, _variables, context) => {
+			for (const [key, data] of context?.previous ?? []) {
+				queryClient.setQueryData(key, data);
+			}
+
+			toast.error(
+				error instanceof Error ? error.message : "Could not change the status.",
+			);
+		},
+		onSuccess: (data) => {
+			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+			void queryClient.invalidateQueries(listQuery);
 		},
 	});
 }
