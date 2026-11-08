@@ -194,7 +194,11 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "${API_PORT:-3001}:3001"
+      # Loopback only. Bull Board and OpenAPI are unauthenticated in
+      # development, so the published port must not be reachable from another
+      # machine on the network. The web container still reaches the API at
+      # `api:3001` over the compose network.
+      - "127.0.0.1:${API_PORT:-3001}:3001"
     # The `dev` stage has no baked-in HEALTHCHECK, so it is declared here —
     # `depends_on: service_healthy` on web would otherwise wait forever.
     healthcheck:

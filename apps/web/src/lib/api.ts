@@ -1,28 +1,29 @@
 import { treaty } from "@elysia/eden";
 import type { App } from "@org/api";
 
+import { API_ORIGIN } from "./api-base";
+
 /**
  * Eden Treaty client for the Handoff API.
  * All typed API calls (e.g. /uploads, /account) go through this client.
  * Auth endpoints (/api/auth/*) are mounted by Better Auth and are called
  * directly through `authClient`.
- */
-const API_BASE = (
-	import.meta.env.VITE_API_URL || "http://localhost:3001"
-).replace(/\/$/, "");
-
-/**
- * `credentials: "include"` is required because the web app and the API run on
- * different ports in development and on different subdomains in production.
+ *
+ * The origin comes from `lib/api-base.ts`. In development it is the local API
+ * port. A production build refuses to run without `VITE_API_URL`, so this never
+ * falls back to localhost in a deployed bundle.
+ *
+ * `credentials: "include"` is required because the web app and the API can run
+ * on different ports in development and different subdomains in production.
  * Without it the browser drops the session cookie and every protected route
- * answers 401.
+ * answers 401. In production both origins must share a registrable domain.
  */
-export const api = treaty<App>(API_BASE, {
+export const api = treaty<App>(API_ORIGIN, {
 	fetch: { credentials: "include" },
 });
 
 /** Base URL used when resolving API served assets such as `/files/...`. */
-export const API_ORIGIN = API_BASE;
+export { API_ORIGIN };
 
 /**
  * An API failure that keeps its HTTP status.

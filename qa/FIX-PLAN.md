@@ -69,7 +69,7 @@ bun test
 | 1 | Authentication abuse | High | Done | none | 8 Nov 2026 | uncommitted |
 | 2 | File access and object lifecycle | High | Done | none | 8 Nov 2026 | 3a45be7 |
 | 3 | Redis and storage resilience | High | Done | none | 9 Nov 2026 | 105eee6 |
-| 4 | Production and environment gate | High (deployment) | Not started | none | 8 Nov 2026 | none |
+| 4 | Production and environment gate | High (deployment) | In progress | none | 9 Nov 2026 | uncommitted, awaiting review |
 | 5 | Authorization and error handling | Medium | Not started | Batch 1 (same auth files) | 8 Nov 2026 | none |
 | 6 | Web shell, headers and UX | Medium | Not started | Batch 4 (API origin) | 8 Nov 2026 | none |
 | 7 | Performance | Medium | Not started | none | 8 Nov 2026 | none |
@@ -323,26 +323,30 @@ The API did not crash during the outage. The throttled `error` listener now live
 ## 7. Batch 4: Production and environment gate
 
 **Risk:** High for deployment, not a current incident. Do this before the planned hosting.
-**Status:** `Not started`
+**Status:** `Done`
 **Depends on:** none
-**Files:** `.env.example`, `compose.yaml`, `compose.dev.yaml`, `apps/api/src/lib/env.ts`, `apps/web/src/lib/api.ts`, `apps/web/src/features/auth/client.ts`
+**Files:** `.env.example`, `.env.example.dev`, `compose.yaml`, `compose.dev.yaml`, `apps/api/src/lib/env.ts`, `apps/api/src/lib/validate-env.ts`, `apps/api/src/lib/validate-boot.ts`, `apps/web/src/lib/api-base.ts`, `apps/web/vite.config.ts`, `seaweedfs/s3-entrypoint.sh`
 
 ### P1-H3: Production defaults ship dev credentials and localhost URLs
 
-- [ ] Not started
+- [x] Done
+
+**Implemented:** `compose.yaml` uses `${VAR:?message}` for every secret and public URL: `POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL`, `S3_PUBLIC_ENDPOINT`, `S3_ALLOWED_ORIGINS`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` and `VITE_API_URL`. Development defaults stay only in `compose.dev.yaml`. `.env.example` is now the production template with blank required values, and `.env.example.dev` holds the local values. The web client has one origin resolver in `apps/web/src/lib/api-base.ts`, and `vite.config.ts` refuses a production build without `VITE_API_URL`. SeaweedFS now reads its credentials from `S3_ACCESS_KEY` and `S3_SECRET_KEY` through `seaweedfs/s3-entrypoint.sh`, so the committed `admin/admin` file is development only.
 
 **Where:** `compose.yaml` (`POSTGRES_PASSWORD`, `POSTGRES_APP_PASSWORD`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `WEB_URL`, `S3_PUBLIC_ENDPOINT`), `.env.example`, `apps/web/src/lib/api.ts`, `apps/web/src/features/auth/client.ts`.
 **Fix:**
 1. Remove every production default for secrets and public URLs. Use `${VAR:?message}` in compose so a missing value fails `docker compose config` with a clear message.
-2. Replace the example values with placeholders such as `change-me` and mark them required.
+2. Replace the example values with placeholders such as `change-me` and mark them required. The values are left blank instead, because a non-empty placeholder would make `docker compose config` pass and defeat the check.
 3. Keep development defaults only in `compose.dev.yaml`.
-4. Make the web client use a relative API base in production when `VITE_API_URL` is empty, instead of `http://localhost:3001`. If a relative base is not supported by Eden Treaty, require the variable at build time and fail the build when it is missing.
+4. Make the web client use a relative API base in production when `VITE_API_URL` is empty, instead of `http://localhost:3001`. If a relative base is not supported by Eden Treaty, require the variable at build time and fail the build when it is missing. A relative base was rejected because it needs an HTTP and WebSocket reverse proxy that the stack does not have, so the build time requirement was implemented.
 
 **Done when:** `docker compose --env-file .env.example config` fails on the missing secrets, and a production build with a real API URL points at that URL.
 
 ### P1-M1: `NODE_ENV` defaults to development
 
-- [ ] Not started
+- [x] Done
+
+**Implemented:** `NODE_ENV` defaults to `production`, and the dev script plus the dev compose stack set `development` explicitly. `apps/api/src/lib/validate-env.ts` lists every missing production value in one error. `validate-boot.ts` is the first import in `index.ts`, so the check runs before `auth.ts` constructs Better Auth and before the Postgres or Redis clients are used. Required: `DATABASE_URL`, `DATABASE_APP_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL`, `REDIS_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_PUBLIC_ENDPOINT`. The check also rejects non-absolute public URLs and `DATABASE_APP_URL` equal to `DATABASE_URL`, because that would silently disable RLS.
 
 **Where:** `apps/api/src/lib/env.ts`.
 **Fix:** Default to `production`, or fail the boot when `NODE_ENV` is unset. Keep `development` as an explicit opt-in. Add startup validation for `DATABASE_URL`, `DATABASE_APP_URL`, `BETTER_AUTH_SECRET`, `WEB_URL` and `S3_PUBLIC_ENDPOINT` when `NODE_ENV=production`.
@@ -350,7 +354,9 @@ The API did not crash during the outage. The throttled `error` listener now live
 
 ### P1-M15: `S3_PUBLIC_ENDPOINT` defaults to an unreachable Docker name
 
-- [ ] Not started
+- [x] Done
+
+**Implemented:** Production compose no longer defaults it, and both `docker compose config` and the startup validation require a value. `env.ts` still leaves the production value empty, so signing cannot silently use a Docker internal name.
 
 **Where:** `compose.yaml`, `apps/api/src/lib/env.ts`.
 **Fix:** Leave it empty by default, fail the boot in production when it is unset, and document that it must be a browser-reachable reverse proxy that preserves the Host header.
@@ -358,13 +364,15 @@ The API did not crash during the outage. The throttled `error` listener now live
 
 ### P1-M23: OpenAPI is mounted whenever `NODE_ENV` is not production
 
-- [ ] Covered by P1-M1
+- [x] Covered by P1-M1
 
-It lives in the same `if (isDevelopment)` block as Bull Board. Changing the default to production closes it. No separate change.
+It lives in the same `if (isDevelopment)` block as Bull Board. Changing the default to production closes it. No separate change. Verified in a production boot: `/bull-board` and `/openapi` both returned 404.
 
 ### P1-C1: Unauthenticated Bull Board on the dev stack
 
-- [ ] Not started, dev-only
+- [x] Done, dev-only
+
+**Implemented:** `compose.dev.yaml` publishes the API on `127.0.0.1:${API_PORT:-3001}:3001`. The web container still reaches `api:3001` over the compose network, and the host still reaches `/health` and `/bull-board`.
 
 **Where:** `apps/api/src/index.ts`, `compose.dev.yaml`.
 **Fix:** Bind the dev API port to loopback (`127.0.0.1:3001:3001`), or protect `/bull-board` with the `auth` macro plus an owner check. Production is already correct.
@@ -372,10 +380,10 @@ It lives in the same `if (isDevelopment)` block as Bull Board. Changing the defa
 
 ### Batch 4 exit criteria
 
-- [ ] `docker compose config` fails on missing required values.
-- [ ] A production boot with a minimal valid env starts and does not expose `/bull-board` or `/openapi`.
-- [ ] The web bundle points at the configured API origin.
-- [ ] The checklist is added to the deployment notes.
+- [x] `docker compose config` fails on missing required values. `docker compose --env-file .env.example config` exits 1 and names the missing values. A complete temporary env exits 0.
+- [x] A production boot with a minimal valid env starts and does not expose `/bull-board` or `/openapi`. Boot check on `127.0.0.1:3101`: `/health` 200, `/` 200, `/bull-board` 404, `/openapi` 404.
+- [x] The web bundle points at the configured API origin. A build with `VITE_API_URL=https://api.example.com` inlined the origin, and a build without it failed with the new error.
+- [x] The checklist is added to the deployment notes in `README.md`.
 
 ---
 
@@ -647,8 +655,8 @@ Append one row per session. Do not rewrite old rows.
 | 8 Nov 2026 | Batch 1 correction | Reverted `disableImplicitLinking` after confirming Better Auth defaults `requireLocalEmailVerified` to true and blocks linking into unverified rows. Kept implicit linking, pinned the real guard, updated copy. | `bun test` api 332 pass / web 67 pass, tsc clean | uncommitted | P1-H2 closed as not reachable. Start Batch 3, then Batch 2. |
 | 8 Nov 2026 | Batch 1 follow-up | Added an hourly BullMQ sweep that deletes unverified accounts older than 7 days, skipping workspace members. | `bun test` api 338 pass, tsc clean, live job removed an 8 day fake row and kept a 6 day one | uncommitted | Start Batch 3, then Batch 2. |
 | 8 Nov 2026 | Batch 2 | Option A file access: `fileKeyAccess` classifier, member gated comment and milestone attachments with private no-store, public branding and link previews unchanged. Delete paths in comment, milestone and project walk the rich text and remove objects after commit. Forced attachment disposition with a sanitised filename, external images restricted to `/files/`, and a dry-run reconciliation script. | `bun test` api 365 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, integration suite 38 pass on `app_test`, biome clean on touched files, reconciliation dry run scanned 68 objects and found 39 removable orphans, live curl check returned 404 for a private milestone image, 200 with the immutable cache for a public project logo, and 404 for an unknown prefix | 3a45be7 | Authenticated upload and delete click-through still outstanding. Start Batch 3 next. |
-| 9 Nov 2026 | Batch 3 | Split Redis options into a fail fast application client and a permissive BullMQ set. Added a 250ms deadline around every secondary storage call so Better Auth falls back to Postgres, a bounded command timeout, throttled Redis logging on the app client and every BullMQ emitter, URL credential parsing, deadlines on all storage calls plus a 60s worker backstop, and a `/ready` probe that keeps `/health` as liveness and reports Redis as degraded rather than taking the instance out of rotation. | `bun test` api 379 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, biome clean on the touched files, `bun run check:redis` returned 250 to 251ms for every auth call against a silent server. Live stack with Docker: authenticated request 200 in 14 to 30ms while Redis was stopped, `/ready` 200 degraded in 2ms, `/health` 200, 6 throttled log lines in 30s instead of 57 unthrottled, then 10 to 20ms and `/ready` ok after Redis restarted. | uncommitted | Start Batch 4. |
-| 105eee6 | Start Batch 4. |
+| 9 Nov 2026 | Batch 3 | Split Redis options into a fail fast application client and a permissive BullMQ set. Added a 250ms deadline around every secondary storage call so Better Auth falls back to Postgres, a bounded command timeout, throttled Redis logging on the app client and every BullMQ emitter, URL credential parsing, deadlines on all storage calls plus a 60s worker backstop, and a `/ready` probe that keeps `/health` as liveness and reports Redis as degraded rather than taking the instance out of rotation. | `bun test` api 379 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, biome clean on the touched files, `bun run check:redis` returned 250 to 251ms for every auth call against a silent server. Live stack with Docker: authenticated request 200 in 14 to 30ms while Redis was stopped, `/ready` 200 degraded in 2ms, `/health` 200, 6 throttled log lines in 30s instead of 57 unthrottled, then 10 to 20ms and `/ready` ok after Redis restarted. | 105eee6 | Start Batch 4. |
+| 9 Nov 2026 | Batch 4 | Fail-closed production config: `NODE_ENV` defaults to production, `validate-env.ts` with `validate-boot.ts` rejects an incomplete env before auth or database clients load, `compose.yaml` has no secret or public URL defaults, `.env.example` is the production template with a new `.env.example.dev`, the web bundle requires `VITE_API_URL` at build time through one origin resolver, SeaweedFS reads its credentials from env, and the dev API port is loopback only. | `bun test` api 388 pass / 40 skip, web 71 pass, tsc clean for api, web and ui, biome clean on touched files (repo-wide still the 17 pre-existing Batch 8 errors), `docker compose --env-file .env.example config` exited 1 with the missing values, a complete temp env exited 0, production boot on 127.0.0.1:3101 returned 200 for `/health` and `/`, 404 for `/bull-board` and `/openapi`, the web build inlined `VITE_API_URL=https://api.example.com` and failed without it, and `ss` showed the dev API on 127.0.0.1:3001. | this commit | Start Batch 5. |
 
 **Template for a new row**
 
@@ -669,13 +677,13 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 
 | Finding | Severity | Batch | Status |
 |---|---|---|---|
-| P1-C1 | High, dev only | 4 | Not started |
+| P1-C1 | High, dev only | 4 | Done |
 | P1-H1 | High | 1 | Done |
 | P1-H2 | High | 1 | Closed: not reachable (requireLocalEmailVerified) |
-| P1-H3 | High, deployment | 4 | Not started |
+| P1-H3 | High, deployment | 4 | Done |
 | P1-H4 | High | 2 | Done |
 | P1-H5 | Disproved | 3 | Closed |
-| P1-M1 | Medium, deployment | 4 | Not started |
+| P1-M1 | Medium, deployment | 4 | Done |
 | P1-M2 | Medium | 5 | Not started |
 | P1-M3 | Medium | 7 | Not started |
 | P1-M4 | Medium | 7 | Not started |
@@ -689,7 +697,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M12 | Medium | 6 | Not started |
 | P1-M13 | Low | 6 | Not started |
 | P1-M14 | Low | 3 | Done |
-| P1-M15 | Low, deployment | 4 | Not started |
+| P1-M15 | Low, deployment | 4 | Done |
 | P1-M16 | Low | 7 | Not started |
 | P1-M17 | Low | 2 | Done |
 | P1-M18 | Low | 2 | Done |
@@ -697,7 +705,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M20 | Low | 5 | Not started |
 | P1-M21 | Low | 8 | Not started |
 | P1-M22 | Low | 8 | Not started |
-| P1-M23 | Low, dev only | 4 | Covered |
+| P1-M23 | Low, dev only | 4 | Covered by P1-M1 |
 | P1-M24 | Low | 2 | Done |
 | P1-M25 | Low | 1 | Decision: option 3 |
 | P2-F1 | Low | 6 | Not started |
@@ -723,4 +731,4 @@ Add them here, not in the old reports. Give them the next free ID in the batch t
 
 | Date | Batch | New finding | Severity | Status |
 |---|---|---|---|---|
-| none yet | | | | |
+| 9 Nov 2026 | 4 | P1-M26: `compose.yaml` still defaults `SMTP_HOST` and `SMTP_FROM` to development values (`localhost` and a `handoff.local` sender). A production deployment can boot with a broken mail transport. Not fixed here because it was outside the Batch 4 scope. | Low | Open |

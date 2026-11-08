@@ -20,7 +20,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      # Required in production, no default. A known password must never reach a
+      # deployment, and `:?` makes `docker compose config` fail loudly.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong database password}
       POSTGRES_DB: ${POSTGRES_DB:-app}
       # PostgreSQL 18 moved PGDATA under a version directory, and the image's
       # VOLUME moved with it — hence the /var/lib/postgresql mount below.
@@ -58,6 +60,14 @@ services:
     # S3 gateway listens on 8333, master on 9333.
     image: chrislusf/seaweedfs:latest
     restart: unless-stopped
+    # Production credentials come from required environment variables. The
+    # wrapper writes the S3 config at start, so the repository never ships a
+    # usable production storage credential. Development mounts the static
+    # admin/admin file instead.
+    entrypoint: ["/bin/sh", "/etc/seaweedfs/s3-entrypoint.sh"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set the object storage access key}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set the object storage secret key}
     # `-s3.allowedOrigins` is required for browser preflight: the SPA origin is
     # not the S3 origin, and without it the presigned PUT never starts.
     command:
@@ -65,12 +75,12 @@ services:
         "server",
         "-dir=/data",
         "-s3",
-        "-s3.config=/etc/seaweedfs/s3.json",
-        "-s3.allowedOrigins=${S3_ALLOWED_ORIGINS:-http://localhost:3000}",
+        "-s3.config=/tmp/s3.json",
+        "-s3.allowedOrigins=${S3_ALLOWED_ORIGINS:?set the public web origin}",
       ]
     volumes:
       - seaweedfsdata:/data
-      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+      - ./seaweedfs/s3-entrypoint.sh:/etc/seaweedfs/s3-entrypoint.sh:ro
     # Object storage is internal-only in production. Never publish the S3
     # gateway or master port; the API reaches it over the backend network.
     networks:
@@ -95,8 +105,8 @@ services:
     command: ["bun", "run", "db:setup"]
     working_dir: /workspace/apps/api
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
-      DATABASE_APP_URL: postgres://${POSTGRES_APP_USER:-app_tenant}:${POSTGRES_APP_PASSWORD:-tenant}@postgres:5432/${POSTGRES_DB:-app}
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:?set a strong database password}@postgres:5432/${POSTGRES_DB:-app}
+      DATABASE_APP_URL: postgres://${POSTGRES_APP_USER:-app_tenant}:${POSTGRES_APP_PASSWORD:?set a strong app_tenant password}@postgres:5432/${POSTGRES_DB:-app}
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,14 +123,14 @@ services:
       NODE_ENV: production
       PORT: "3001"
       HOST: 0.0.0.0
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-app}
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:?set a strong database password}@postgres:5432/${POSTGRES_DB:-app}
       # Unprivileged role. Every tenant query goes through it, so RLS applies.
-      DATABASE_APP_URL: postgres://${POSTGRES_APP_USER:-app_tenant}:${POSTGRES_APP_PASSWORD:-tenant}@postgres:5432/${POSTGRES_DB:-app}
+      DATABASE_APP_URL: postgres://${POSTGRES_APP_USER:-app_tenant}:${POSTGRES_APP_PASSWORD:?set a strong app_tenant password}@postgres:5432/${POSTGRES_DB:-app}
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
-      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set a long random auth secret}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set the public API URL}
       # Public web origin. Used for CORS and Better Auth trusted origins.
-      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      WEB_URL: ${WEB_URL:?set the public web URL}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -136,9 +146,9 @@ services:
       S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
       # Must be the browser reachable reverse proxy for SeaweedFS. The proxy
       # has to preserve the Host header, otherwise the SigV4 signature fails.
-      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://seaweedfs:8333}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-admin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-admin}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:?set the browser reachable storage URL}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set the object storage access key}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set the object storage secret key}
       S3_BUCKET: ${S3_BUCKET:-handoff}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_USE_SSL: ${S3_USE_SSL:-false}
@@ -165,14 +175,15 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         # Client visible API URL. Vite inlines it at build time, so it has to
-        # be a build arg, not only a runtime environment variable.
-        VITE_API_URL: ${VITE_API_URL:-}
+        # be a build arg, not only a runtime environment variable. Required:
+        # the web build refuses to produce a bundle that would call localhost.
+        VITE_API_URL: ${VITE_API_URL:?set the public API origin at build time}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: "3000"
       HOST: 0.0.0.0
-      VITE_API_URL: ${VITE_API_URL:-}
+      VITE_API_URL: ${VITE_API_URL:?set the public API origin}
     depends_on:
       api:
         condition: service_healthy

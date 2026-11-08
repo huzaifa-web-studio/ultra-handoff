@@ -12,7 +12,7 @@
  * Used by: src/components/user-avatar.tsx.
  */
 
-import { API_ORIGIN } from "./api";
+import { API_ORIGIN } from "./api-base";
 
 export function resolveAssetUrl(src?: string | null): string | undefined {
 	if (!src) return undefined;

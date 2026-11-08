@@ -1,3 +1,7 @@
+// Must stay first: validates the production environment before any module that
+// reads it (auth, database, Redis) is evaluated.
+import "./lib/validate-boot";
+
 import { cors } from "@elysiajs/cors";
 import { Elysia } from "elysia";
 

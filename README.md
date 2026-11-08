@@ -74,10 +74,10 @@ cd apps/web && bun run dev
 Development and production use separate env files:
 
 ```bash
-# Development
-cp .env.example .env.dev
+# Development (localhost, Mailpit, admin/admin storage credentials)
+cp .env.example.dev .env.dev
 
-# Production
+# Production (every secret and public URL is required)
 cp .env.example .env
 ```
 
@@ -96,6 +96,8 @@ docker compose --env-file .env -f compose.yaml up -d --build
 Compose cannot select its own interpolation env file from inside a compose file. The file is chosen by the CLI flag `--env-file` or by the `COMPOSE_ENV_FILES` environment variable. That is why the commands above include it.
 
 Key variables: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `WEB_PORT`, `API_PORT`, `VITE_API_URL`. In `.env.dev`, point `SMTP_HOST` to `mailpit` and `SMTP_PORT` to `1025` to capture mail locally.
+
+`compose.yaml` has no defaults for secrets or public URLs. Every required value is documented in `.env.example`, and `docker compose --env-file .env config` fails with the name of the first missing one.
 
 ### Database
 
@@ -120,7 +122,7 @@ bun run db:studio
 | Service | Purpose | Access |
 |---|---|---|
 | `web` | TanStack Start SPA | http://localhost:3000 |
-| `api` | Elysia REST API | http://localhost:3001 |
+| `api` | Elysia REST API | http://localhost:3001 (loopback only) |
 | `postgres` | PostgreSQL 18 database | `localhost:5432` |
 | `redis` | Better Auth sessions and BullMQ job queues | `localhost:6379` |
 | `seaweedfs` | S3-compatible object storage (all-in-one) | S3 API http://localhost:8333, master http://localhost:9333 |
@@ -162,6 +164,25 @@ Production uses two Docker networks:
 - `ultra-frontend`: `api`, `web`
 
 The `web` container can only reach `api`. It cannot resolve or connect to the database, Redis, or object storage. SeaweedFS ports are not published in production.
+
+### Production deployment checklist
+
+`compose.yaml` fails closed. Every value below is required, and
+`docker compose --env-file .env config` refuses to run while one is missing.
+The API repeats the check at startup and lists every missing variable in one
+error.
+
+- [ ] `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` are long random values, different from each other and from the development defaults.
+- [ ] `BETTER_AUTH_SECRET` is a long random value, for example from `openssl rand -base64 48`.
+- [ ] `BETTER_AUTH_URL` is the public API origin.
+- [ ] `WEB_URL` is the public web origin.
+- [ ] `VITE_API_URL` is the public API origin and shares the registrable domain with `WEB_URL`, so the session cookie stays same-site.
+- [ ] `S3_PUBLIC_ENDPOINT` is a browser reachable reverse proxy in front of SeaweedFS that preserves the `Host` header.
+- [ ] `S3_ALLOWED_ORIGINS` is the exact web origin.
+- [ ] `S3_ACCESS_KEY` and `S3_SECRET_KEY` are strong values, different from the development `admin` pair. The API and SeaweedFS read the same pair.
+- [ ] `docker compose --env-file .env config` succeeds.
+- [ ] After `bun run docker:prod`, `GET /bull-board` and `GET /openapi` return 404.
+- [ ] The web bundle points at the configured API origin, not at `localhost`.
 
 ## Building
 

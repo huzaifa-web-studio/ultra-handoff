@@ -23,7 +23,7 @@
 
 import type { RealtimeEnvelope } from "@org/api";
 
-import { API_ORIGIN } from "#/lib/api";
+import { API_ORIGIN } from "#/lib/api-base";
 import {
 	isTerminalCloseCode,
 	nextReconnectDelay,
