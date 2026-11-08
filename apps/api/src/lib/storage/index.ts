@@ -14,14 +14,18 @@ export {
 	headObject,
 	isNotFoundError,
 	keyFromFileUrl,
+	listObjectKeys,
 	objectUrl,
 	openObject,
 	putObject,
 	readHeadBytes,
+	type StoredObject,
 	signPutUrl,
 } from "./client";
 export {
 	extensionForMime,
+	type FileKeyAccess,
+	fileKeyAccess,
 	isPublicFileKey,
 	isUploadPurpose,
 	MAX_ATTACHMENT_BYTES,
@@ -37,6 +41,7 @@ export {
 	type UploadScope,
 } from "./config";
 export { type DetectedImageType, sniffImageType } from "./image";
+export { keyFromRichText, safeDownloadName } from "./keys";
 export {
 	consumeUploadQuota,
 	getUploadSession,

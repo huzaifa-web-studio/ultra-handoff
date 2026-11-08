@@ -36,7 +36,12 @@ export default function TextViewer({ src }: ViewerProps) {
 
 		async function load(): Promise<void> {
 			try {
-				const response = await fetch(src, { signal: controller.signal });
+				// Attachments are member gated, so the session cookie must travel
+				// with this cross origin request.
+				const response = await fetch(src, {
+					credentials: "include",
+					signal: controller.signal,
+				});
 
 				if (!response.ok) throw new Error("Could not load this file.");
 

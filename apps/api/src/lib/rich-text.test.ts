@@ -171,6 +171,35 @@ describe("sanitizeCommentBody", () => {
 		expect((result.value[0] as { type?: string }).type).toBe("img");
 	});
 
+	test("drops an external image so it cannot track readers", () => {
+		const result = sanitizeCommentBody([
+			{
+				type: "img",
+				url: "https://tracker.example/pixel.png",
+				children: [{ text: "" }],
+			},
+			paragraph("Body"),
+		]);
+
+		const types = result.value.map((node) => (node as { type?: string }).type);
+
+		expect(types).toEqual(["p"]);
+	});
+
+	test("still keeps an external attachment chip", () => {
+		const result = sanitizeCommentBody([
+			{
+				type: "file",
+				url: "https://example.com/brief.pdf",
+				name: "Brief.pdf",
+				mime: "application/pdf",
+				children: [{ text: "" }],
+			},
+		]);
+
+		expect((result.value[0] as { type?: string }).type).toBe("file");
+	});
+
 	test("accepts a file with no text", () => {
 		const result = sanitizeCommentBody([
 			{

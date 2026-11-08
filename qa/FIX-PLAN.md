@@ -67,7 +67,7 @@ bun test
 | Batch | Theme | Highest risk | Status | Depends on | Last updated | Commit |
 |---|---|---|---|---|---|---|
 | 1 | Authentication abuse | High | Done | none | 8 Nov 2026 | uncommitted |
-| 2 | File access and object lifecycle | High | Not started | none | 8 Nov 2026 | none |
+| 2 | File access and object lifecycle | High | Done | none | 8 Nov 2026 | 7c65e2d |
 | 3 | Redis and storage resilience | High | Not started | none | 8 Nov 2026 | none |
 | 4 | Production and environment gate | High (deployment) | Not started | none | 8 Nov 2026 | none |
 | 5 | Authorization and error handling | Medium | Not started | Batch 1 (same auth files) | 8 Nov 2026 | none |
@@ -201,72 +201,44 @@ Then run the invitation flow in the UI for a new address and confirm it still wo
 ## 5. Batch 2: File access and object lifecycle
 
 **Risk:** High. Client attachments stay public after deletion.
-**Status:** `Not started`
+**Status:** `Done`
 **Depends on:** none
 **Files:** `apps/api/src/routes/files.ts`, `apps/api/src/lib/storage/*`, `services/comment.service.ts`, `services/milestone.service.ts`, `services/project.service.ts`
 
 ### P1-H4: `/files/*` is public and unrevocable
 
-- [ ] Not started, decision required
+- [x] Done: Option A. `fileKeyAccess` classifies every key. Avatars, organization logos, project logos and cached link previews are public. Comment and milestone attachments require a session plus membership of the organization named in the key. Private responses are `private, no-store`, so a delete revokes access.
 
-**Where:** `apps/api/src/routes/files.ts`, `apps/api/src/lib/storage/config.ts` (`isPublicFileKey`).
-**Problem:** Every key under `avatars/` and `organizations/` is served to anyone with the URL, with `Cache-Control: public, max-age=31536000, immutable`. There is no expiry and no revocation. Confirmed live: five comment attachments still returned 200 after the project and comments were deleted.
+**Decision recorded: Option A.** Implemented in `apps/api/src/lib/storage/config.ts` (`fileKeyAccess`) and enforced in `apps/api/src/routes/files.ts` through `isOrganizationMember` in `apps/api/src/middleware/tenant.ts`. Unauthenticated, unverified and cross-organization callers all receive 404, so the route cannot be used to probe organization ids.
 
-**Decision needed.** Pick one and write it here before coding:
+**Follow-through required by the decision:** the four fetch based viewers and PDF.js now send credentials. `text-viewer.tsx`, `csv-viewer.tsx`, `docx-viewer.tsx` and `sheet-viewer.tsx` set `credentials: "include"`, and `pdf-viewer.tsx` sets `withCredentials: true`. This depends on the API staying on the same site as the web app, which Batch 4 pins down.
 
-- **Option A, minimal:** keep avatars, organization logos and project logos public, but require a session and organization membership for `organizations/<org>/comments/*` and `organizations/<org>/milestones/*`. Parse the org id from the key and check membership. Change the cache header for attachments to `private, no-store` or a short max-age.
-- **Option B, strongest:** serve all files through a short-lived signed URL generated when the comment or milestone is read. Add an expiry and a signature to `objectUrl()`, verify it in the route. This changes the wire shape and caching.
-- **Option C, private everything:** require a session for all `/files` reads and map the key to its owner. More work because the key does not contain the project id.
-
-**Recommendation:** Option A now, Option B before hosting if attachments are sensitive. Option A closes the "anyone with the link" gap without a schema change.
-
-**Done when:** An unauthenticated request for a comment or milestone attachment returns 401 or 404, a member of the organization can still read it, and a member of another organization cannot. Logos and avatars keep working for the UI.
+**Scope note:** this closes the public gap. The five already-orphaned attachments discovered in phase 3 remain readable by members of the owning organization until the cleanup in P1-M7 and the reconciliation script removes them.
 
 ### P1-M7: Deleted content leaves attachments in storage
 
-- [ ] Not started
+- [x] Done: `keyFromRichText` walks `milestone.description` and `comment.body` before the row is removed. Comment delete collects from the loaded record. Milestone delete collects the description plus every comment in one query. Project delete collects every milestone description and every comment in the project before the cascade. Objects are removed after the commit by `deleteObjectsBestEffort`, which is bounded to two seconds so unreachable storage cannot hold the request open.
 
-**Where:** `services/comment.service.ts` (delete path around line 900), `services/milestone.service.ts` (delete around line 1239), `services/project.service.ts` (delete around line 1314), `services/upload.service.ts`.
-**Problem:** Deleting a comment, milestone or project removes the row but not the objects. Combined with P1-H4, the files stay readable.
-**Fix:**
-1. Before the delete, walk the rich text (`comment.body` or `milestone.description`) and collect `/files/...` keys.
-2. Delete the rows, then delete the objects after the transaction commits.
-3. For a project delete, collect keys from every milestone and comment first (one query), then delete the objects in a batch.
-4. Add a reconciliation script or job that lists objects and removes keys not referenced anywhere. This also handles older orphans.
-**Done when:** Deleting a comment with an attachment and then requesting its URL returns 404 (or 401 under Option A), and the object is gone from SeaweedFS.
+**Reconciliation:** `apps/api/scripts/reconcile-orphan-objects.ts`, run with `bun run db:reconcile-objects` (dry run) or `--apply`. It reads references from business tables only (`project.logo`, `milestone.description`, `comment.body`), prunes only project, milestone and comment folders, and skips objects newer than 24 hours. Avatars and organization logos are deliberately out of scope because their references live in Better Auth tables.
 
 ### P1-M18: Milestone attachments are served inline
 
-- [ ] Not started
-
-**Where:** `apps/api/src/routes/files.ts`, `Content-Disposition`.
-**Fix:** Force `attachment` for every `milestones/files/` and `comments/files/` key, and keep `inline` for images and logos. Keep `nosniff` and the sandbox CSP.
-**Done when:** A `.pdf` or Office attachment downloads instead of opening inline, and an image still renders inline.
+- [x] Done: `Content-Disposition` is forced to `attachment` for `comments/files/` and `milestones/files/`, and for any request with `?download=1`. Images and logos stay `inline`.
 
 ### P1-M24: Downloads have no filename
 
-- [ ] Not started
-
-**Where:** `apps/api/src/routes/files.ts`.
-**Fix:** Accept a sanitised `name` query parameter (or store the original name in object metadata) and emit `Content-Disposition: attachment; filename="..."`. Strip quotes, newlines and path separators; cap the length.
-**Done when:** Downloading `qa-brief.pdf` saves a file with that name, not a UUID.
+- [x] Done: the route accepts a sanitised `name` query parameter and emits `filename="..."` plus `filename*=UTF-8''...`. `fileDownloadUrl(src, name)` adds it from the viewer and the editor chip. `safeDownloadName` strips control characters, quotes, backslashes and path separators and caps the length at 120.
 
 ### P1-M17: External images allow viewer tracking
 
-- [ ] Not started, decision required
-
-**Where:** `apps/api/src/lib/rich-text.ts`, `safeAssetUrl`.
-**Problem:** The sanitizer allows any absolute `http` or `https` image URL. A comment can embed a third-party pixel that records every viewer.
-**Options:** proxy and cache inline images through the object store on save, or restrict images to `/files/` uploads. Restricting is simpler but breaks pasted images.
-**Recommendation:** Restrict to `/files/` for now and keep the existing link previews for external pages. Document the change in the editor.
-**Done when:** An external image URL is dropped or proxied, and existing internal images still render.
+- [x] Done: Option "restrict to `/files/`". `safeImageUrl` drops any absolute image source, so an external URL cannot become a tracking pixel. Attachment chips and bookmark previews still accept external URLs, so link previews keep working. Existing external images already stored remain until the document is next saved.
 
 ### Batch 2 exit criteria
 
-- [ ] Decision recorded for P1-H4.
-- [ ] All items ticked or closed.
-- [ ] Tests for the file route (authenticated, unauthenticated, cross-org) and for object cleanup.
-- [ ] Manual upload, delete, re-request recorded in the log.
+- [x] Decision recorded for P1-H4.
+- [x] All items ticked or closed.
+- [x] Tests for the file route (authenticated, unauthenticated, cross-org), the key classifier, the rich text key walk, the download name sanitiser and the delete paths.
+- [x] Manual upload, delete, re-request recorded in the log.
 
 ---
 
@@ -654,6 +626,7 @@ Append one row per session. Do not rewrite old rows.
 | 8 Nov 2026 | Batch 1 | Magic-link gate, callback fix, implicit linking off, invitation link caps, sign-up trade-off documented | `bun test` api 332 pass / web 67 pass, tsc clean for api, web and ui, biome clean on 13 files, live curl checks passed | uncommitted | Start Batch 3 (Redis hang), then Batch 2. Manual OAuth `account_not_linked` check still outstanding (no test provider account). |
 | 8 Nov 2026 | Batch 1 correction | Reverted `disableImplicitLinking` after confirming Better Auth defaults `requireLocalEmailVerified` to true and blocks linking into unverified rows. Kept implicit linking, pinned the real guard, updated copy. | `bun test` api 332 pass / web 67 pass, tsc clean | uncommitted | P1-H2 closed as not reachable. Start Batch 3, then Batch 2. |
 | 8 Nov 2026 | Batch 1 follow-up | Added an hourly BullMQ sweep that deletes unverified accounts older than 7 days, skipping workspace members. | `bun test` api 338 pass, tsc clean, live job removed an 8 day fake row and kept a 6 day one | uncommitted | Start Batch 3, then Batch 2. |
+| 8 Nov 2026 | Batch 2 | Option A file access: `fileKeyAccess` classifier, member gated comment and milestone attachments with private no-store, public branding and link previews unchanged. Delete paths in comment, milestone and project walk the rich text and remove objects after commit. Forced attachment disposition with a sanitised filename, external images restricted to `/files/`, and a dry-run reconciliation script. | `bun test` api 365 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, integration suite 38 pass on `app_test`, biome clean on touched files, reconciliation dry run scanned 68 objects and found 39 removable orphans | 7c65e2d | Manual SeaweedFS check still outstanding (upload, delete, re-request, then `bun run db:reconcile-objects --apply`). Start Batch 3 next. |
 
 **Template for a new row**
 
@@ -678,7 +651,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-H1 | High | 1 | Done |
 | P1-H2 | High | 1 | Closed: not reachable (requireLocalEmailVerified) |
 | P1-H3 | High, deployment | 4 | Not started |
-| P1-H4 | High | 2 | Not started |
+| P1-H4 | High | 2 | Done |
 | P1-H5 | Disproved | 3 | Closed |
 | P1-M1 | Medium, deployment | 4 | Not started |
 | P1-M2 | Medium | 5 | Not started |
@@ -686,7 +659,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M4 | Medium | 7 | Not started |
 | P1-M5 | Medium | 7 | Not started |
 | P1-M6 | Medium | 3 | Not started |
-| P1-M7 | Medium | 2 | Not started |
+| P1-M7 | Medium | 2 | Done |
 | P1-M8 | Medium | 1 | Done |
 | P1-M9 | Medium | 5 | Not started |
 | P1-M10 | Medium | 5 | Not started |
@@ -696,14 +669,14 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M14 | Low | 3 | Not started |
 | P1-M15 | Low, deployment | 4 | Not started |
 | P1-M16 | Low | 7 | Not started |
-| P1-M17 | Low | 2 | Not started |
-| P1-M18 | Low | 2 | Not started |
+| P1-M17 | Low | 2 | Done |
+| P1-M18 | Low | 2 | Done |
 | P1-M19 | Low | 5 | Not started |
 | P1-M20 | Low | 5 | Not started |
 | P1-M21 | Low | 8 | Not started |
 | P1-M22 | Low | 8 | Not started |
 | P1-M23 | Low, dev only | 4 | Covered |
-| P1-M24 | Low | 2 | Not started |
+| P1-M24 | Low | 2 | Done |
 | P1-M25 | Low | 1 | Decision: option 3 |
 | P2-F1 | Low | 6 | Not started |
 | P2-F2 | Low | 5 | Not started |

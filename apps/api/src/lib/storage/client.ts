@@ -26,6 +26,7 @@ import {
 	GetObjectCommand,
 	HeadBucketCommand,
 	HeadObjectCommand,
+	ListObjectsV2Command,
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
@@ -233,6 +234,54 @@ export async function deleteObject(key: string): Promise<void> {
 	await internalClient.send(
 		new DeleteObjectCommand({ Bucket: s3Env.bucket, Key: key }),
 	);
+}
+
+/** One object in the bucket, reduced to what a cleanup pass needs. */
+export type StoredObject = {
+	key: string;
+	lastModified: Date | null;
+	size: number;
+};
+
+/**
+ * List every object in the bucket.
+ *
+ * Why paginated: S3 returns at most 1,000 keys per call. The reconciliation
+ * script must see the whole bucket, so the continuation token is followed until
+ * it is exhausted. Each page gets its own deadline, so one hung call cannot
+ * stall the pass forever.
+ */
+export async function listObjectKeys(): Promise<StoredObject[]> {
+	const objects: StoredObject[] = [];
+	let continuationToken: string | undefined;
+
+	do {
+		const page = await withStorageTimeout(
+			internalClient.send(
+				new ListObjectsV2Command({
+					Bucket: s3Env.bucket,
+					ContinuationToken: continuationToken,
+				}),
+			),
+			15_000,
+		);
+
+		for (const item of page.Contents ?? []) {
+			if (!item.Key) continue;
+
+			objects.push({
+				key: item.Key,
+				lastModified: item.LastModified ?? null,
+				size: item.Size ?? 0,
+			});
+		}
+
+		continuationToken = page.IsTruncated
+			? page.NextContinuationToken
+			: undefined;
+	} while (continuationToken);
+
+	return objects;
 }
 
 /**

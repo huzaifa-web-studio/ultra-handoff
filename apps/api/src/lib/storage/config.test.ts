@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
 	extensionForMime,
+	fileKeyAccess,
 	isPublicFileKey,
 	isUploadPurpose,
 	MAX_ATTACHMENT_BYTES,
@@ -58,18 +59,70 @@ describe("isUploadPurpose", () => {
 	});
 });
 
-describe("isPublicFileKey", () => {
-	test("allows the two public prefixes", () => {
-		expect(isPublicFileKey("avatars/user-1/a.png")).toBe(true);
-		expect(isPublicFileKey("organizations/org-1/projects/p.png")).toBe(true);
-		expect(isPublicFileKey("organizations/org-1/comments/files/a.pdf")).toBe(
-			true,
+describe("fileKeyAccess", () => {
+	test("an avatar and the branding images stay public", () => {
+		expect(fileKeyAccess("avatars/user-1/a.png")).toEqual({
+			visibility: "public",
+		});
+		expect(fileKeyAccess("organizations/org-1/logo.png")).toEqual({
+			visibility: "public",
+		});
+		expect(fileKeyAccess("organizations/org-1/projects/p.png")).toEqual({
+			visibility: "public",
+		});
+	});
+
+	test("comment and milestone attachments belong to the organization", () => {
+		expect(fileKeyAccess("organizations/org-1/comments/files/a.pdf")).toEqual({
+			visibility: "organization",
+			organizationId: "org-1",
+		});
+		expect(fileKeyAccess("organizations/org-1/comments/images/i.png")).toEqual({
+			visibility: "organization",
+			organizationId: "org-1",
+		});
+		expect(fileKeyAccess("organizations/org-1/milestones/i.png")).toEqual({
+			visibility: "organization",
+			organizationId: "org-1",
+		});
+		expect(fileKeyAccess("organizations/org-1/milestones/files/a.pdf")).toEqual(
+			{ visibility: "organization", organizationId: "org-1" },
 		);
 	});
 
-	test("rejects anything outside the allowlist", () => {
+	test("a cached link preview stays public like the page it came from", () => {
+		expect(
+			fileKeyAccess("organizations/org-1/link-previews/abc-image.png"),
+		).toEqual({ visibility: "public" });
+	});
+
+	test("rejects anything outside the known shapes", () => {
+		expect(fileKeyAccess("private/a.pdf")).toBeNull();
+		expect(fileKeyAccess("organizationsX/a.pdf")).toBeNull();
+		expect(fileKeyAccess("organizations/org-1")).toBeNull();
+		expect(fileKeyAccess("organizations/org-1/unknown/a.pdf")).toBeNull();
+		expect(fileKeyAccess("organizations/../org-1/a.pdf")).toBeNull();
+		expect(fileKeyAccess("organizations//logo.png")).toBeNull();
+		expect(fileKeyAccess("avatars/user-1")).toBeNull();
+		expect(fileKeyAccess("")).toBeNull();
+	});
+});
+
+describe("isPublicFileKey", () => {
+	test("is true only for the public shapes", () => {
+		expect(isPublicFileKey("avatars/user-1/a.png")).toBe(true);
+		expect(isPublicFileKey("organizations/org-1/projects/p.png")).toBe(true);
+		expect(isPublicFileKey("organizations/org-1/logo.png")).toBe(true);
+	});
+
+	test("is false for attachments", () => {
+		expect(isPublicFileKey("organizations/org-1/comments/files/a.pdf")).toBe(
+			false,
+		);
+		expect(isPublicFileKey("organizations/org-1/milestones/files/a.pdf")).toBe(
+			false,
+		);
 		expect(isPublicFileKey("private/a.pdf")).toBe(false);
-		expect(isPublicFileKey("organizationsX/a.pdf")).toBe(false);
 		expect(isPublicFileKey("")).toBe(false);
 	});
 });

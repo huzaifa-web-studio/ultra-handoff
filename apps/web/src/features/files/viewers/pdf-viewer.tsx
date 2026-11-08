@@ -52,6 +52,9 @@ const PDF_OPTIONS = {
 	disableRange: true,
 	disableStream: true,
 	isEvalSupported: false,
+	// Attachments are member gated, so PDF.js has to send the session cookie
+	// with its cross origin request.
+	withCredentials: true,
 } as const;
 
 /** Only the viewport API is needed to read a page ratio. */

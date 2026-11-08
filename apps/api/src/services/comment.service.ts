@@ -42,10 +42,12 @@ import { type TenantTx, withTenant } from "../db/tenant";
 import type { MilestoneEventType } from "../lib/milestone-events";
 import { consumeRateLimit } from "../lib/rate-limit";
 import { sanitizeCommentBody } from "../lib/rich-text";
+import { keyFromRichText } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
 import { assertCommentMentions } from "./mention.service";
 import { requireMilestoneAccess } from "./milestone.service";
 import { loadUserMap } from "./project.service";
+import { deleteObjectsBestEffort } from "./upload.service";
 
 /** The person who wrote a comment, as the thread renders it. */
 export type CommentAuthor = {
@@ -862,7 +864,7 @@ export async function deleteMilestoneComment(
 	milestoneId: string,
 	commentId: string,
 ): Promise<CommentWriteResult> {
-	return withTenant(
+	const { result, removedKeys } = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const { access } = await requireMilestoneAccess(
@@ -900,6 +902,11 @@ export async function deleteMilestoneComment(
 				locked: access.row.archivedAt !== null,
 			});
 
+			// Collect the attachments before the body is blanked. Nothing else
+			// links a stored object to the comment, so this walk is the last
+			// chance to know which objects belong to it.
+			const removedKeys = keyFromRichText(record.body);
+
 			await tx
 				.update(comment)
 				.set({
@@ -931,9 +938,17 @@ export async function deleteMilestoneComment(
 			const people = await loadPeople([deleted]);
 
 			return {
-				comment: toCommentRow(deleted, people, tenant.userId, false),
-				total: await countComments(tx, tenant, milestoneId),
+				result: {
+					comment: toCommentRow(deleted, people, tenant.userId, false),
+					total: await countComments(tx, tenant, milestoneId),
+				},
+				removedKeys,
 			};
 		},
 	);
+
+	// The rows are committed, so removing the bytes cannot roll the delete back.
+	await deleteObjectsBestEffort(removedKeys);
+
+	return result;
 }

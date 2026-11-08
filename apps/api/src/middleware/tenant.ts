@@ -92,6 +92,39 @@ export async function resolveTenantScope(
 }
 
 /**
+ * Answer "does this caller belong to this organization" when only an id is
+ * known.
+ *
+ * Why this exists: `/files/*` is not slug scoped. A stored attachment key
+ * carries the organization id, not the slug, so it cannot use the `tenant`
+ * macro. The check itself is the same one `resolveTenantScope` performs, run on
+ * the privileged client because it reads Better Auth tables. It returns false
+ * for an unauthenticated or unverified caller, and the route turns every false
+ * into a 404 so the endpoint cannot be used to probe organization ids.
+ */
+export async function isOrganizationMember(
+	headers: Headers,
+	organizationId: string,
+): Promise<boolean> {
+	const session = await auth.api.getSession({ headers });
+	if (!session) return false;
+	if (!isEmailVerified(session.user)) return false;
+
+	const [row] = await adminDb
+		.select({ id: member.id })
+		.from(member)
+		.where(
+			and(
+				eq(member.userId, session.user.id),
+				eq(member.organizationId, organizationId),
+			),
+		)
+		.limit(1);
+
+	return Boolean(row);
+}
+
+/**
  * Elysia plugin exposing the `tenant` macro.
  *
  * Usage:

@@ -219,16 +219,88 @@ export function extensionForMime(mime: string): string | null {
 }
 
 /**
- * Prefixes that may be served through the public /files route.
+ * Who may read a stored object.
  *
- * Keeping an allowlist means a future private bucket (contracts, invoices)
- * cannot be exposed by accident just because a key exists.
+ * Why a classifier instead of a public/private prefix list: the same
+ * `organizations/<orgId>/` prefix now holds both public branding (the
+ * organization logo and project logos) and private client material (milestone
+ * and comment attachments). A prefix allowlist cannot separate the two, so the
+ * decision is made per key shape instead.
  */
-const PUBLIC_KEY_PREFIXES = ["avatars/", "organizations/"];
+export type FileKeyAccess =
+	| { visibility: "public" }
+	| { visibility: "organization"; organizationId: string };
+
+/**
+ * Better Auth organization ids are opaque text. Restricting the shape here
+ * stops a crafted key from smuggling a path segment into the membership
+ * lookup.
+ */
+const ORGANIZATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Folders inside an organization that are never public. */
+const PRIVATE_ORGANIZATION_FOLDERS = new Set(["comments", "milestones"]);
+
+/**
+ * Decide what a stored key is allowed to do.
+ *
+ * Shapes:
+ *   avatars/<userId>/<file>                 public
+ *   organizations/<orgId>/<file>            public, this is the org logo
+ *   organizations/<orgId>/projects/...      public, project logos
+ *   organizations/<orgId>/comments/...      organization members only
+ *   organizations/<orgId>/milestones/...    organization members only
+ *
+ * Anything else is denied. Default deny is what keeps a future private bucket
+ * (contracts, invoices) from being exposed by accident.
+ */
+export function fileKeyAccess(key: string): FileKeyAccess | null {
+	const segments = key.split("/");
+
+	if (segments[0] === "avatars") {
+		// Require the owner and a file name, so `avatars/x` cannot be used to
+		// probe a prefix.
+		return segments.length >= 3 && segments[1].length > 0
+			? { visibility: "public" }
+			: null;
+	}
+
+	if (segments[0] !== "organizations") return null;
+
+	const organizationId = segments[1] ?? "";
+	if (!ORGANIZATION_ID_PATTERN.test(organizationId)) return null;
+
+	const rest = segments.slice(2);
+	if (rest.length === 0) return null;
+
+	// The first segment after the org id is either a folder or the logo file
+	// name. A logo is stored with an extension, so it is always a single
+	// segment.
+	const folder = rest[0];
+
+	if (rest.length === 1) {
+		return { visibility: "public" };
+	}
+
+	if (PRIVATE_ORGANIZATION_FOLDERS.has(folder)) {
+		return { visibility: "organization", organizationId };
+	}
+
+	// Project logos and cached link preview assets stay public. A link preview
+	// is a copy of an image the server fetched from a public page, so it is no
+	// more sensitive than the page itself, and it is rendered as a bookmark
+	// card outside an attachment context.
+	if (folder === "projects" || folder === "link-previews") {
+		return { visibility: "public" };
+	}
+
+	// Unknown folder under the organization: deny rather than guess.
+	return null;
+}
 
 /** True when a key belongs to a publicly readable upload purpose. */
 export function isPublicFileKey(key: string): boolean {
-	return PUBLIC_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
+	return fileKeyAccess(key)?.visibility === "public";
 }
 
 /** Narrow an arbitrary string to a known upload purpose. */

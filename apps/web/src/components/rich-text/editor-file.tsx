@@ -115,7 +115,7 @@ function FileChip({
 			</button>
 
 			<a
-				href={fileDownloadUrl(src)}
+				href={fileDownloadUrl(src, name)}
 				aria-label={`Download ${name}`}
 				title={`Download ${name}`}
 				onMouseDown={(event) => event.stopPropagation()}

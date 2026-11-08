@@ -55,7 +55,7 @@ const LAZY_VIEWERS: Partial<
 function DownloadLink({ src, name }: { src: string; name: string }) {
 	return (
 		<a
-			href={fileDownloadUrl(src)}
+			href={fileDownloadUrl(src, name)}
 			className="inline-flex h-8 items-center justify-center gap-2 border border-app-border bg-app-panel px-3 text-xs font-medium text-app-text transition-colors hover:border-app-focus hover:text-app-focus"
 		>
 			<DownloadIcon className="size-4" aria-hidden />

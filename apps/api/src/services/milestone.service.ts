@@ -53,6 +53,7 @@ import {
 } from "../lib/milestone-events";
 import { escapeLike } from "../lib/query";
 import { sanitizeRichText } from "../lib/rich-text";
+import { keyFromRichText } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
 import type { MilestoneChangedField } from "../realtime/events";
 import { queueDocumentPreviews } from "./link-preview.service";
@@ -63,6 +64,7 @@ import {
 	loadUserMap,
 	type ProjectAccess,
 } from "./project.service";
+import { deleteObjectsBestEffort } from "./upload.service";
 
 /** Longest excerpt shown in the list. */
 const EXCERPT_MAX = 180;
@@ -1234,20 +1236,47 @@ export async function setMilestoneAssignees(
 }
 
 /**
- * Permanently delete a milestone. Assignments cascade with it.
+ * Permanently delete a milestone. Assignments and comments cascade with it.
+ *
+ * Attachments are removed after the commit. Nothing links an object to the
+ * row that owns it, so the description and every comment body are walked
+ * before the delete. The row delete is the source of truth; a storage failure
+ * only leaves an orphan for the reconciliation script.
  */
 export async function deleteMilestone(
 	tenant: TenantContext,
 	projectId: string,
 	milestoneId: string,
 ): Promise<{ status: "ok" }> {
-	return withTenant(
+	const removedKeys = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
 			assertWritable(tenant, access);
 
-			await requireMilestoneRecord(tx, tenant, projectId, milestoneId);
+			const record = await requireMilestoneRecord(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+			);
+
+			// One query for every comment in the milestone, rather than one per
+			// comment. Event rows carry an empty body and contribute nothing.
+			const bodies = await tx
+				.select({ body: comment.body })
+				.from(comment)
+				.where(
+					and(
+						eq(comment.organizationId, tenant.organizationId),
+						eq(comment.milestoneId, milestoneId),
+					),
+				);
+
+			const keys = keyFromRichText([
+				record.description,
+				...bodies.map((row) => row.body),
+			]);
 
 			await tx
 				.delete(milestone)
@@ -1259,7 +1288,11 @@ export async function deleteMilestone(
 					),
 				);
 
-			return { status: "ok" as const };
+			return keys;
 		},
 	);
+
+	await deleteObjectsBestEffort(removedKeys);
+
+	return { status: "ok" as const };
 }

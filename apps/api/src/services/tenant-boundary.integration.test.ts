@@ -732,6 +732,35 @@ suite("tenant and project boundary", () => {
 			).rejects.toThrow(/deleted/);
 		});
 
+		test("deleting a comment with an attachment still blanks the body", async () => {
+			const created = await createMilestoneComment(
+				tenantMemberA(),
+				ids.pVisibleA,
+				ids.mVisible,
+				{
+					body: [
+						{
+							type: "file",
+							url: `/files/organizations/${ids.orgA}/comments/files/brief.pdf`,
+							name: "brief.pdf",
+							mime: "application/pdf",
+							children: [{ text: "" }],
+						},
+					],
+				},
+			);
+
+			const deleted = await deleteMilestoneComment(
+				tenantMemberA(),
+				ids.pVisibleA,
+				ids.mVisible,
+				created.comment.id,
+			);
+
+			// The body is gone and the delete did not fail on the attachment walk.
+			expect(deleted.comment.body).toEqual([]);
+		});
+
 		test("a deleted root cannot receive a reply", async () => {
 			const root = await createMilestoneComment(
 				tenantMemberA(),

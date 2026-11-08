@@ -227,10 +227,13 @@ export async function deletePreviousOrgLogo(
 
 	const key = keyFromFileUrl(previousLogo);
 	if (!key || key.includes("..") || key.includes("//")) return;
-	if (!key.startsWith(`organizations/${organizationId}/`)) return;
-	// Project logos live under the same organization prefix. Never let an
-	// organization logo cleanup delete one of them.
-	if (key.startsWith(`organizations/${organizationId}/projects/`)) return;
+
+	const prefix = `organizations/${organizationId}/`;
+	if (!key.startsWith(prefix)) return;
+	// Only the logo lives directly under the organization. Project logos,
+	// milestone and comment attachments, and link preview assets all sit in a
+	// folder, so a logo cleanup must never reach them.
+	if (key.slice(prefix.length).includes("/")) return;
 
 	try {
 		await deleteObject(key);
@@ -261,4 +264,65 @@ export async function deletePreviousProjectLogo(
 	} catch {
 		// Cleanup is not part of the success path.
 	}
+}
+
+/** How many object deletes run at once during a content cleanup. */
+const DELETE_CONCURRENCY = 5;
+
+/**
+ * How long the request waits for cleanup.
+ *
+ * The rows are already committed, so the delete is successful regardless of
+ * what happens to the bytes. Without a bound, an unreachable storage gateway
+ * would hold the HTTP response open for the SDK's full retry budget. Anything
+ * left behind is picked up by the reconciliation script.
+ */
+const CLEANUP_DEADLINE_MS = 2_000;
+
+/** Resolve after `ms`, even if the cleanup workers are still running. */
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Delete the objects a deleted comment, milestone or project referenced.
+ *
+ * Why best effort: the row is already gone and the transaction has committed.
+ * A storage failure must not turn a successful delete into an error, so each
+ * key is attempted independently and failures are ignored. The reconciliation
+ * script exists precisely to catch whatever this pass misses.
+ *
+ * Why bounded concurrency: a milestone delete can remove dozens of
+ * attachments, and firing them all at once would open an unbounded number of
+ * connections to the storage gateway.
+ */
+export async function deleteObjectsBestEffort(
+	keys: readonly string[],
+): Promise<void> {
+	const unique = [...new Set(keys)];
+	if (unique.length === 0) return;
+
+	let index = 0;
+
+	async function worker(): Promise<void> {
+		while (index < unique.length) {
+			const key = unique[index];
+			index += 1;
+
+			if (!key || key.includes("..") || key.includes("//")) continue;
+
+			try {
+				await deleteObject(key);
+			} catch {
+				// See the contract above: cleanup never fails the request.
+			}
+		}
+	}
+
+	const workers = Array.from(
+		{ length: Math.min(DELETE_CONCURRENCY, unique.length) },
+		() => worker(),
+	);
+
+	await Promise.race([Promise.all(workers), delay(CLEANUP_DEADLINE_MS)]);
 }

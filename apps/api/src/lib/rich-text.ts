@@ -245,6 +245,20 @@ function safeUrl(url: unknown): string | undefined {
 }
 
 /**
+ * Keep an image source only when it is one of our own uploads.
+ *
+ * Why stricter than `safeAssetUrl`: an external image is fetched by every
+ * reader's browser, which turns a pasted URL into a tracking pixel. Images are
+ * always uploaded through the editor, so a stored image is always a relative
+ * `/files/...` path. Anything else is dropped.
+ */
+function safeImageUrl(url: unknown): string | undefined {
+	const value = safeAssetUrl(url);
+
+	return value?.startsWith("/files/") ? value : undefined;
+}
+
+/**
  * Keep an image source or attachment URL only when it is safe to render.
  *
  * Uploaded objects are served from our own origin through `/files/...`, which
@@ -468,10 +482,10 @@ function sanitizeNode(
 	}
 
 	// An image is a void block with no text. It is kept only when its source
-	// is safe to render; an image that cannot load is dropped rather than
-	// turned into an empty paragraph the writer never wrote.
+	// is one of our own uploads; an external image would phone home to the
+	// third party every time the document renders.
 	if (type === "img") {
-		const url = safeAssetUrl(node.url);
+		const url = safeImageUrl(node.url);
 		if (!url) return null;
 
 		const image: Record<string, unknown> = {

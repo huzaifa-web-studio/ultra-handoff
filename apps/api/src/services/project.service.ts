@@ -57,19 +57,28 @@ import {
 } from "../auth/project-permissions";
 import { adminDb } from "../db";
 import { user } from "../db/auth-schema";
-import { project, projectMember, projectPin } from "../db/schema";
+import {
+	comment,
+	milestone,
+	project,
+	projectMember,
+	projectPin,
+} from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 import { escapeLike } from "../lib/query";
-import { keyFromFileUrl } from "../lib/storage";
+import { keyFromFileUrl, keyFromRichText } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
 import {
 	getOrganizationMember,
 	listOrganizationOwners,
 	type OrganizationMemberRecord,
 } from "./organization.service";
-import { deletePreviousProjectLogo } from "./upload.service";
+import {
+	deleteObjectsBestEffort,
+	deletePreviousProjectLogo,
+} from "./upload.service";
 
 /** Lifecycle state derived from `archived_at`. */
 export type ProjectStatus = "active" | "archived";
@@ -1308,14 +1317,19 @@ export async function setProjectArchiveVisibility(
 /**
  * Permanently delete a project.
  *
- * Owner only. Memberships cascade with the row, and the logo object is removed
- * after the database write succeeds.
+ * Owner only. Memberships cascade with the row, and the logo and attachment
+ * objects are removed after the database write succeeds.
+ *
+ * Why the extra reads before the delete: a project delete cascades to
+ * milestones and comments, so the rows that reference an attachment are gone
+ * the moment the project row is. The descriptions and comment bodies are
+ * collected first, then the objects are removed after the commit.
  */
 export async function deleteProject(
 	tenant: TenantContext,
 	projectId: string,
 ): Promise<{ status: "ok" }> {
-	const previousLogo = await withTenant(
+	const { previousLogo, removedKeys } = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await loadProjectAccess(tx, tenant, projectId);
@@ -1332,6 +1346,40 @@ export async function deleteProject(
 				});
 			}
 
+			const milestones = await tx
+				.select({
+					id: milestone.id,
+					description: milestone.description,
+				})
+				.from(milestone)
+				.where(
+					and(
+						eq(milestone.organizationId, tenant.organizationId),
+						eq(milestone.projectId, projectId),
+					),
+				);
+
+			// `inArray` with an empty list is not a valid predicate, so a project
+			// with no milestones skips the comment read entirely.
+			const milestoneIds = milestones.map((row) => row.id);
+			const bodies =
+				milestoneIds.length === 0
+					? []
+					: await tx
+							.select({ body: comment.body })
+							.from(comment)
+							.where(
+								and(
+									eq(comment.organizationId, tenant.organizationId),
+									inArray(comment.milestoneId, milestoneIds),
+								),
+							);
+
+			const keys = keyFromRichText([
+				...milestones.map((row) => row.description),
+				...bodies.map((row) => row.body),
+			]);
+
 			await tx
 				.delete(project)
 				.where(
@@ -1341,13 +1389,15 @@ export async function deleteProject(
 					),
 				);
 
-			return access.row.logo;
+			return { previousLogo: access.row.logo, removedKeys: keys };
 		},
 	);
 
 	if (previousLogo) {
 		await deletePreviousProjectLogo(tenant.organizationId, previousLogo);
 	}
+
+	await deleteObjectsBestEffort(removedKeys);
 
 	return { status: "ok" };
 }
