@@ -125,8 +125,10 @@ function decoderFor(encoding: string): Transform | null {
  * The cap is applied to the decompressed bytes, which is what defeats a
  * compression bomb: the gzip stream is small, the inflated output is not, and
  * the counter stops at the cap either way.
+ *
+ * Exported for the unit test in `http.test.ts`, which asserts the exact cap.
  */
-function readLimited(
+export function readLimited(
 	stream: Readable,
 	maxBytes: number,
 	stopAt?: string,
@@ -136,6 +138,16 @@ function readLimited(
 		let total = 0;
 		let tail = "";
 		let settled = false;
+
+		/**
+		 * Join what has been read and hard cap it.
+		 *
+		 * The `stopAt` branch only runs while the total is under the cap, and
+		 * the truncation branch already stops at the cap, so the slice is a
+		 * no-op on the happy path. It is kept in every buffer return so the
+		 * guarantee cannot regress if the chunk accounting changes.
+		 */
+		const capped = () => Buffer.concat(chunks).subarray(0, maxBytes);
 
 		const finish = (value: Buffer | "too_large" | "network") => {
 			if (settled) return;
@@ -154,7 +166,7 @@ function readLimited(
 				const text = tail + chunk.toString("latin1").toLowerCase();
 
 				if (text.includes(stopAt)) {
-					finish(Buffer.concat(chunks));
+					finish(capped());
 					return;
 				}
 
@@ -166,14 +178,12 @@ function readLimited(
 				// For a document the head is what matters, so an oversized page
 				// is truncated instead of rejected. An asset has no such part,
 				// so it is rejected outright.
-				finish(
-					stopAt ? Buffer.concat(chunks).subarray(0, maxBytes) : "too_large",
-				);
+				finish(stopAt ? capped() : "too_large");
 			}
 		});
-		stream.on("end", () => finish(Buffer.concat(chunks)));
+		stream.on("end", () => finish(capped()));
 		stream.on("error", () => finish("network"));
-		stream.on("close", () => finish(Buffer.concat(chunks)));
+		stream.on("close", () => finish(capped()));
 	});
 }
 

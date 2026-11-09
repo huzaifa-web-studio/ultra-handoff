@@ -102,6 +102,17 @@ export const project = pgTable(
 			"gin",
 			sql`${table.name} gin_trgm_ops`,
 		),
+		/**
+		 * Substring search on the Projects page.
+		 *
+		 * The page matches name OR slug, and `ILIKE '%term%'` on the slug
+		 * cannot use the unique btree, so a large workspace would scan every
+		 * project on each keystroke. The trigram index mirrors the name one.
+		 */
+		index("project_slug_trgm_idx").using(
+			"gin",
+			sql`${table.slug} gin_trgm_ops`,
+		),
 		// The API validates the slug too. This check keeps a bad value out even
 		// if a future code path forgets to call the validator.
 		check(

@@ -17,7 +17,7 @@
  * src/routes/organization.ts.
  */
 
-import { and, asc, eq, isNull, ne, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 
 import { parseRoleList } from "../auth/permissions";
 import { adminDb } from "../db";
@@ -138,6 +138,41 @@ export async function getOrganizationMember(
 		.limit(1);
 
 	return record ?? null;
+}
+
+/**
+ * Read several memberships of one organization in a single query.
+ *
+ * Used by the project bulk add and bulk remove paths, which used to resolve
+ * every target with one `getOrganizationMember` round trip. Missing ids are
+ * simply absent from the map, so the caller can report them as no longer in
+ * the workspace.
+ */
+export async function getOrganizationMembers(
+	organizationId: string,
+	userIds: string[],
+): Promise<Map<string, OrganizationMemberRecord>> {
+	if (userIds.length === 0) return new Map();
+
+	const rows = await adminDb
+		.select({
+			memberId: member.id,
+			userId: member.userId,
+			role: member.role,
+			name: user.name,
+			email: user.email,
+			image: user.image,
+		})
+		.from(member)
+		.innerJoin(user, eq(member.userId, user.id))
+		.where(
+			and(
+				eq(member.organizationId, organizationId),
+				inArray(member.userId, userIds),
+			),
+		);
+
+	return new Map(rows.map((row) => [row.userId, row]));
 }
 
 /**

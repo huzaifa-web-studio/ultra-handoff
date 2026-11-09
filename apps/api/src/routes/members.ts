@@ -210,7 +210,7 @@ export const memberRoutes = new Elysia({ name: "members" })
 	 */
 	.get(
 		"/orgs/:orgSlug/invitations",
-		async ({ tenant, request, status, query }) => {
+		async ({ tenant, status, query }) => {
 			if (!canManageMembers(tenant.role)) {
 				return status(403, {
 					message: "Only owners and admins can see invitations.",
@@ -218,11 +218,7 @@ export const memberRoutes = new Elysia({ name: "members" })
 			}
 
 			try {
-				return await listInvitationHistory(
-					tenant,
-					request.headers,
-					parseInvitationQuery(query),
-				);
+				return await listInvitationHistory(tenant, parseInvitationQuery(query));
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not load the invitations."),

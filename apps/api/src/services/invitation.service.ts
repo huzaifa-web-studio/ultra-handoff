@@ -1,5 +1,5 @@
 import { APIError } from "better-auth/api";
-import { eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, type SQL, sql } from "drizzle-orm";
 
 import { auth } from "../auth/auth";
 import {
@@ -22,6 +22,7 @@ import { adminDb } from "../db";
 import { invitation, organization, user } from "../db/auth-schema";
 import { authErrorMessage, readAuthErrorCode } from "../lib/auth-error";
 import { serverEnv } from "../lib/env";
+import { escapeLike } from "../lib/query";
 import { consumeRateLimit, startCooldown } from "../lib/rate-limit";
 import type { TenantContext } from "../middleware/tenant";
 import type { BulkItemResult, BulkResult } from "./member.service";
@@ -31,9 +32,11 @@ import type { BulkItemResult, BulkResult } from "./member.service";
  *
  * Why a service: resend, cancel and invite share the same guards (manager only,
  * admin cannot touch an admin or owner invitation, pending only), and the same
- * per item result contract as the member service. Reads go through Better Auth's
- * `listInvitations`; the public preview has no session to offer, so it uses two
- * narrow read only lookups instead (see `previewInvitation`).
+ * per item result contract as the member service. The history page reads the
+ * `invitation` table directly on the privileged client (it is a Better Auth
+ * table, so it is never joined into a tenant query) and pushes filter, sort,
+ * count and pagination into Postgres. The public preview has no session to
+ * offer, so it uses narrow read only lookups by id instead.
  *
  * Used by: src/routes/members.ts and src/routes/invitations.ts.
  */
@@ -208,24 +211,134 @@ function canManageInvitation(
 	);
 }
 
+/** The status a row shows, including a pending row that has expired. */
+function derivedStatusSql(): SQL<string> {
+	return sql<string>`case
+		when ${invitation.status} = 'pending' and ${invitation.expiresAt} <= now() then 'expired'
+		when ${invitation.status} in ('accepted', 'canceled', 'rejected') then ${invitation.status}
+		else 'pending'
+	end`;
+}
+
+/** SQL predicate for one status option, matching `deriveStatus`. */
+function statusFilterSql(status: InvitationStatus): SQL {
+	switch (status) {
+		case "pending":
+			return sql`${invitation.status} = 'pending' and ${invitation.expiresAt} > now()`;
+		case "expired":
+			return sql`${invitation.status} = 'pending' and ${invitation.expiresAt} <= now()`;
+		default:
+			return eq(invitation.status, status);
+	}
+}
+
 /**
  * Paginated invitation history.
  *
- * Filtering, sorting and paging happen on the server over the full set, so the
- * status counts always describe the workspace, not the current page. The source
- * list comes from Better Auth and grows with total invitations, while its own
- * limit only caps pending ones.
+ * Filtering, sorting, counting and paging happen in Postgres. The status
+ * counts describe the role and search scope, not the current page, so the
+ * filter labels stay useful while one status is selected. The page query
+ * applies the status filter and returns at most `pageSize` rows.
+ *
+ * The `invitation` table is owned by Better Auth, so it is read on the
+ * privileged client and never joined into a tenant query.
  */
 export async function listInvitationHistory(
 	tenant: TenantContext,
-	headers: Headers,
 	query: InvitationHistoryQuery,
 ): Promise<InvitationHistoryResult> {
 	assertManager(tenant.role);
 
-	const rows = await loadInvitations(tenant, headers);
-	const inviterIds = [...new Set(rows.map((row) => row.inviterId))];
-	const inviters = await loadUsers(inviterIds);
+	// The Role column shows the first role in Better Auth's comma separated
+	// value, so the filter compares that same part.
+	const primaryRole = sql<string>`btrim(split_part(coalesce(${invitation.role}, 'member'), ',', 1))`;
+	const search = query.search.trim();
+	const searchPattern = search.length > 0 ? `%${escapeLike(search)}%` : null;
+
+	const scope = and(
+		eq(invitation.organizationId, tenant.organizationId),
+		query.role === "all" ? undefined : eq(primaryRole, query.role),
+		searchPattern ? ilike(invitation.email, searchPattern) : undefined,
+	);
+
+	const statusSql = derivedStatusSql();
+
+	// One grouped read gives every status bucket, and their sum is the scope
+	// total. The page total is one bucket when a status is selected.
+	const countRows = await adminDb
+		.select({
+			status: statusSql,
+			count: sql<number>`count(*)`.mapWith(Number),
+		})
+		.from(invitation)
+		.where(scope)
+		.groupBy(statusSql);
+
+	const counts: InvitationHistoryResult["counts"] = {
+		all: 0,
+		pending: 0,
+		expired: 0,
+		accepted: 0,
+		canceled: 0,
+		rejected: 0,
+	};
+
+	for (const row of countRows) {
+		if (
+			row.status === "pending" ||
+			row.status === "expired" ||
+			row.status === "accepted" ||
+			row.status === "canceled" ||
+			row.status === "rejected"
+		) {
+			counts[row.status] = row.count;
+		}
+
+		counts.all += row.count;
+	}
+
+	const total = query.status === "all" ? counts.all : counts[query.status];
+	const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+	const page = Math.min(Math.max(1, query.page), totalPages);
+	const offset = (page - 1) * query.pageSize;
+
+	// `lower(email)` mirrors the old case-insensitive comparison, and the id
+	// tiebreaker keeps equal keys in a stable order across pages.
+	const sortSql =
+		query.sort === "email"
+			? sql`lower(${invitation.email})`
+			: query.sort === "expiresAt"
+				? sql`${invitation.expiresAt}`
+				: query.sort === "status"
+					? statusSql
+					: sql`${invitation.createdAt}`;
+	const order = query.direction === "asc" ? asc(sortSql) : desc(sortSql);
+
+	const rows = await adminDb
+		.select({
+			id: invitation.id,
+			email: invitation.email,
+			role: invitation.role,
+			status: statusSql,
+			createdAt: invitation.createdAt,
+			expiresAt: invitation.expiresAt,
+			inviterId: invitation.inviterId,
+		})
+		.from(invitation)
+		.where(
+			and(
+				scope,
+				query.status === "all" ? undefined : statusFilterSql(query.status),
+			),
+		)
+		.orderBy(order, asc(invitation.id))
+		.limit(query.pageSize)
+		.offset(offset);
+
+	// Only the page's inviters are resolved, never the whole history.
+	const inviters = await loadUsers([
+		...new Set(rows.map((row) => row.inviterId)),
+	]);
 
 	const items: InvitationHistoryItem[] = rows.map((row) => {
 		const inviter = inviters.get(row.inviterId);
@@ -234,7 +347,7 @@ export async function listInvitationHistory(
 			id: row.id,
 			email: row.email,
 			role: row.role ?? "member",
-			status: deriveStatus(row),
+			status: row.status as InvitationStatus,
 			createdAt: new Date(row.createdAt).toISOString(),
 			expiresAt: new Date(row.expiresAt).toISOString(),
 			inviterName: inviter?.name || inviter?.email || "Former member",
@@ -242,72 +355,9 @@ export async function listInvitationHistory(
 		};
 	});
 
-	const search = query.search.trim().toLowerCase();
-
-	/**
-	 * The scope is role plus search. The status filter is deliberately not
-	 * applied here: the status select needs to keep showing how many rows are
-	 * in each bucket while one bucket is selected.
-	 *
-	 * Counting over the full workspace made the numbers wrong as soon as a
-	 * role or search filter was active. Counting over the scope keeps the
-	 * labels honest and the buckets sum to the "all" count.
-	 */
-	const scoped = items.filter((item) => {
-		// The Role column shows the first role, so the filter matches that.
-		const primaryRole = parseRoleList(item.role)[0] ?? "member";
-		const matchesRole = query.role === "all" || primaryRole === query.role;
-		const matchesSearch =
-			search.length === 0 || item.email.toLowerCase().includes(search);
-
-		return matchesRole && matchesSearch;
-	});
-
-	const counts: InvitationHistoryResult["counts"] = {
-		all: scoped.length,
-		pending: 0,
-		expired: 0,
-		accepted: 0,
-		canceled: 0,
-		rejected: 0,
-	};
-
-	for (const item of scoped) {
-		counts[item.status] += 1;
-	}
-
-	const filtered = scoped.filter(
-		(item) => query.status === "all" || item.status === query.status,
-	);
-
-	const direction = query.direction === "asc" ? 1 : -1;
-	const sorted = [...filtered].sort((a, b) => {
-		switch (query.sort) {
-			case "email":
-				return a.email.localeCompare(b.email) * direction;
-			case "expiresAt":
-				return (
-					(new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime()) *
-					direction
-				);
-			case "status":
-				return a.status.localeCompare(b.status) * direction;
-			default:
-				return (
-					(new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()) *
-					direction
-				);
-		}
-	});
-
-	const total = sorted.length;
-	const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
-	const page = Math.min(Math.max(1, query.page), totalPages);
-	const start = (page - 1) * query.pageSize;
-
 	return {
 		organizationId: tenant.organizationId,
-		items: sorted.slice(start, start + query.pageSize),
+		items,
 		pagination: {
 			page,
 			pageSize: query.pageSize,

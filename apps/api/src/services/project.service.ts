@@ -49,6 +49,7 @@ import {
 	canManageProjectTarget,
 	canViewArchivedProject,
 	effectiveProjectRole,
+	PROJECT_ARCHIVED_MESSAGE,
 	PROJECT_ROLE_LABELS,
 	type ProjectRole,
 	validateProjectDescription,
@@ -65,7 +66,6 @@ import {
 	projectPin,
 } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
-import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 import { escapeLike } from "../lib/query";
 import { keyFromFileUrl, keyFromRichText } from "../lib/storage";
@@ -73,6 +73,7 @@ import type { TenantContext } from "../middleware/tenant";
 import { publishMemberRevocation } from "../realtime/bus";
 import {
 	getOrganizationMember,
+	getOrganizationMembers,
 	listOrganizationOwners,
 	type OrganizationMemberRecord,
 } from "./organization.service";
@@ -507,6 +508,70 @@ export async function loadProjectAccess(
 	}
 
 	return { row, role };
+}
+
+/**
+ * Load several projects and the caller's effective role in one query.
+ *
+ * Bulk actions need the same access decision as `loadProjectAccess`, but one
+ * round trip for the whole selection. The result is keyed by project id and a
+ * project the caller cannot see is absent, exactly like the single read
+ * returning null.
+ */
+async function loadProjectAccessMany(
+	tx: TenantTx,
+	tenant: TenantContext,
+	projectIds: string[],
+): Promise<Map<string, ProjectAccess>> {
+	if (projectIds.length === 0) return new Map();
+
+	const myRole = myProjectRoleSql(tenant);
+	const memberCount = sql<number>`(select count(*) from project_member pm
+		where pm.project_id = "project"."id")`.mapWith(Number);
+
+	const rows = await tx
+		.select({
+			id: project.id,
+			name: project.name,
+			slug: project.slug,
+			logo: project.logo,
+			description: project.description,
+			archivedAt: project.archivedAt,
+			archiveVisibleToClient: project.archiveVisibleToClient,
+			createdAt: project.createdAt,
+			updatedAt: project.updatedAt,
+			myRole,
+			memberCount,
+			pinned: pinnedProjectSql(tenant),
+		})
+		.from(project)
+		.where(
+			and(
+				eq(project.organizationId, tenant.organizationId),
+				inArray(project.id, projectIds),
+			),
+		);
+
+	const access = new Map<string, ProjectAccess>();
+
+	for (const row of rows) {
+		const role = effectiveProjectRole(tenant.role, row.myRole);
+
+		if (!role) continue;
+
+		// An archived project is hidden from anyone who cannot see archived
+		// projects, exactly like `loadProjectAccess`.
+		if (
+			row.archivedAt &&
+			!canViewArchivedProject(role, row.archiveVisibleToClient)
+		) {
+			continue;
+		}
+
+		access.set(row.id, { row, role });
+	}
+
+	return access;
 }
 
 /** Translate a duplicate key error into a friendly slug or member message. */
@@ -1472,117 +1537,198 @@ async function insertProjectMember(
 	return { userId: target.userId, role: finalRole };
 }
 
-/** Read the names for a batch, so a bulk result can label its rows. */
-async function loadProjectLabels(
-	tenant: TenantContext,
-	projectIds: string[],
-): Promise<Map<string, string>> {
-	if (projectIds.length === 0) return new Map();
-
-	const rows = await withTenant(
-		{ organizationId: tenant.organizationId, userId: tenant.userId },
-		(tx) =>
-			tx
-				.select({ id: project.id, name: project.name })
-				.from(project)
-				.where(
-					and(
-						eq(project.organizationId, tenant.organizationId),
-						inArray(project.id, projectIds),
-					),
-				),
-	);
-
-	return new Map(rows.map((row) => [row.id, row.name]));
-}
-
 /**
  * Archive or restore several projects in one request.
  *
- * Why a loop instead of one SQL update: `setProjectArchived` owns the access
- * check and the idempotent early return. Calling it per project keeps a bulk
- * action identical to the single row action, and a project the caller cannot
- * edit is reported as skipped instead of failing the whole batch.
+ * Why one transaction and one update: the single item path opens a transaction
+ * and repeats the access query per project, so a 100 item action meant 100
+ * sequential transactions. This reads every access decision once, decides each
+ * item's outcome from that read, and updates only the projects whose state
+ * actually changes. The per item result contract is unchanged.
  */
 export async function bulkSetProjectsArchived(
 	tenant: TenantContext,
 	projectIds: string[],
 	archived: boolean,
 ): Promise<BulkResult> {
-	const labels = await loadProjectLabels(tenant, projectIds);
-	const results: BulkItemResult[] = [];
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await loadProjectAccessMany(tx, tenant, projectIds);
+			const results: BulkItemResult[] = [];
+			const toUpdate = new Set<string>();
 
-	for (const projectId of projectIds) {
-		const label = labels.get(projectId) ?? projectId;
+			for (const projectId of projectIds) {
+				const found = access.get(projectId);
 
-		try {
-			await setProjectArchived(tenant, projectId, archived);
+				if (!found) {
+					results.push({
+						key: projectId,
+						label: projectId,
+						status: "skipped",
+						message: "That project no longer exists.",
+					});
+					continue;
+				}
 
-			results.push({
-				key: projectId,
-				label,
-				status: archived ? "archived" : "restored",
-				message: archived ? "Project archived." : "Project restored.",
-			});
-		} catch (error) {
-			const status = authErrorStatus(error);
-			const skipped = status === 400 || status === 403 || status === 404;
+				if (!canEditProject(tenant.role, found.role)) {
+					results.push({
+						key: projectId,
+						label: found.row.name,
+						status: "skipped",
+						message:
+							"Only project owners and admins can archive or restore a project.",
+					});
+					continue;
+				}
 
-			results.push({
-				key: projectId,
-				label,
-				status: skipped ? "skipped" : "failed",
-				message: authErrorMessage(
-					error,
-					archived
-						? "Could not archive that project."
-						: "Could not restore that project.",
-				),
-			});
-		}
-	}
+				// Idempotent, exactly like the single call: an already archived
+				// project is still reported as archived.
+				if ((found.row.archivedAt !== null) !== archived) {
+					toUpdate.add(projectId);
+				}
 
-	return { results };
+				results.push({
+					key: projectId,
+					label: found.row.name,
+					status: archived ? "archived" : "restored",
+					message: archived ? "Project archived." : "Project restored.",
+				});
+			}
+
+			if (toUpdate.size > 0) {
+				await tx
+					.update(project)
+					.set({ archivedAt: archived ? new Date() : null })
+					.where(
+						and(
+							eq(project.organizationId, tenant.organizationId),
+							inArray(project.id, [...toUpdate]),
+						),
+					);
+			}
+
+			return { results };
+		},
+	);
 }
 
 /**
  * Permanently delete several projects in one request.
  *
- * The owner check, cascade and logo cleanup stay inside `deleteProject`, so the
- * bulk path cannot bypass a rule the single delete enforces. Each outcome is
- * returned so a mixed selection is not silently partial.
+ * One transaction, one access read and one delete statement. The owner check,
+ * the cascade and the logo and attachment cleanup are the same rules the single
+ * delete enforces, but the attachment rows for the whole selection are read
+ * before the delete and the objects are removed after the commit.
  */
 export async function bulkDeleteProjects(
 	tenant: TenantContext,
 	projectIds: string[],
 ): Promise<BulkResult> {
-	const labels = await loadProjectLabels(tenant, projectIds);
-	const results: BulkItemResult[] = [];
+	const { results, previousLogos, removedKeys } = await withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await loadProjectAccessMany(tx, tenant, projectIds);
+			const results: BulkItemResult[] = [];
+			const toDelete: string[] = [];
 
-	for (const projectId of projectIds) {
-		const label = labels.get(projectId) ?? projectId;
+			for (const projectId of projectIds) {
+				const found = access.get(projectId);
 
-		try {
-			await deleteProject(tenant, projectId);
+				if (!found) {
+					results.push({
+						key: projectId,
+						label: projectId,
+						status: "skipped",
+						message: "That project no longer exists.",
+					});
+					continue;
+				}
 
-			results.push({
-				key: projectId,
-				label,
-				status: "deleted",
-				message: "Project deleted.",
-			});
-		} catch (error) {
-			const status = authErrorStatus(error);
-			const skipped = status === 400 || status === 403 || status === 404;
+				if (!canDeleteProject(tenant.role, found.role)) {
+					results.push({
+						key: projectId,
+						label: found.row.name,
+						status: "skipped",
+						message: "Only a project owner can delete a project.",
+					});
+					continue;
+				}
 
-			results.push({
-				key: projectId,
-				label,
-				status: skipped ? "skipped" : "failed",
-				message: authErrorMessage(error, "Could not delete that project."),
-			});
-		}
+				toDelete.push(projectId);
+				results.push({
+					key: projectId,
+					label: found.row.name,
+					status: "deleted",
+					message: "Project deleted.",
+				});
+			}
+
+			if (toDelete.length === 0) {
+				return { results, previousLogos: [], removedKeys: [] };
+			}
+
+			// A project delete cascades to milestones and comments, so the rows
+			// that reference an attachment are gone the moment the project row
+			// is. Read every description and body first, for all projects.
+			const milestones = await tx
+				.select({ id: milestone.id, description: milestone.description })
+				.from(milestone)
+				.where(
+					and(
+						eq(milestone.organizationId, tenant.organizationId),
+						inArray(milestone.projectId, toDelete),
+					),
+				);
+
+			const milestoneIds = milestones.map((row) => row.id);
+			const bodies =
+				milestoneIds.length === 0
+					? []
+					: await tx
+							.select({ body: comment.body })
+							.from(comment)
+							.where(
+								and(
+									eq(comment.organizationId, tenant.organizationId),
+									inArray(comment.milestoneId, milestoneIds),
+								),
+							);
+
+			const removedKeys = keyFromRichText([
+				...milestones.map((row) => row.description),
+				...bodies.map((row) => row.body),
+			]);
+
+			// Deduplicate logos: a duplicated id in the request must not delete
+			// the same object twice.
+			const previousLogos = [
+				...new Set(
+					toDelete
+						.map((projectId) => access.get(projectId)?.row.logo)
+						.filter((logo): logo is string => Boolean(logo)),
+				),
+			];
+
+			await tx
+				.delete(project)
+				.where(
+					and(
+						eq(project.organizationId, tenant.organizationId),
+						inArray(project.id, toDelete),
+					),
+				);
+
+			return { results, previousLogos, removedKeys };
+		},
+	);
+
+	// Cleanup runs after the commit, exactly like the single delete.
+	for (const logo of previousLogos) {
+		await deletePreviousProjectLogo(tenant.organizationId, logo);
 	}
+
+	await deleteObjectsBestEffort(removedKeys);
 
 	return { results };
 }
@@ -1617,10 +1763,13 @@ export async function addProjectMember(
 /**
  * Add several organization members to one project in a single request.
  *
- * Per item outcomes instead of one all or nothing error: a batch can contain
- * someone who left the workspace, someone already on the project and someone
- * the actor cannot assign a role to, and the user needs to see which is which.
- * Each item still runs the same guards as the single add.
+ * One access read, one target lookup and one insert for the whole selection.
+ * Per item outcomes are preserved: a batch can contain someone who left the
+ * workspace, someone already on the project and someone the actor cannot
+ * assign a role to, and the dialog needs to show which is which.
+ *
+ * `onConflictDoNothing` keeps a concurrent insert from aborting the batch; the
+ * row that lost the race is reported as already on the project.
  */
 export async function bulkAddProjectMembers(
 	tenant: TenantContext,
@@ -1628,53 +1777,175 @@ export async function bulkAddProjectMembers(
 	targetUserIds: string[],
 	role: ProjectRole,
 ): Promise<BulkResult> {
-	const results: BulkItemResult[] = [];
+	// Better Auth member rows are resolved in one privileged read, outside the
+	// tenant transaction, because they are not business tables.
+	const targets = await getOrganizationMembers(
+		tenant.organizationId,
+		targetUserIds,
+	);
 
-	for (const userId of targetUserIds) {
-		// Resolve first so a missing person gets a readable label, not an id.
-		const target = await getOrganizationMember(tenant.organizationId, userId);
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await loadProjectAccess(tx, tenant, projectId);
+			const outcome = new Map<string, BulkItemResult>();
+			const toResults = () =>
+				targetUserIds.flatMap((userId) => {
+					const item = outcome.get(userId);
+					return item ? [item] : [];
+				});
 
-		if (!target) {
-			results.push({
-				key: userId,
-				label: userId,
-				status: "skipped",
-				code: "MEMBER_NOT_FOUND",
-				message: "That person is no longer part of this organization.",
-			});
-			continue;
-		}
+			if (!access) {
+				for (const userId of targetUserIds) {
+					const target = targets.get(userId);
 
-		const label = target.name || target.email || userId;
+					outcome.set(userId, {
+						key: userId,
+						label: target?.name || target?.email || userId,
+						status: "skipped",
+						message: "That project no longer exists.",
+					});
+				}
 
-		try {
-			const added = await insertProjectMember(tenant, projectId, target, role);
+				return { results: toResults() };
+			}
 
-			results.push({
-				key: userId,
-				label,
-				status: "added",
-				message:
-					added.role === role
-						? `Added as ${PROJECT_ROLE_LABELS[added.role]}.`
-						: "Added as Owner because they own the organization.",
-			});
-		} catch (error) {
-			// A 403 or 400 means the rule refused this row, which the dialog
-			// shows as skipped. Anything else is an unexpected failure.
-			const status = authErrorStatus(error);
-			const skipped = status === 400 || status === 403 || status === 404;
+			const canManage = canManageProjectMembers(tenant.role, access.role);
+			const active = access.row.archivedAt === null;
 
-			results.push({
-				key: userId,
-				label,
-				status: skipped ? "skipped" : "failed",
-				message: authErrorMessage(error, "Could not add that person."),
-			});
-		}
-	}
+			// One read for the memberships that already exist.
+			const existingRows =
+				targetUserIds.length === 0
+					? []
+					: await tx
+							.select({ userId: projectMember.userId })
+							.from(projectMember)
+							.where(
+								and(
+									eq(projectMember.organizationId, tenant.organizationId),
+									eq(projectMember.projectId, projectId),
+									inArray(projectMember.userId, targetUserIds),
+								),
+							);
+			const existing = new Set(existingRows.map((row) => row.userId));
+			const toInsert: Array<{
+				id: string;
+				organizationId: string;
+				projectId: string;
+				memberId: string;
+				userId: string;
+				role: ProjectRole;
+			}> = [];
 
-	return { results };
+			for (const userId of targetUserIds) {
+				const target = targets.get(userId);
+
+				if (!target) {
+					outcome.set(userId, {
+						key: userId,
+						label: userId,
+						status: "skipped",
+						code: "MEMBER_NOT_FOUND",
+						message: "That person is no longer part of this organization.",
+					});
+					continue;
+				}
+
+				const label = target.name || target.email || userId;
+				const forcedByOrganization = isOrganizationOwner(target.role);
+				const finalRole: ProjectRole = forcedByOrganization ? "owner" : role;
+
+				if (!canManage) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "Only project owners and admins can add members.",
+					});
+					continue;
+				}
+
+				if (!active) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: PROJECT_ARCHIVED_MESSAGE,
+					});
+					continue;
+				}
+
+				if (
+					!forcedByOrganization &&
+					!canAssignProjectRole(access.role, finalRole)
+				) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "You cannot assign that project role.",
+					});
+					continue;
+				}
+
+				if (existing.has(userId)) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "That person is already on this project.",
+					});
+					continue;
+				}
+
+				existing.add(userId);
+				toInsert.push({
+					id: randomUUID(),
+					organizationId: tenant.organizationId,
+					projectId,
+					memberId: target.memberId,
+					userId,
+					role: finalRole,
+				});
+			}
+
+			if (toInsert.length > 0) {
+				const inserted = await tx
+					.insert(projectMember)
+					.values(toInsert)
+					.onConflictDoNothing()
+					.returning({ userId: projectMember.userId });
+				const insertedIds = new Set(inserted.map((row) => row.userId));
+
+				for (const row of toInsert) {
+					const target = targets.get(row.userId);
+					const label = target?.name || target?.email || row.userId;
+
+					outcome.set(
+						row.userId,
+						insertedIds.has(row.userId)
+							? {
+									key: row.userId,
+									label,
+									status: "added",
+									message:
+										row.role === role
+											? `Added as ${PROJECT_ROLE_LABELS[row.role]}.`
+											: "Added as Owner because they own the organization.",
+								}
+							: {
+									key: row.userId,
+									label,
+									status: "skipped",
+									message: "That person is already on this project.",
+								},
+					);
+				}
+			}
+
+			return { results: toResults() };
+		},
+	);
 }
 
 /**
@@ -1929,42 +2200,213 @@ export async function removeProjectMember(
 /**
  * Remove several project members in one request.
  *
- * Loops the single removal so the self check, organization owner rule, target
- * permission and last owner rule stay identical. Per item outcomes let the
- * dialog report a mixed selection honestly instead of failing the whole batch.
+ * One access read, one membership read and one delete statement. The self
+ * check, organization owner rule, target permission and last owner rule are
+ * evaluated from that read, and per item outcomes still let the dialog report
+ * a mixed selection honestly instead of failing the whole batch.
  */
 export async function bulkRemoveProjectMembers(
 	tenant: TenantContext,
 	projectId: string,
 	targetUserIds: string[],
 ): Promise<BulkResult> {
+	// Labels and Better Auth roles come from privileged reads outside the
+	// tenant transaction.
 	const people = await loadUserMap(targetUserIds);
-	const results: BulkItemResult[] = [];
+	const targets = await getOrganizationMembers(
+		tenant.organizationId,
+		targetUserIds,
+	);
+	const organizationOwnerCount = (
+		await listOrganizationOwners(tenant.organizationId)
+	).length;
+	const removed: string[] = [];
 
-	for (const userId of targetUserIds) {
-		const person = people.get(userId);
-		const label = person?.name || person?.email || userId;
+	const results = await withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await loadProjectAccess(tx, tenant, projectId);
+			const outcome = new Map<string, BulkItemResult>();
+			const toDelete = new Set<string>();
+			const membership = new Map<string, string>();
+			let ownerRowCount = 0;
+			let removedOwners = 0;
 
-		try {
-			await removeProjectMember(tenant, projectId, userId);
+			const toResults = () =>
+				targetUserIds.flatMap((userId) => {
+					const item = outcome.get(userId);
+					return item ? [item] : [];
+				});
 
-			results.push({
-				key: userId,
-				label,
-				status: "removed",
-				message: "Removed from the project.",
-			});
-		} catch (error) {
-			const status = authErrorStatus(error);
-			const skipped = status === 400 || status === 403 || status === 404;
+			if (access) {
+				// One read for the selected memberships and one for the current
+				// owner rows, instead of two queries per item.
+				const rows =
+					targetUserIds.length === 0
+						? []
+						: await tx
+								.select({
+									userId: projectMember.userId,
+									role: projectMember.role,
+								})
+								.from(projectMember)
+								.where(
+									and(
+										eq(projectMember.organizationId, tenant.organizationId),
+										eq(projectMember.projectId, projectId),
+										inArray(projectMember.userId, targetUserIds),
+									),
+								);
 
-			results.push({
-				key: userId,
-				label,
-				status: skipped ? "skipped" : "failed",
-				message: authErrorMessage(error, "Could not remove that person."),
-			});
-		}
+				for (const row of rows) membership.set(row.userId, row.role);
+
+				const owners = await tx
+					.select({ userId: projectMember.userId })
+					.from(projectMember)
+					.where(
+						and(
+							eq(projectMember.organizationId, tenant.organizationId),
+							eq(projectMember.projectId, projectId),
+							eq(projectMember.role, "owner"),
+						),
+					);
+				ownerRowCount = owners.length;
+			}
+
+			const canManage = access
+				? canManageProjectMembers(tenant.role, access.role)
+				: false;
+			const active = access ? access.row.archivedAt === null : false;
+
+			for (const userId of targetUserIds) {
+				const person = people.get(userId);
+				const label = person?.name || person?.email || userId;
+				const target = targets.get(userId);
+
+				if (userId === tenant.userId) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "Ask another project owner to remove you.",
+					});
+					continue;
+				}
+
+				if (target && isOrganizationOwner(target.role)) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "Organization owners always own every project.",
+					});
+					continue;
+				}
+
+				if (!access) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "That project no longer exists.",
+					});
+					continue;
+				}
+
+				if (!canManage) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "Only project owners and admins can remove members.",
+					});
+					continue;
+				}
+
+				if (!active) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: PROJECT_ARCHIVED_MESSAGE,
+					});
+					continue;
+				}
+
+				const memberRole = membership.get(userId);
+
+				if (!memberRole) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "That person is not on this project.",
+					});
+					continue;
+				}
+
+				if (!canManageProjectTarget(access.role, memberRole)) {
+					outcome.set(userId, {
+						key: userId,
+						label,
+						status: "skipped",
+						message: "Only a project owner can remove an admin or an owner.",
+					});
+					continue;
+				}
+
+				if (memberRole === "owner") {
+					const remaining =
+						ownerRowCount - removedOwners - 1 + organizationOwnerCount;
+
+					if (remaining <= 0) {
+						outcome.set(userId, {
+							key: userId,
+							label,
+							status: "skipped",
+							message: "A project needs at least one owner.",
+						});
+						continue;
+					}
+
+					removedOwners += 1;
+				}
+
+				toDelete.add(userId);
+				outcome.set(userId, {
+					key: userId,
+					label,
+					status: "removed",
+					message: "Removed from the project.",
+				});
+			}
+
+			if (toDelete.size > 0) {
+				await tx
+					.delete(projectMember)
+					.where(
+						and(
+							eq(projectMember.organizationId, tenant.organizationId),
+							eq(projectMember.projectId, projectId),
+							inArray(projectMember.userId, [...toDelete]),
+						),
+					);
+				removed.push(...toDelete);
+			}
+
+			return toResults();
+		},
+	);
+
+	// Access to this project is gone for every removed person. Fire and forget:
+	// a Redis hiccup falls back to a local close and must never fail the batch.
+	for (const userId of new Set(removed)) {
+		void publishMemberRevocation({
+			type: "revoke.member",
+			organizationId: tenant.organizationId,
+			userId,
+			projectId,
+		}).catch(() => undefined);
 	}
 
 	return { results };

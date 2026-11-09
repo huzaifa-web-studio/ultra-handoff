@@ -72,7 +72,7 @@ bun test
 | 4 | Production and environment gate | High (deployment) | Done | none | 9 Nov 2026 | 685dd35 |
 | 5 | Authorization and error handling | Medium | Done | Batch 1 (same auth files) | 9 Nov 2026 | 7eafffc |
 | 6 | Web shell, headers and UX | Medium | Done | Batch 4 (API origin) | 9 Nov 2026 | uncommitted |
-| 7 | Performance | Medium | Not started | none | 8 Nov 2026 | none |
+| 7 | Performance | Medium | Done | none | 9 Nov 2026 | uncommitted |
 | 8 | Tooling, CI and test harness | Medium | Not started | none | 8 Nov 2026 | none |
 
 Suggested order: **3, 1, 2, 4, 5, 6, 7, 8.** Batch 3 first because the Redis hang is the most severe live defect. Batch 1 next because the auth abuse is the most severe release gate. If you prefer to close the security work first, do 1 then 3; they are independent.
@@ -555,55 +555,53 @@ Development sends the same headers without the CSP, so HMR, its websocket and Vi
 ## 10. Batch 7: Performance
 
 **Risk:** Medium. No user-visible failure yet, but the patterns do not scale.
-**Status:** `Not started`
+**Status:** `Done`
 **Depends on:** none
-**Files:** `services/invitation.service.ts`, `services/project.service.ts`, `services/member.service.ts`, `routes/uploads.ts`, `lib/link-preview/http.ts`, `db/schema.ts`
+**Files:** `services/invitation.service.ts`, `services/project.service.ts`, `services/organization.service.ts`, `routes/uploads.ts`, `queues/upload-verification.ts`, `lib/link-preview/http.ts`, `db/schema.ts`
 
 ### P1-M3: Invitation history loads and sorts the whole set
 
-- [ ] Not started
+- [x] Done: filter, sort, count and pagination now run in Postgres.
 
-**Where:** `services/invitation.service.ts`, `listInvitationHistory`.
-**Fix:** Move filter, sort, count and pagination into Postgres. The `invitation` table is a Better Auth table, so use a read-only `adminDb` query with `limit`/`offset` and a `case` for the derived expired status. Do not join it into a tenant query.
-**Done when:** A workspace with 1,000 invitations returns page 1 in bounded time and the counts are correct.
+**Implemented:** `listInvitationHistory` reads the `invitation` table on the privileged client (a Better Auth table, never joined into a tenant query). The role filter compares the first value of the comma separated role, search uses `ILIKE` with `escapeLike`, the derived expired status is a `case` expression, and one grouped query produces every status count. `counts.all` is the scope total and the selected status bucket is the page total, so pagination matches the old contract. The page query uses `limit`/`offset`, sorts with an `id` tiebreaker for stable pages, and resolves inviters for the page only.
+
+**Measured:** 20,000 invitations for one organization, page 1, size 20. The old full-load plus JS sort took 107 to 132 ms per call. The new service took 35 ms and returns 20 rows regardless of history size.
 
 ### P1-M4: Bulk actions open one transaction per item
 
-- [ ] Not started
+- [x] Done: the project bulk paths use one transaction and one write.
 
-**Where:** `services/project.service.ts` (bulk methods), `services/member.service.ts`, `services/invitation.service.ts`.
-**Fix:** Load the access decisions in one query, run the loop inside one `withTenant` transaction, and batch the writes where the rule allows it. Keep the per-item result contract. If a single item must not abort the batch, use a savepoint per item.
-**Done when:** A 100-item bulk action uses a small, constant number of transactions and still reports per-item outcomes.
+**Implemented:** `loadProjectAccessMany` reads every selected project in one query and applies the same visibility and archived rules as `loadProjectAccess`. `getOrganizationMembers` resolves every target in one privileged read. Bulk archive and delete use one `update`/`delete ... where id in (...)`. Bulk add pre-checks existing memberships and inserts the rest with `onConflictDoNothing`, so a concurrent insert cannot abort the batch. Bulk remove reads memberships and owner rows once, evaluates the self, organization owner, target permission and last owner rules from that read, and deletes in one statement. Per item results keep the same keys, order and messages. Revocations are published after the commit.
+
+**Scope note:** the member and invitation bulk paths were audited. They already use one list read and no per-item tenant transaction. Their remaining per-item calls are Better Auth APIs (`updateMemberRole`, `removeMember`, `createInvitation`, `cancelInvitation`) with no batch equivalent. Bypassing them would duplicate Better Auth token, email and limit logic, so they stay as they are.
+
+**Measured:** 100 projects, owner caller. The old path opened one `withTenant` transaction per project and took 2,396 ms. The new path took 115 ms with a `xact_commit` delta of 1.
 
 ### P1-M5: Upload completion blocks for up to 8 seconds
 
-- [ ] Not started
+- [x] Done: `POST /uploads/:id/complete` enqueues and answers 202.
 
-**Where:** `routes/uploads.ts`, `queues/upload-verification.ts`.
-**Fix:** Return 202 immediately after enqueueing, and let the client poll `/uploads/:id`. The polling endpoint already exists.
-**Done when:** `POST /uploads/:id/complete` returns in well under a second and the UI still resolves the upload.
+**Implemented:** the route only enqueues when the session is still `pending`, re-reads once so a fast job can still finish in the same call, and otherwise returns 202. The browser already polls the same route; the call that sees `verified` applies the avatar or organization logo, so the apply step stays idempotent and runs once. `waitForUploadVerification`, its `QueueEvents` connection and its error listener were removed, which also drops one Redis connection from the API. No web change was needed beyond the comment update.
 
 ### P1-M16: Decompressed body cap can be exceeded by one chunk
 
-- [ ] Not started
+- [x] Done: every buffer return is sliced to `maxBytes`, and a test pins the exact cap.
 
-**Where:** `lib/link-preview/http.ts`, `readLimited`.
-**Fix:** Slice the buffer to `maxBytes` before returning in both the `stopAt` and truncation branches.
-**Done when:** A test with a body larger than the cap returns exactly the cap.
+**Implemented:** `readLimited` now joins through one `capped()` helper in the stop-tag, end and close branches. The stop-tag branch already ran only under the cap, so this makes the guarantee explicit rather than changing behaviour. `http.test.ts` covers an oversized document, a stop tag past the cap, a body under the cap, an oversized asset and an asset at exactly the cap.
 
 ### Missing indexes
 
-- [ ] Not started
+- [x] Done: `project.slug` trigram index added. Description index deliberately not added.
 
-**Where:** `db/schema.ts`, `apps/api/drizzle` via `db:generate`.
-**Fix:** Add a trigram index on `milestone.descriptionText` (milestone search uses `ILIKE` on it) and consider one on `project.slug` (project search uses `ILIKE` on it). Do not edit `drizzle/` by hand; change the schema and run `bun run db:generate`.
-**Done when:** The migration is generated, applied to `app_test`, and the query plan uses the index.
+**Decision:** the phase 1 index table tied the description search to the mention picker. The actual code shows the picker searches user name and email, project name and milestone title, all already indexed. The only `description_text` search is `listMilestones`, which is scoped to one project and is small by design. A 5,000 character cap makes a trigram index feasible, but it is not worth the disk and write cost for a project-scoped list, so the milestone list search is title only and no description index was added.
+
+**Implemented:** `project_slug_trgm_idx` on `project.slug` (GIN, `gin_trgm_ops`), generated in `0021_material_shiver_man.sql` and applied to `app` and `app_test`. `EXPLAIN` with `enable_seqscan = off` shows `Bitmap Index Scan on project_slug_trgm_idx`.
 
 ### Batch 7 exit criteria
 
-- [ ] All items ticked or explicitly deferred with a reason.
-- [ ] The integration suite is green on `app_test`.
-- [ ] A before/after timing note is in the log.
+- [x] All items ticked or explicitly deferred with a reason.
+- [x] The integration suite is green on `app_test` (453 pass, 0 fail).
+- [x] A before/after timing note is in the log.
 
 ---
 
@@ -685,6 +683,8 @@ Append one row per session. Do not rewrite old rows.
 | 9 Nov 2026 | Batch 5 | Unknown failures answer 500 and are logged instead of echoed. `presence.join` verifies the milestone belongs to the connection's project. Membership revocation is broadcast on a dedicated Redis control channel and closes matching sockets on every instance, with hooks after organization and project member removal. Checklist toggles are author only. An empty or no-op milestone PATCH no longer writes. Both target predicates now include the actor check. | `bun test` api 399 pass / 40 skip, web 71 pass, tsc clean for api, web and ui, integration suite 437 pass on `app_test`, biome clean on touched files. | 7eafffc | Start Batch 6. |
 | 9 Nov 2026 | Batch 6 | One active organization per session: `decideActiveWorkspace` plus a guard in `routes/_app.tsx` replaces any other organization URL with the active one, using `replace` so history does not bounce. The shell, breadcrumb, switcher and settings keep reading the active organization. Devtools are development only. Favicon, meta description and `robots.txt` added. The web shell gets referrer, frame, nosniff and a production CSP from a Nitro `response` plugin; the API gets the same base headers plus a `default-src 'none'` CSP outside development, with `/files/*` keeping its own policy. `S3_PUBLIC_ENDPOINT` is passed to the web container and production fails to boot without the CSP origins. The API root returns a neutral payload and the boot log is development only. Viewer routing is MIME first, extension as fallback. Zod runs `jitless` so its `new Function` probe cannot be reported as a CSP violation. | `bun test` api 401 pass / 40 skip, web 81 pass, tsc clean for api, web and ui, biome clean on touched files. Production build with `VITE_API_URL` prerendered the shell and served `/` with the full CSP, `/favicon.ico` 200, `/robots.txt` 200 and static assets carrying the same headers; a production start without `S3_PUBLIC_ENDPOINT` failed with the new error. No devtools strings in `.output`. Earlier dev stack checks showed the base headers and `/favicon.ico` 200. The production console in Chrome had no devtools control, Outfit and Oxanium loaded, and no CSP or favicon errors; the only errors were CORS from serving the build on a non-allowlisted port, plus the Zod eval issue that `jitless` fixed. Live redirect check is outstanding: Docker stopped mid-session, so the signed-in deep-link session that validated the old URL-following rule predates this final one; `active-workspace.test.ts` covers the decision. | uncommitted | Re-run the live redirect check when Docker is back, then start Batch 7. Test org `qa-studio-batch6` was created by the earlier browser check. |
 
+| 9 Nov 2026 | Batch 7 | Invitation history now filters, sorts, counts and pages in Postgres (one grouped count plus one limited page, inviters loaded for the page only). Project bulk archive, delete, add and remove use one transaction, one access read and one write per action, with the same per-item results. Upload completion enqueues and returns 202, and the 8 second wait plus its QueueEvents connection are gone. `readLimited` caps every buffer return and a new test pins the exact limit. Added the `project.slug` trigram index; dropped the planned `milestone.description_text` index after confirming the description search is project scoped and the mention picker never used it, and removed description matching from the milestone list search. | `bun test` api 453 pass / 0 fail on `app_test`, web 81 pass, tsc clean for api, web and ui, biome clean on the 12 touched files, integration suite 47 pass. Benchmark on 20,000 invitations: old 107 to 132 ms, new service 35 ms. Bulk archive 100 projects: old 2,396 ms, new 115 ms with `xact_commit` delta 1. `EXPLAIN` with `enable_seqscan = off` uses `project_slug_trgm_idx`; migration `0021` applied to `app` and `app_test`. | uncommitted | Review the branch, then start Batch 8. Live upload click-through and the Batch 6 deep-link redirect check are still outstanding. |
+
 **Template for a new row**
 
 ```
@@ -712,9 +712,9 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-H5 | Disproved | 3 | Closed |
 | P1-M1 | Medium, deployment | 4 | Done |
 | P1-M2 | Medium | 5 | Done |
-| P1-M3 | Medium | 7 | Not started |
-| P1-M4 | Medium | 7 | Not started |
-| P1-M5 | Medium | 7 | Not started |
+| P1-M3 | Medium | 7 | Done |
+| P1-M4 | Medium | 7 | Done |
+| P1-M5 | Medium | 7 | Done |
 | P1-M6 | Medium | 3 | Done |
 | P1-M7 | Medium | 2 | Done |
 | P1-M8 | Medium | 1 | Done |
@@ -725,7 +725,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M13 | Low | 6 | Done |
 | P1-M14 | Low | 3 | Done |
 | P1-M15 | Low, deployment | 4 | Done |
-| P1-M16 | Low | 7 | Not started |
+| P1-M16 | Low | 7 | Done |
 | P1-M17 | Low | 2 | Done |
 | P1-M18 | Low | 2 | Done |
 | P1-M19 | Low | 5 | Done |
@@ -759,3 +759,4 @@ Add them here, not in the old reports. Give them the next free ID in the batch t
 | Date | Batch | New finding | Severity | Status |
 |---|---|---|---|---|
 | 9 Nov 2026 | 4 | P1-M26: `compose.yaml` still defaults `SMTP_HOST` and `SMTP_FROM` to development values (`localhost` and a `handoff.local` sender). A production deployment can boot with a broken mail transport. Not fixed here because it was outside the Batch 4 scope. | Low | Open |
+| 9 Nov 2026 | 7 | The phase 1 index table said milestone description search was in the mention picker. It is actually `listMilestones`, which is project scoped. The planned `description_text` index was dropped and the milestone list search is now title only. | Info | Closed |

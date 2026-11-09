@@ -1,0 +1,1 @@
+CREATE INDEX "project_slug_trgm_idx" ON "project" USING gin ("slug" gin_trgm_ops);

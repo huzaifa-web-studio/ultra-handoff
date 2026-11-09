@@ -7,11 +7,15 @@
  * an image purpose, really is a PNG or JPEG. Doing that inline would make the
  * upload request wait on storage round trips and would lose retries.
  *
- * Used by: src/index.ts (start and stop), src/routes/uploads.ts (enqueue and
- * wait), and Bull Board in development.
+ * The route does not wait for the job. It enqueues, answers 202, and the
+ * browser polls the upload session, so one slow storage call never pins an
+ * HTTP connection.
+ *
+ * Used by: src/index.ts (start and stop), src/routes/uploads.ts (enqueue), and
+ * Bull Board in development.
  */
 
-import { type Job, QueueEvents, Worker } from "bullmq";
+import { type Job, Worker } from "bullmq";
 import { redisConnectionOptions } from "../lib/redis";
 import {
 	deleteObject,
@@ -53,16 +57,6 @@ type VerificationResult =
 
 /** Registered here so Bull Board in development lists the queue. */
 export const uploadQueue = createQueue(UPLOAD_QUEUE_NAME);
-
-/**
- * QueueEvents is what lets the upload route wait for a result instead of
- * making the browser poll on every healthy upload. It is a separate Redis
- * connection, which BullMQ requires.
- */
-const queueEvents = new QueueEvents(UPLOAD_QUEUE_NAME, {
-	connection: redisConnectionOptions,
-});
-logQueueErrors(queueEvents, `${UPLOAD_QUEUE_NAME} events`);
 
 /** Reject and remember why, so the route and the UI can explain it. */
 async function reject(
@@ -187,26 +181,6 @@ export async function enqueueUploadVerification(
 	);
 }
 
-/**
- * Wait briefly for a result.
- *
- * The caller still reads the Redis session afterwards. A timeout is not an
- * error: it simply means the browser should poll, and the job keeps running.
- */
-export async function waitForUploadVerification(
-	uploadId: string,
-	timeoutMs = 8000,
-): Promise<void> {
-	const job = await uploadQueue.getJob(uploadId);
-	if (!job) return;
-
-	try {
-		await job.waitUntilFinished(queueEvents, timeoutMs);
-	} catch {
-		// Timeout or a failed attempt. The route inspects the session.
-	}
-}
-
 let worker: Worker<VerificationJob, VerificationResult> | null = null;
 
 /** Start the in-process worker. Repeated calls reuse the same instance. */
@@ -240,10 +214,9 @@ export function startUploadVerificationWorker(): void {
 	});
 }
 
-/** Close the worker, the events connection and the queue on shutdown. */
+/** Close the worker and the queue on shutdown. */
 export async function stopUploadVerification(): Promise<void> {
 	await worker?.close();
 	worker = null;
-	await queueEvents.close();
 	await uploadQueue.close();
 }

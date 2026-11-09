@@ -14,10 +14,7 @@ import { auth } from "../auth/auth";
 import { canEditOrganization } from "../auth/permissions";
 import { authMacro } from "../auth/plugin";
 import { objectUrl, UPLOAD_POLICIES, UPLOAD_PURPOSES } from "../lib/storage";
-import {
-	enqueueUploadVerification,
-	waitForUploadVerification,
-} from "../queues/upload-verification";
+import { enqueueUploadVerification } from "../queues/upload-verification";
 import {
 	getOrganizationLogo,
 	getOrganizationRole,
@@ -114,10 +111,16 @@ export const uploadRoutes = new Elysia()
 		{ auth: true, body: createUploadBody },
 	)
 	/**
-	 * Verify the uploaded object and apply its purpose.
+	 * Queue verification and answer immediately.
+	 *
+	 * The route used to wait up to eight seconds for the worker, which held an
+	 * HTTP connection open per upload. It now enqueues and returns 202 on the
+	 * first call, and the browser polls this same route. A polling call reads
+	 * the session again, so a job that finished in between still returns
+	 * verified, and the purpose below is applied exactly once.
 	 *
 	 * Idempotent: calling it again after verification just re-applies the
-	 * avatar, which is harmless and lets a timed out request recover.
+	 * avatar or logo, which is harmless and lets a timed out request recover.
 	 */
 	.post(
 		"/uploads/:id/complete",
@@ -127,14 +130,17 @@ export const uploadRoutes = new Elysia()
 				return status(404, { message: "Upload not found" });
 			}
 
-			if (current.status !== "verified" && current.status !== "rejected") {
+			// Only a pending upload needs a job. A verifying, verified or
+			// rejected one already has a job or a final state, so polling must
+			// not enqueue a second one.
+			if (current.status === "pending") {
 				await enqueueUploadVerification(current.id);
-				// Short wait keeps the happy path to one request. A timeout is
-				// fine: the client polls while the job keeps running.
-				await waitForUploadVerification(current.id);
 			}
 
-			const latest = (await getOwnedUpload(user.id, params.id)) ?? current;
+			const latest =
+				current.status === "pending"
+					? ((await getOwnedUpload(user.id, params.id)) ?? current)
+					: current;
 
 			if (latest.status === "rejected") {
 				return status(422, {

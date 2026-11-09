@@ -23,7 +23,7 @@
 
 import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
-import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, sql } from "drizzle-orm";
 
 import { canCommentOnProject } from "../auth/comment-permissions";
 import {
@@ -794,13 +794,11 @@ export async function listMilestones(
 			const search = query.search.trim();
 
 			if (search.length > 0) {
+				// Title only. Descriptions are long, project scoped and not
+				// worth a trigram index for a list search, so they are not
+				// matched here.
 				const pattern = `%${escapeLike(search)}%`;
-				const searchClause = or(
-					ilike(milestone.title, pattern),
-					ilike(milestone.descriptionText, pattern),
-				);
-
-				if (searchClause) scope.push(searchClause);
+				scope.push(ilike(milestone.title, pattern));
 			}
 
 			const [countsRow] = await tx

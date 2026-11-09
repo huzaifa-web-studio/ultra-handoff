@@ -21,10 +21,10 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 
 import { adminClient, adminDb } from "../db";
-import { member, organization, user } from "../db/auth-schema";
+import { invitation, member, organization, user } from "../db/auth-schema";
 import { milestone, project, projectMember } from "../db/schema";
 import { closeTenantDb, getTenantDb, withTenant } from "../db/tenant";
 import { closeRedis } from "../lib/redis";
@@ -35,6 +35,7 @@ import {
 	listMilestoneComments,
 	updateMilestoneComment,
 } from "./comment.service";
+import { listInvitationHistory } from "./invitation.service";
 import {
 	createMilestone,
 	deleteMilestone,
@@ -45,6 +46,10 @@ import {
 } from "./milestone.service";
 import {
 	addProjectMember,
+	bulkAddProjectMembers,
+	bulkDeleteProjects,
+	bulkRemoveProjectMembers,
+	bulkSetProjectsArchived,
 	createProject,
 	deleteProject,
 	getProjectDetail,
@@ -89,6 +94,12 @@ const ids = {
 };
 
 const slug = (name: string) => `qa-${name}-${suffix}`;
+
+/** Projects used only by the bulk action tests. */
+const bulkIds = Array.from(
+	{ length: 10 },
+	(_, index) => `qa-bulk-project-${suffix}-${index}`,
+);
 
 /** Plain paragraph body, so no link preview worker is touched. */
 const paragraph = (text: string) => [{ type: "p", children: [{ text }] }];
@@ -323,6 +334,43 @@ suite("tenant and project boundary", () => {
 			"Hidden milestone",
 		);
 		await seedMilestone(ids.mOrgB, ids.orgB, ids.pOrgB, "Org B milestone");
+
+		// Bulk action fixture: ten projects owned by owner A.
+		for (const [index, projectId] of bulkIds.entries()) {
+			await seedProject(projectId, ids.orgA, `Bulk ${index}`, [
+				{
+					projectMemberId: `qa-bulk-pm-${suffix}-${index}`,
+					memberId: ids.mOwnerA,
+					userId: ids.ownerA,
+					role: "owner",
+				},
+			]);
+		}
+
+		// Invitation history fixture: 1000 rows with a known status mix.
+		const now = Date.now();
+		const inviteRows = Array.from({ length: 1000 }, (_, index) => {
+			const status =
+				index % 10 === 0
+					? "accepted"
+					: index % 17 === 0
+						? "canceled"
+						: "pending";
+			const expired = status === "pending" && index % 3 === 0;
+
+			return {
+				id: `qa-invite-${suffix}-${index}`,
+				organizationId: ids.orgA,
+				email: `qa-invite-${index}@example.test`,
+				role: index % 5 === 0 ? "admin" : "member",
+				status,
+				expiresAt: new Date(now + (expired ? -86_400_000 : 86_400_000)),
+				createdAt: new Date(now - index * 60_000),
+				inviterId: ids.ownerA,
+			};
+		});
+
+		await adminDb.insert(invitation).values(inviteRows);
 	});
 
 	afterAll(async () => {
@@ -811,6 +859,217 @@ suite("tenant and project boundary", () => {
 					limit: 20,
 				}),
 			).rejects.toThrow(/no longer exists/);
+		});
+	});
+
+	describe("invitation history", () => {
+		/** The status the seed data should derive, for count assertions. */
+		function expectedInviteStatus(
+			index: number,
+		): "pending" | "expired" | "accepted" | "canceled" {
+			if (index % 10 === 0) return "accepted";
+			if (index % 17 === 0) return "canceled";
+			return index % 3 === 0 ? "expired" : "pending";
+		}
+
+		function invitationQuery(
+			overrides: Partial<Parameters<typeof listInvitationHistory>[1]> = {},
+		): Parameters<typeof listInvitationHistory>[1] {
+			return {
+				status: "all",
+				role: "all",
+				search: "",
+				page: 1,
+				pageSize: 20,
+				sort: "createdAt",
+				direction: "desc",
+				...overrides,
+			};
+		}
+
+		test("paginates and counts 1000 invitations in SQL", async () => {
+			const result = await listInvitationHistory(
+				tenantOwnerA(),
+				invitationQuery(),
+			);
+
+			expect(result.items).toHaveLength(20);
+			expect(result.pagination.total).toBe(1000);
+			expect(result.pagination.totalPages).toBe(50);
+			expect(result.viewer.role).toBe("owner");
+
+			const expected = {
+				pending: 0,
+				expired: 0,
+				accepted: 0,
+				canceled: 0,
+				rejected: 0,
+			};
+
+			for (let index = 0; index < 1000; index += 1) {
+				expected[expectedInviteStatus(index)] += 1;
+			}
+
+			expect(result.counts).toMatchObject({ ...expected, all: 1000 });
+		});
+
+		test("the status filter pages inside one bucket", async () => {
+			const all = await listInvitationHistory(
+				tenantOwnerA(),
+				invitationQuery(),
+			);
+			const expired = await listInvitationHistory(
+				tenantOwnerA(),
+				invitationQuery({ status: "expired" }),
+			);
+
+			expect(expired.pagination.total).toBe(all.counts.expired);
+			expect(expired.items.every((item) => item.status === "expired")).toBe(
+				true,
+			);
+		});
+
+		test("role and search narrow the scope and the counts", async () => {
+			const admin = await listInvitationHistory(
+				tenantOwnerA(),
+				invitationQuery({ role: "admin" }),
+			);
+
+			expect(admin.pagination.total).toBe(200);
+			expect(admin.counts.all).toBe(200);
+			expect(admin.items.every((item) => item.role === "admin")).toBe(true);
+
+			const search = await listInvitationHistory(
+				tenantOwnerA(),
+				invitationQuery({ search: "qa-invite-42@" }),
+			);
+
+			expect(search.pagination.total).toBe(1);
+			expect(search.items[0]?.email).toBe("qa-invite-42@example.test");
+		});
+
+		test("sorts by email ascending", async () => {
+			const result = await listInvitationHistory(
+				tenantOwnerA(),
+				invitationQuery({
+					sort: "email",
+					direction: "asc",
+					pageSize: 10,
+				}),
+			);
+			const emails = result.items.map((item) => item.email);
+
+			expect(emails).toEqual([...emails].sort());
+		});
+	});
+
+	describe("bulk project actions", () => {
+		test("archives a batch and skips a foreign project", async () => {
+			const result = await bulkSetProjectsArchived(
+				tenantOwnerA(),
+				[...bulkIds, ids.pOrgB],
+				true,
+			);
+
+			expect(
+				result.results.filter((row) => row.status === "archived"),
+			).toHaveLength(10);
+			expect(result.results.find((row) => row.key === ids.pOrgB)?.status).toBe(
+				"skipped",
+			);
+
+			const rows = await adminDb
+				.select({ archivedAt: project.archivedAt })
+				.from(project)
+				.where(inArray(project.id, bulkIds));
+
+			expect(rows.every((row) => row.archivedAt !== null)).toBe(true);
+		});
+
+		test("restores the same batch", async () => {
+			const result = await bulkSetProjectsArchived(
+				tenantOwnerA(),
+				bulkIds,
+				false,
+			);
+
+			expect(result.results.every((row) => row.status === "restored")).toBe(
+				true,
+			);
+		});
+
+		test("bulk add reports added and skipped per item", async () => {
+			const result = await bulkAddProjectMembers(
+				tenantOwnerA(),
+				ids.pHiddenA,
+				[ids.adminA, ids.memberA, ids.clientA, ids.outsiderB],
+				"member",
+			);
+
+			expect(result.results.find((row) => row.key === ids.adminA)?.status).toBe(
+				"added",
+			);
+			expect(
+				result.results.find((row) => row.key === ids.memberA)?.status,
+			).toBe("added");
+			expect(
+				result.results.find((row) => row.key === ids.clientA)?.status,
+			).toBe("added");
+			expect(
+				result.results.find((row) => row.key === ids.outsiderB)?.status,
+			).toBe("skipped");
+
+			const again = await bulkAddProjectMembers(
+				tenantOwnerA(),
+				ids.pHiddenA,
+				[ids.adminA, ids.memberA, ids.clientA],
+				"member",
+			);
+
+			expect(again.results.every((row) => row.status === "skipped")).toBe(true);
+		});
+
+		test("bulk remove reports removed and skipped per item", async () => {
+			const result = await bulkRemoveProjectMembers(
+				tenantOwnerA(),
+				ids.pHiddenA,
+				[ids.memberA, ids.clientA, ids.outsiderB, ids.ownerA],
+			);
+
+			expect(
+				result.results.find((row) => row.key === ids.memberA)?.status,
+			).toBe("removed");
+			expect(
+				result.results.find((row) => row.key === ids.clientA)?.status,
+			).toBe("removed");
+			expect(
+				result.results.find((row) => row.key === ids.outsiderB)?.status,
+			).toBe("skipped");
+			// Self removal is refused even inside a batch.
+			expect(result.results.find((row) => row.key === ids.ownerA)?.status).toBe(
+				"skipped",
+			);
+		});
+
+		test("bulk delete removes the rows and reports missing ids", async () => {
+			const result = await bulkDeleteProjects(tenantOwnerA(), [
+				...bulkIds.slice(0, 2),
+				"qa-bulk-missing",
+			]);
+
+			expect(
+				result.results.filter((row) => row.status === "deleted"),
+			).toHaveLength(2);
+			expect(
+				result.results.find((row) => row.key === "qa-bulk-missing")?.status,
+			).toBe("skipped");
+
+			const rows = await adminDb
+				.select({ id: project.id })
+				.from(project)
+				.where(inArray(project.id, bulkIds.slice(0, 2)));
+
+			expect(rows).toHaveLength(0);
 		});
 	});
 });

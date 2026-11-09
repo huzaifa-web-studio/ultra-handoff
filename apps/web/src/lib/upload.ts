@@ -8,7 +8,8 @@
  * Flow:
  *   1. POST /uploads -> short lived presigned PUT URL
  *   2. PUT the file straight to SeaweedFS (never through the API)
- *   3. POST /uploads/:id/complete -> worker verifies the object
+ *   3. POST /uploads/:id/complete -> queues verification, returns 202
+ *   4. poll POST /uploads/:id/complete until verified or rejected
  *
  * The limits below mirror the API policy for instant feedback. The API and the
  * worker are still authoritative and re-check everything.
@@ -242,8 +243,9 @@ export async function uploadFile({
 /**
  * Ask the API to verify, polling while a job is still running.
  *
- * The first call usually returns verified immediately because the route waits
- * briefly for the worker. Polling only happens when storage is slow.
+ * The first call queues the job and answers 202, so the browser owns the
+ * waiting. Each poll re-reads the upload session, and the call that sees
+ * `verified` also applies the avatar or logo.
  */
 async function completeUpload(id: string): Promise<UploadedFile> {
 	for (let attempt = 0; attempt < 12; attempt += 1) {
