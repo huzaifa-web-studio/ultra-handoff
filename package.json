@@ -14,7 +14,8 @@
     "docker:dev:logs": "docker compose --env-file .env.dev -f compose.dev.yaml logs -f",
     "db:generate": "cd apps/api && bun run db:generate",
     "db:migrate": "cd apps/api && bun run db:migrate",
-    "db:studio": "docker compose --env-file .env.dev -f compose.dev.yaml exec api bun run db:studio"
+    "db:studio": "docker compose --env-file .env.dev -f compose.dev.yaml exec api bun run db:studio",
+    "test:db": "cd apps/api && bun run test:db"
   },
   "private": true,
   "dependencies": {},

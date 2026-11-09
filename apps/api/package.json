@@ -3,6 +3,7 @@
   "version": "1.0.50",
   "scripts": {
     "test": "bun test",
+    "test:db": "bun run scripts/test-db.ts",
     "dev": "NODE_ENV=development bun run --watch src/index.ts",
     "build": "bun build --compile --minify --sourcemap --bytecode --outfile dist/api ./src/index.ts",
     "start": "bun run src/index.ts",
