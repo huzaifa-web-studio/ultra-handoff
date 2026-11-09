@@ -30,6 +30,18 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      redis:
+        # Same tag as compose.yaml, so the CI path and the production path
+        # cannot drift to different Redis majors unnoticed.
+        image: redis:8.8.3-alpine3.23
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
     env:
       NODE_ENV: test
       DATABASE_URL: postgres://app:app@localhost:5432/app_test
@@ -78,6 +90,11 @@ jobs:
 
       - name: Unit tests (Web)
         run: cd apps/web && bun test
+
+      # Proves a connected but silent Redis cannot hold an auth request open.
+      # The script starts its own proxy on 6399 and talks to the service above.
+      - name: Redis deadline check
+        run: cd apps/api && bun run check:redis
 
       - name: Integration suite
         run: bun run test:db
