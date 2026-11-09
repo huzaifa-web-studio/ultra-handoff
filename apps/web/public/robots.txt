@@ -1,0 +1,4 @@
+# Handoff is a private workspace app. The only public page is the sign in
+# screen, which has nothing worth indexing, so crawlers are kept out entirely.
+User-agent: *
+Disallow: /

@@ -27,6 +27,11 @@ export const Route = createRootRoute({
 				content: "width=device-width, initial-scale=1",
 			},
 			{
+				name: "description",
+				content:
+					"Handoff is a client-facing project delivery and approval platform for agencies, freelancers and service-based teams.",
+			},
+			{
 				title: "Ultra Handoff",
 			},
 		],
@@ -34,6 +39,21 @@ export const Route = createRootRoute({
 			{
 				rel: "stylesheet",
 				href: appCss,
+			},
+			/*
+			 * The .ico keeps `/favicon.ico` a 200 for clients that request it
+			 * directly, and the SVG is the crisp icon every modern browser
+			 * prefers.
+			 */
+			{
+				rel: "icon",
+				href: "/favicon.ico",
+				sizes: "32x32",
+			},
+			{
+				rel: "icon",
+				href: "/favicon.svg",
+				type: "image/svg+xml",
 			},
 		],
 	}),
@@ -84,6 +104,18 @@ function AuthBroadcastSync() {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+	/*
+	 * Devtools are development only. A production build must not mount the
+	 * floating panel or keep reading its persisted state, so the two keys the
+	 * panel writes are cleared once per visit.
+	 */
+	useEffect(() => {
+		if (import.meta.env.DEV) return;
+
+		window.localStorage.removeItem("pip_open");
+		window.localStorage.removeItem("tanstack_devtools_settings");
+	}, []);
+
 	return (
 		<html lang="en">
 			<head>
@@ -103,17 +135,26 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 						{children}
 					</FileViewerProvider>
 				</QueryClientProvider>
-				<TanStackDevtools
-					config={{
-						position: "bottom-right",
-					}}
-					plugins={[
-						{
-							name: "Tanstack Router",
-							render: <TanStackRouterDevtoolsPanel />,
-						},
-					]}
-				/>
+				{/*
+				 * Development only. Rendering this unconditionally shipped the
+				 * devtools bundle and its floating trigger to every production
+				 * user. `import.meta.env.DEV` is statically replaced, so the whole
+				 * block, and the imports it alone uses, are dropped from the
+				 * production bundle.
+				 */}
+				{import.meta.env.DEV && (
+					<TanStackDevtools
+						config={{
+							position: "bottom-right",
+						}}
+						plugins={[
+							{
+								name: "Tanstack Router",
+								render: <TanStackRouterDevtoolsPanel />,
+							},
+						]}
+					/>
+				)}
 				<Scripts />
 			</body>
 		</html>

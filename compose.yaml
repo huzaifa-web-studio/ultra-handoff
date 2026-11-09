@@ -184,6 +184,9 @@ services:
       PORT: "3000"
       HOST: 0.0.0.0
       VITE_API_URL: ${VITE_API_URL:?set the public API origin}
+      # Public only. The browser PUTs presigned uploads straight to this
+      # origin, so the shell CSP has to allow it. No container connection.
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:?set the browser reachable storage URL}
     depends_on:
       api:
         condition: service_healthy

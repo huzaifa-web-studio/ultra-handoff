@@ -3,6 +3,7 @@ import {
 	createFileRoute,
 	Outlet,
 	useLocation,
+	useMatches,
 	useNavigate,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
@@ -11,6 +12,7 @@ import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
 import { AppNotFound } from "#/components/app-sidebar/not-found";
 import { authClient } from "#/features/auth/client";
 import { broadcastAuth } from "#/features/auth/sync";
+import { decideActiveWorkspace } from "#/features/organization/active-workspace";
 import { resetOrganizationDialog } from "#/features/organization/store";
 
 export const Route = createFileRoute("/_app")({
@@ -18,10 +20,33 @@ export const Route = createFileRoute("/_app")({
 	notFoundComponent: AppNotFound,
 });
 
+/**
+ * Read `$orgSlug` from the matched routes, if the current URL has one.
+ *
+ * The layout renders above the `$orgSlug` route, so `useParams` on this
+ * component carries no params. The matched child route holds the slug.
+ */
+function findUrlOrgSlug(
+	matches: ReadonlyArray<{ params: unknown }>,
+): string | undefined {
+	for (const match of matches) {
+		if (!match.params || typeof match.params !== "object") continue;
+
+		const slug = (match.params as { orgSlug?: unknown }).orgSlug;
+
+		if (typeof slug === "string" && slug.length > 0) return slug;
+	}
+
+	return undefined;
+}
+
 function AppLayout() {
 	const navigate = useNavigate();
 	const { pathname } = useLocation();
+	const matches = useMatches();
 	const { data: session, isPending } = authClient.useSession();
+	const { data: activeOrganization, isPending: activeOrganizationPending } =
+		authClient.useActiveOrganization();
 
 	// Account settings belong to the user, not to an organization. Every other
 	// screen under `_app` still needs an active organization, so the guard is
@@ -39,6 +64,20 @@ function AppLayout() {
 		unverified ||
 		(needsOrganization && !session.session?.activeOrganizationId);
 
+	/*
+	 * One active organization per session. The shell, the breadcrumb and the
+	 * settings page all read the active organization, so a URL naming another
+	 * one is sent back to it instead of rendering a second open workspace.
+	 */
+	const activeOrgSlug = activeOrganization?.slug ?? null;
+	const workspaceDecision = decideActiveWorkspace({
+		urlSlug: findUrlOrgSlug(matches),
+		activeSlug: activeOrgSlug,
+		activePending: activeOrganizationPending,
+	});
+	const redirectingWorkspace = workspaceDecision === "redirect";
+	const waitingForWorkspace = workspaceDecision === "wait";
+
 	useEffect(() => {
 		if (isPending) return;
 
@@ -54,10 +93,34 @@ function AppLayout() {
 
 		if (needsOrganization && !session.session?.activeOrganizationId) {
 			navigate({ to: "/" });
+			return;
 		}
-	}, [session, isPending, needsOrganization, unverified, navigate]);
 
-	if (missingScope) {
+		/*
+		 * A stale bookmark, an old link or a hand edited address is replaced
+		 * with the active workspace. `replace` keeps the other slug out of the
+		 * history stack, so Back does not bounce between two workspaces.
+		 */
+		if (redirectingWorkspace && activeOrgSlug) {
+			navigate({
+				to: "/$orgSlug",
+				params: { orgSlug: activeOrgSlug },
+				replace: true,
+			});
+		}
+	}, [
+		session,
+		isPending,
+		needsOrganization,
+		unverified,
+		redirectingWorkspace,
+		activeOrgSlug,
+		navigate,
+	]);
+
+	// `waitingForWorkspace` keeps the URL organization from flashing on screen
+	// while the active one is still loading.
+	if (missingScope || redirectingWorkspace || waitingForWorkspace) {
 		return null;
 	}
 

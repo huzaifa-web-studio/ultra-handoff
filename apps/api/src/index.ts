@@ -7,6 +7,7 @@ import { Elysia } from "elysia";
 
 import { betterAuth } from "./auth/plugin";
 import { isDevelopment, realtimeEnv, serverEnv } from "./lib/env";
+import { securityHeaders } from "./middleware/security-headers";
 import { tenantPlugin } from "./middleware/tenant";
 import { queues } from "./queues";
 import { startRealtime } from "./realtime";
@@ -45,6 +46,9 @@ async function buildApp() {
 				allowedHeaders: ["Content-Type", "Authorization"],
 			}),
 		)
+		// Referrer, framing and CSP on every response. Global so it also covers
+		// the auth handler and the routes mounted below.
+		.use(securityHeaders)
 		.use(betterAuth)
 		// Exposes the `tenant` macro. Routes opt in with `{ tenant: true }`
 		// and must live under an `:orgSlug` path.
@@ -72,7 +76,9 @@ async function buildApp() {
 		.use(publicInvitationRoutes)
 		// Liveness and readiness. `/ready` exercises the session fast path.
 		.use(healthRoutes)
-		.get("/", () => "Hello Huzaifa");
+		// Neutral root payload. The old "Hello Huzaifa" string was a leftover
+		// development marker and also showed on magic-link callbacks.
+		.get("/", () => ({ name: "Handoff API" }));
 
 	if (isDevelopment) {
 		const { openapi } = await import("@elysiajs/openapi");
@@ -163,9 +169,13 @@ void buildApp()
 		process.once("SIGTERM", shutdown);
 		process.once("SIGINT", shutdown);
 
-		console.log(
-			`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`,
-		);
+		// A development comfort only. Rule 11 forbids unguarded console logging
+		// in production code, and a deployment relies on the healthcheck.
+		if (isDevelopment) {
+			console.log(
+				`🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`,
+			);
+		}
 	})
 	.catch((error) => {
 		console.error("Failed to start API", error);

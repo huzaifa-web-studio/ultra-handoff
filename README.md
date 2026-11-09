@@ -176,13 +176,15 @@ error.
 - [ ] `BETTER_AUTH_SECRET` is a long random value, for example from `openssl rand -base64 48`.
 - [ ] `BETTER_AUTH_URL` is the public API origin.
 - [ ] `WEB_URL` is the public web origin.
-- [ ] `VITE_API_URL` is the public API origin and shares the registrable domain with `WEB_URL`, so the session cookie stays same-site.
-- [ ] `S3_PUBLIC_ENDPOINT` is a browser reachable reverse proxy in front of SeaweedFS that preserves the `Host` header.
+- [ ] `VITE_API_URL` is the public API origin and shares the registrable domain with `WEB_URL`, so the session cookie stays same-site. The web container uses the same value to build the Content-Security-Policy.
+- [ ] `S3_PUBLIC_ENDPOINT` is a browser reachable reverse proxy in front of SeaweedFS that preserves the `Host` header. The web container also reads it, because the shell CSP has to allow presigned uploads to that origin.
 - [ ] `S3_ALLOWED_ORIGINS` is the exact web origin.
 - [ ] `S3_ACCESS_KEY` and `S3_SECRET_KEY` are strong values, different from the development `admin` pair. The API and SeaweedFS read the same pair.
 - [ ] `docker compose --env-file .env config` succeeds.
 - [ ] After `bun run docker:prod`, `GET /bull-board` and `GET /openapi` return 404.
 - [ ] The web bundle points at the configured API origin, not at `localhost`.
+- [ ] `curl -I` on the web origin returns `Referrer-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and a `Content-Security-Policy` that names the API and storage origins.
+- [ ] `GET /favicon.ico` returns 200 and the browser console has no CSP violations. Upload, sign in and the realtime stream still work.
 
 ## Building
 

@@ -271,6 +271,17 @@ services:
           ignore:
             - node_modules
             - "**/node_modules"
+        # Public assets (favicon, robots.txt) and the Nitro server plugin are
+        # real source, not build output, so the dev container has to see them.
+        - path: ./apps/web/public
+          action: sync
+          target: /workspace/apps/web/public
+        - path: ./apps/web/server
+          action: sync
+          target: /workspace/apps/web/server
+          ignore:
+            - node_modules
+            - "**/node_modules"
         - path: ./apps/web/vite.config.ts
           action: sync
           target: /workspace/apps/web/vite.config.ts

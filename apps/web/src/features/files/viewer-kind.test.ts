@@ -45,18 +45,28 @@ describe("viewerKindFor", () => {
 		expect(viewerKindFor({ name: "budget.xlsx", mime: "" })).toBe("sheet");
 	});
 
-	test("the extension currently decides pdf, text and csv over a conflicting MIME", () => {
-		// Known inconsistency, reported as P2-F1: the module comment says a
-		// specific MIME wins, but the pdf, csv and text checks run on the
-		// extension first. This pins current behaviour so a future fix is a
-		// deliberate, visible change.
-		expect(viewerKindFor({ name: "report.pdf", mime: "text/csv" })).toBe("pdf");
+	test("a specific MIME wins over a conflicting file name", () => {
+		// Fixed P2-F1: the code now follows the documented precedence.
+		expect(viewerKindFor({ name: "report.pdf", mime: "text/csv" })).toBe("csv");
 		expect(
 			viewerKindFor({
 				name: "notes.txt",
 				mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 			}),
-		).toBe("text");
+		).toBe("docx");
+		expect(viewerKindFor({ name: "photo.txt", mime: "image/png" })).toBe(
+			"image",
+		);
+	});
+
+	test("falls back to the extension when the MIME names no viewer", () => {
+		// Windows reports CSV files as application/vnd.ms-excel.
+		expect(
+			viewerKindFor({ name: "rows.csv", mime: "application/vnd.ms-excel" }),
+		).toBe("csv");
+		expect(
+			viewerKindFor({ name: "slides.pptx", mime: "application/zip" }),
+		).toBe("unsupported");
 	});
 
 	test("is case insensitive on the extension", () => {

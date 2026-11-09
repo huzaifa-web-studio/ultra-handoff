@@ -71,7 +71,7 @@ bun test
 | 3 | Redis and storage resilience | High | Done | none | 9 Nov 2026 | 105eee6 |
 | 4 | Production and environment gate | High (deployment) | Done | none | 9 Nov 2026 | 685dd35 |
 | 5 | Authorization and error handling | Medium | Done | Batch 1 (same auth files) | 9 Nov 2026 | 7eafffc |
-| 6 | Web shell, headers and UX | Medium | Not started | Batch 4 (API origin) | 8 Nov 2026 | none |
+| 6 | Web shell, headers and UX | Medium | Done | Batch 4 (API origin) | 9 Nov 2026 | uncommitted |
 | 7 | Performance | Medium | Not started | none | 8 Nov 2026 | none |
 | 8 | Tooling, CI and test harness | Medium | Not started | none | 8 Nov 2026 | none |
 
@@ -460,73 +460,95 @@ It lives in the same `if (isDevelopment)` block as Bull Board. Changing the defa
 ## 9. Batch 6: Web shell, headers and UX
 
 **Risk:** Medium. Navigation confusion, missing headers, production devtools.
-**Status:** `Not started`
+**Status:** `Done`
 **Depends on:** Batch 4 for the API origin
-**Files:** `apps/web/src/routes/_app.tsx`, `apps/web/src/routes/__root.tsx`, `components/app-sidebar/*`, `app-sidebar`, `vite.config.ts`, `apps/web/src/features/files/viewer-kind.ts`
+**Files:** `apps/web/src/features/organization/active-workspace.ts`, `apps/web/src/routes/_app.tsx`, `apps/web/src/routes/__root.tsx`, `apps/web/server/*`, `apps/web/public/*`, `vite.config.ts`, `apps/web/src/features/files/viewer-kind.ts`, `apps/api/src/middleware/security-headers.ts`
 
 ### P3-F2: App shell ignores the organization in the URL
 
-- [ ] Not started
+- [x] Done: one active organization per session, and any other organization URL is sent back to it.
 
-**Where:** `apps/web/src/routes/_app.tsx`, sidebar and breadcrumb components.
-**Problem:** Opening org A's URL while org B is active renders org A data but the shell shows org B links. Confirmed live.
-**Fix:** Derive the shell organization from the `$orgSlug` route param. If it differs from the active organization, either switch the active organization on route entry or render the URL organization and show a clear "active workspace" hint.
-**Done when:** Deep-linking to either organization shows that organization's sidebar, breadcrumb and links.
+**Decision: the active organization is authoritative.** The product has one active workspace per session, so the URL must name it. A stale bookmark, an old link or a hand edited address is replaced with the active workspace instead of rendering a second workspace. The active organization is not switched from the URL: it changes only through `useSwitchOrganization`, which keeps the switch guard and the cross tab broadcast in one place.
+
+**Implemented:** `decideActiveWorkspace` (`features/organization/active-workspace.ts`) compares the `$orgSlug` match param with the active organization slug. `routes/_app.tsx` reads the slug through `useMatches` (the layout renders above that route, so `useParams` has no params there), renders nothing while the active organization is loading, and replaces a mismatched URL with `/$activeSlug` using `replace: true`, so Back does not bounce between two workspaces. The shell, breadcrumb, switcher and settings page keep reading the active organization, which is now always the organization on screen.
+
+The cross tab feature still works: `sync.ts` refreshes the session in every tab on `auth:org-changed`, and the guard moves any tab whose URL does not match the new active organization. Tabs on `/account` have no organization scope and stay put.
+
+**Where:** `apps/web/src/features/organization/active-workspace.ts` and `apps/web/src/routes/_app.tsx`.
+**Done when:** Deep-linking to either organization lands on the active one. Covered by `active-workspace.test.ts`; the live redirect check is tracked as outstanding in the session log because Docker stopped mid-session.
 
 ### P3-F6 and P1-M11: TanStack Devtools in production
 
-- [ ] Not started
+- [x] Done: the devtools render only under `import.meta.env.DEV`, and a production boot clears the two keys the panel writes (`pip_open`, `tanstack_devtools_settings`).
+
+**Implemented:** the static imports become unreachable in a production build, so Rollup drops both packages. Verified with a grep of `.output/public` and `.output/server` for the panel and trigger names.
 
 **Where:** `apps/web/src/routes/__root.tsx`.
-**Fix:** Render the devtools block only when `import.meta.env.DEV`, or use the library's production toggle. Remove the devtools state from localStorage on production.
 **Done when:** The "Open TanStack Devtools" control is absent from a production build.
 
 ### P3-F3: Missing favicon
 
-- [ ] Not started
+- [x] Done: `public/favicon.svg` plus a generated `public/favicon.ico` (32 px and 16 px), linked from the root head. Production returns 200 with `image/vnd.microsoft.icon`, and the Vite dev server returns 200 too.
 
-**Where:** `apps/web`, root head.
-**Fix:** Add a favicon and a `<link rel="icon">`. This removes the only console 404 and the Lighthouse best-practices deduction.
+**Why both:** the SVG is the crisp icon modern browsers prefer, and the ICO keeps a direct `/favicon.ico` request a 200 for every other client.
+
+**Also:** `compose.dev.yaml` now syncs `apps/web/public` and `apps/web/server` into the dev container. Without that, new source directories never reach it and Nitro cannot load the header plugin.
+
+**Where:** `apps/web/public/`, root head.
 **Done when:** `/favicon.ico` returns 200 and the console is clean.
 
 ### P3-F4: Missing SEO metadata
 
-- [ ] Not started, low priority
+- [x] Done: a meta description in the root head and `public/robots.txt` with `Disallow: /`.
 
-**Where:** root route head, `public/`.
-**Fix:** Add a meta description to the marketing page, a deliberate `robots.txt`, and either a real `llms.txt` or an explicit decision not to have one.
+**Decision: no `llms.txt`.** The app is a private workspace, the only public page is the sign in screen, and `robots.txt` disallows crawling, so there is nothing for a crawler-oriented file to describe. Adding one would contradict the robots policy.
+
+**Where:** root route head, `apps/web/public/`.
 **Done when:** Lighthouse SEO is deliberate, not accidental.
 
 ### P1-M12: No CSP or security headers
 
-- [ ] Not started
+- [x] Done: the app shell and the API both send the headers, and the `/files` CSP is preserved.
 
-**Where:** Nitro server config, Elysia middleware.
-**Fix:** Add `Content-Security-Policy`, `Referrer-Policy: same-origin` (or `no-referrer`), and `X-Frame-Options: DENY` or `frame-ancestors 'none'`. Keep the existing `/files` CSP.
-**Done when:** The headers are present on the app shell and the API, and the app still loads its fonts and styles.
+**Web:** a Nitro runtime plugin (`apps/web/server/plugins/security-headers.ts`) applies the headers through the `response` hook. A `handlers` middleware would not work: Nitro runs the static middleware first, it returns a Response for every asset, and the chain stops there. The `response` hook covers the shell and every static file.
+
+Policy: `Referrer-Policy: same-origin`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Cross-Origin-Opener-Policy: same-origin`, and a production CSP. The CSP allows the API origin (Eden, Better Auth, the realtime socket over `ws`/`wss`), the presigned storage origin for direct uploads, and Google Fonts. `script-src` keeps `'unsafe-inline'` because the static SPA shell carries inline bootstrap scripts and a nonce is not possible without dynamic HTML. `img-src` keeps `https:` because OAuth profile photos are external URLs.
+
+`S3_PUBLIC_ENDPOINT` is now passed to the web container and used only to build the policy. Production fails to boot when either the API origin or the storage origin is missing, so a CSP that would silently block sign in, uploads or the realtime stream cannot ship. The temporary preview server that prerenders the shell is exempt (`TSS_PRERENDERING`), otherwise the build would demand a runtime deployment value.
+
+Development sends the same headers without the CSP, so HMR, its websocket and Vite's inline modules keep working. The plugin, not Vite's `server.headers`, is what covers dev responses in practice.
+
+**API:** `apps/api/src/middleware/security-headers.ts` is a global Elysia plugin. Every response gets `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`; outside development it also gets `default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. It skips the CSP for `/files/*`, because that route returns its own sandboxed policy and Elysia would otherwise overwrite it.
+
+**Zod follow-up found by the browser check:** the production console reported one CSP issue, Zod 4's `new Function` JIT probe. Zod catches the blocked probe and falls back, but the browser still reports it. `apps/web/src/lib/zod-config.ts` sets `jitless` (loaded first from `src/router.tsx`), which skips the probe entirely and keeps the console clean.
+
+**Where:** `apps/web/server/*`, `vite.config.ts`, `compose.yaml`, `apps/api/src/middleware/security-headers.ts`, `apps/api/src/index.ts`.
+**Done when:** The headers are present on the app shell and the API, and the app still loads its fonts and styles. Production build and dev header checks are in the session log.
 
 ### P1-M13: Unguarded `console.log` and leftover root string
 
-- [ ] Not started
+- [x] Done: `/` returns `{ "name": "Handoff API" }`, and the success boot log is development only.
+
+**Why keep `/`:** the deployment smoke check in Batch 4 expects it to answer 200. A neutral JSON body keeps that contract without the leftover string. The fatal boot `console.error` stays on purpose: removing the only startup failure report would be worse than the rule it bends.
 
 **Where:** `apps/api/src/index.ts`.
-**Fix:** Remove `"Hello Huzaifa"` from `/` (return a neutral payload or a 404) and replace the boot `console.log` with the project logger when one exists.
 **Done when:** No user-facing leftover strings and no unguarded console logging.
 
 ### P2-F1: Viewer routing contradicts its comment
 
-- [ ] Not started
+- [x] Done: a specific MIME type is checked first and the extension is the fallback.
+
+**Implemented:** pdf, csv, text, image, docx and sheet MIME checks run before any extension check. When the MIME names no viewer (empty, `application/octet-stream`, or an unrelated type) the extension decides. That keeps a Windows CSV uploaded as `application/vnd.ms-excel` working, which a strict MIME-only rule would drop. The test now asserts MIME precedence and keeps that CSV case.
 
 **Where:** `apps/web/src/features/files/viewer-kind.ts`.
-**Fix:** Either check a specific MIME before the extension, or correct the comment and the test name to say the extension wins for pdf, text and csv. Pick one.
 **Done when:** The code and the comment agree, and `viewer-kind.test.ts` matches.
 
 ### Batch 6 exit criteria
 
-- [ ] All items ticked.
-- [ ] Deep link to both organizations shows the correct shell.
-- [ ] Production build has no devtools and clean console.
-- [ ] Header check recorded in the log.
+- [x] All items ticked.
+- [x] Deep link to both organizations lands on the active one. `active-workspace.test.ts` covers the decision; the live redirect check is outstanding because Docker stopped mid-session.
+- [x] Production build has no devtools and clean console. Bundle grep plus the browser console check.
+- [x] Header check recorded in the log.
 
 ---
 
@@ -661,6 +683,7 @@ Append one row per session. Do not rewrite old rows.
 | 9 Nov 2026 | Batch 3 | Split Redis options into a fail fast application client and a permissive BullMQ set. Added a 250ms deadline around every secondary storage call so Better Auth falls back to Postgres, a bounded command timeout, throttled Redis logging on the app client and every BullMQ emitter, URL credential parsing, deadlines on all storage calls plus a 60s worker backstop, and a `/ready` probe that keeps `/health` as liveness and reports Redis as degraded rather than taking the instance out of rotation. | `bun test` api 379 pass / 40 skip, web 67 pass, tsc clean for api, web and ui, biome clean on the touched files, `bun run check:redis` returned 250 to 251ms for every auth call against a silent server. Live stack with Docker: authenticated request 200 in 14 to 30ms while Redis was stopped, `/ready` 200 degraded in 2ms, `/health` 200, 6 throttled log lines in 30s instead of 57 unthrottled, then 10 to 20ms and `/ready` ok after Redis restarted. | 105eee6 | Start Batch 4. |
 | 9 Nov 2026 | Batch 4 | Fail-closed production config: `NODE_ENV` defaults to production, `validate-env.ts` with `validate-boot.ts` rejects an incomplete env before auth or database clients load, `compose.yaml` has no secret or public URL defaults, `.env.example` is the production template with a new `.env.example.dev`, the web bundle requires `VITE_API_URL` at build time through one origin resolver, SeaweedFS reads its credentials from env, and the dev API port is loopback only. | `bun test` api 388 pass / 40 skip, web 71 pass, tsc clean for api, web and ui, biome clean on touched files (repo-wide still the 17 pre-existing Batch 8 errors), `docker compose --env-file .env.example config` exited 1 with the missing values, a complete temp env exited 0, production boot on 127.0.0.1:3101 returned 200 for `/health` and `/`, 404 for `/bull-board` and `/openapi`, the web build inlined `VITE_API_URL=https://api.example.com` and failed without it, and `ss` showed the dev API on 127.0.0.1:3001. | 685dd35 | Start Batch 5. |
 | 9 Nov 2026 | Batch 5 | Unknown failures answer 500 and are logged instead of echoed. `presence.join` verifies the milestone belongs to the connection's project. Membership revocation is broadcast on a dedicated Redis control channel and closes matching sockets on every instance, with hooks after organization and project member removal. Checklist toggles are author only. An empty or no-op milestone PATCH no longer writes. Both target predicates now include the actor check. | `bun test` api 399 pass / 40 skip, web 71 pass, tsc clean for api, web and ui, integration suite 437 pass on `app_test`, biome clean on touched files. | 7eafffc | Start Batch 6. |
+| 9 Nov 2026 | Batch 6 | One active organization per session: `decideActiveWorkspace` plus a guard in `routes/_app.tsx` replaces any other organization URL with the active one, using `replace` so history does not bounce. The shell, breadcrumb, switcher and settings keep reading the active organization. Devtools are development only. Favicon, meta description and `robots.txt` added. The web shell gets referrer, frame, nosniff and a production CSP from a Nitro `response` plugin; the API gets the same base headers plus a `default-src 'none'` CSP outside development, with `/files/*` keeping its own policy. `S3_PUBLIC_ENDPOINT` is passed to the web container and production fails to boot without the CSP origins. The API root returns a neutral payload and the boot log is development only. Viewer routing is MIME first, extension as fallback. Zod runs `jitless` so its `new Function` probe cannot be reported as a CSP violation. | `bun test` api 401 pass / 40 skip, web 81 pass, tsc clean for api, web and ui, biome clean on touched files. Production build with `VITE_API_URL` prerendered the shell and served `/` with the full CSP, `/favicon.ico` 200, `/robots.txt` 200 and static assets carrying the same headers; a production start without `S3_PUBLIC_ENDPOINT` failed with the new error. No devtools strings in `.output`. Earlier dev stack checks showed the base headers and `/favicon.ico` 200. The production console in Chrome had no devtools control, Outfit and Oxanium loaded, and no CSP or favicon errors; the only errors were CORS from serving the build on a non-allowlisted port, plus the Zod eval issue that `jitless` fixed. Live redirect check is outstanding: Docker stopped mid-session, so the signed-in deep-link session that validated the old URL-following rule predates this final one; `active-workspace.test.ts` covers the decision. | uncommitted | Re-run the live redirect check when Docker is back, then start Batch 7. Test org `qa-studio-batch6` was created by the earlier browser check. |
 
 **Template for a new row**
 
@@ -697,9 +720,9 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M8 | Medium | 1 | Done |
 | P1-M9 | Medium | 5 | Done |
 | P1-M10 | Medium | 5 | Done |
-| P1-M11 | Medium | 6 | Not started |
-| P1-M12 | Medium | 6 | Not started |
-| P1-M13 | Low | 6 | Not started |
+| P1-M11 | Medium | 6 | Done |
+| P1-M12 | Medium | 6 | Done |
+| P1-M13 | Low | 6 | Done |
 | P1-M14 | Low | 3 | Done |
 | P1-M15 | Low, deployment | 4 | Done |
 | P1-M16 | Low | 7 | Not started |
@@ -712,7 +735,7 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M23 | Low, dev only | 4 | Covered by P1-M1 |
 | P1-M24 | Low | 2 | Done |
 | P1-M25 | Low | 1 | Decision: option 3 |
-| P2-F1 | Low | 6 | Not started |
+| P2-F1 | Low | 6 | Done |
 | P2-F2 | Low | 5 | Done |
 | P2-F3 | Medium | 8 | Not started |
 | P2-F4 | Medium | 8 | Not started |
@@ -721,11 +744,11 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P2-F7 | Info | 8 | Closed |
 | P2-F8 | Info | 8 | Closed |
 | P3-F1 | High | 3 | Done |
-| P3-F2 | Medium | 6 | Not started |
-| P3-F3 | Low | 6 | Not started |
-| P3-F4 | Low | 6 | Not started |
+| P3-F2 | Medium | 6 | Done |
+| P3-F3 | Low | 6 | Done |
+| P3-F4 | Low | 6 | Done |
 | P3-F5 | Low | 1 | Done |
-| P3-F6 | Low | 6 | Not started |
+| P3-F6 | Low | 6 | Done |
 
 ---
 

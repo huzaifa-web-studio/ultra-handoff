@@ -37,8 +37,12 @@ function extensionOf(name: string): string {
 /**
  * Pick the viewer for a file.
  *
- * The MIME type wins when it is specific. The extension is the fallback for the
- * platforms that report an empty or generic type.
+ * A specific MIME type wins because it describes the bytes, so a mislabelled
+ * file name cannot send a PDF into the text viewer. The extension is only a
+ * fallback: when the MIME is empty, generic (`application/octet-stream`) or
+ * names a type no viewer supports, the name is the only signal left. That also
+ * keeps a CSV uploaded with the Windows `application/vnd.ms-excel` type
+ * working, which a strict MIME-only rule would drop.
  */
 export function viewerKindFor(file: {
 	name: string;
@@ -47,14 +51,21 @@ export function viewerKindFor(file: {
 	const mime = file.mime.split(";")[0]?.trim().toLowerCase() ?? "";
 	const extension = extensionOf(file.name);
 
-	if (mime === "application/pdf" || extension === "pdf") return "pdf";
-	if (mime === "text/csv" || extension === "csv") return "csv";
-	if (mime === "text/plain" || extension === "txt") return "text";
-	if (mime.startsWith("image/") || IMAGE_EXTENSIONS.has(extension)) {
-		return "image";
-	}
-	if (mime === DOCX_MIME || extension === "docx") return "docx";
-	if (mime === XLSX_MIME || extension === "xlsx") return "sheet";
+	// The declared type wins when a viewer handles it.
+	if (mime === "application/pdf") return "pdf";
+	if (mime === "text/csv") return "csv";
+	if (mime === "text/plain") return "text";
+	if (mime.startsWith("image/")) return "image";
+	if (mime === DOCX_MIME) return "docx";
+	if (mime === XLSX_MIME) return "sheet";
+
+	// Nothing specific was declared, so fall back to the file name.
+	if (extension === "pdf") return "pdf";
+	if (extension === "csv") return "csv";
+	if (extension === "txt") return "text";
+	if (IMAGE_EXTENSIONS.has(extension)) return "image";
+	if (extension === "docx") return "docx";
+	if (extension === "xlsx") return "sheet";
 
 	return "unsupported";
 }
