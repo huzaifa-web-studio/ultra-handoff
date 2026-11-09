@@ -20,28 +20,7 @@
 import postgres from "postgres";
 import { databaseEnv } from "../src/lib/env";
 
-/**
- * Business tables the tenant role may touch.
- *
- * Deliberately an allowlist rather than ALTER DEFAULT PRIVILEGES. A new table
- * that is not listed here fails loudly with "permission denied", which is much
- * safer than quietly granting access to a table that has no RLS policy.
- *
- * Better Auth tables are intentionally absent. `user`, `session`, `account`,
- * `verification`, `organization`, `member` and `invitation` belong to the auth
- * library and are only touched through its API on the privileged client.
- *
- * Add each new business table (with an RLS policy) to this list.
- */
-const TENANT_TABLES: readonly string[] = [
-	"project",
-	"project_member",
-	"project_pin",
-	"milestone",
-	"milestone_assignee",
-	"comment",
-	"link_preview",
-];
+import { TENANT_TABLES } from "./tenant-tables";
 
 /** Identifiers cannot be bind parameters, so validate before quoting. */
 function quoteIdent(identifier: string): string {

@@ -19,6 +19,7 @@
 import { sql } from "drizzle-orm";
 import { adminClient, adminDb } from "../src/db";
 import { closeTenantDb, getTenantDb, withTenant } from "../src/db/tenant";
+import { TENANT_TABLES } from "./tenant-tables";
 
 /** Postgres SQLSTATE for permission denied and RLS violations. */
 const INSUFFICIENT_PRIVILEGE = "42501";
@@ -43,6 +44,8 @@ const projectA = `rls-project-a-${suffix}`;
 const projectB = `rls-project-b-${suffix}`;
 const milestoneA = `rls-milestone-a-${suffix}`;
 const milestoneB = `rls-milestone-b-${suffix}`;
+const commentA = `rls-comment-a-${suffix}`;
+const linkPreviewA = `rls-link-preview-a-${suffix}`;
 
 const scopeA = { organizationId: orgA, userId: userA };
 
@@ -177,6 +180,16 @@ async function seed(): Promise<void> {
 		insert into "milestone_assignee" (id, organization_id, milestone_id, project_member_id)
 		values
 			(${`rls-ma-a-${suffix}`}, ${orgA}, ${milestoneA}, ${`rls-pm-a-${suffix}`})
+	`);
+	await adminDb.execute(sql`
+		insert into "comment" (id, organization_id, milestone_id, body, body_text)
+		values
+			(${commentA}, ${orgA}, ${milestoneA}, ${"[]"}::jsonb, ${""})
+	`);
+	await adminDb.execute(sql`
+		insert into "link_preview" (id, organization_id, url, url_hash)
+		values
+			(${linkPreviewA}, ${orgA}, ${"https://example.test"}, ${`hash-${suffix}`})
 	`);
 }
 
@@ -390,6 +403,89 @@ async function main(): Promise<void> {
 				),
 		);
 
+		// 4d. Comments follow the same boundary.
+		await check("comments are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "comment"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a comment from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await expectFailure(
+			"comment insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "comment" (id, organization_id, milestone_id, body, body_text)
+							values (${`rls-comment-intruder-${suffix}`}, ${orgB}, ${milestoneB}, ${"[]"}::jsonb, ${""})`,
+					),
+				),
+		);
+
+		// 4e. Link previews follow the same boundary.
+		await check("link previews are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "link_preview"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a link preview from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await expectFailure(
+			"link preview insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "link_preview" (id, organization_id, url, url_hash)
+							values (${`rls-link-preview-intruder-${suffix}`}, ${orgB}, ${"https://example.test"}, ${`hash-intruder-${suffix}`})`,
+					),
+				),
+		);
+
+		// 4f. The allowlist and the RLS policies must agree in both directions.
+		await check("tenant tables match rls policies", async () => {
+			const rows = await adminDb.execute<{ relname: string }>(sql`
+				select c.relname
+				from pg_class c
+				join pg_namespace n on n.oid = c.relnamespace
+				where n.nspname = 'public'
+					and c.relkind = 'r'
+					and c.relrowsecurity = true
+				order by c.relname
+			`);
+			const withPolicy = new Set(rows.map((row) => row.relname));
+			const listed = new Set(TENANT_TABLES);
+			const missingPolicy = [...listed].filter(
+				(name) => !withPolicy.has(name),
+			);
+			const missingGrant = [...withPolicy].filter(
+				(name) => !listed.has(name),
+			);
+			if (missingPolicy.length > 0 || missingGrant.length > 0) {
+				throw new Error(
+					`listed but no policy: ${missingPolicy.join(", ") || "(none)"}; policy but not listed: ${missingGrant.join(", ") || "(none)"}`,
+				);
+			}
+			return `${listed.size} tables`;
+		});
+
 		// 5. Better Auth tables are not granted at all.
 		await expectFailure(
 			"Better Auth user table is not readable",
@@ -440,20 +536,28 @@ async function main(): Promise<void> {
 			const assignments = await adminDb.execute<{ id: string }>(
 				sql`select id from "milestone_assignee" where organization_id = ${orgA}`,
 			);
+			const comments = await adminDb.execute<{ id: string }>(
+				sql`select id from "comment" where organization_id = ${orgA}`,
+			);
+			const linkPreviews = await adminDb.execute<{ id: string }>(
+				sql`select id from "link_preview" where organization_id = ${orgA}`,
+			);
 
 			if (
 				projects.length !== 0 ||
 				memberships.length !== 0 ||
 				pins.length !== 0 ||
 				milestones.length !== 0 ||
-				assignments.length !== 0
+				assignments.length !== 0 ||
+				comments.length !== 0 ||
+				linkPreviews.length !== 0
 			) {
 				throw new Error(
-					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships, ${pins.length} pins, ${milestones.length} milestones and ${assignments.length} assignments`,
+					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships, ${pins.length} pins, ${milestones.length} milestones, ${assignments.length} assignments, ${comments.length} comments and ${linkPreviews.length} link previews`,
 				);
 			}
 
-			return "projects, memberships, pins, milestones and assignments removed";
+			return "projects, memberships, pins, milestones, assignments, comments and link previews removed";
 		});
 	} finally {
 		await cleanup();
