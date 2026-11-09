@@ -3,6 +3,15 @@
   "name": "api",
   "projectType": "application",
   "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "bunx tsc --noEmit -p tsconfig.json"
+      },
+      "cache": true,
+      "inputs": ["default", "^default"]
+    },
     "docker:build": {
       "executor": "nx:run-commands",
       "options": {

@@ -1,0 +1,16 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "@org/ui",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "bunx tsc --noEmit -p tsconfig.json"
+      },
+      "cache": true,
+      "inputs": ["default", "^default"]
+    }
+  }
+}
