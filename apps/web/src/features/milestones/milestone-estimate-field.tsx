@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { MilestoneEstimateInput } from "./milestone-estimate-input";
 import {
+	estimateHint,
 	estimateInputValue,
 	formatEstimate,
 	parseEstimateInput,
@@ -48,6 +49,10 @@ export function MilestoneEstimateField({
 			<span className="text-sm text-app-text">{formatEstimate(minutes)}</span>
 		);
 	}
+
+	// The input already shows the stored estimate, so this is null in every
+	// normal case and only survives as "No estimate" for an empty field.
+	const hint = estimateHint(estimateInputValue(minutes), minutes);
 
 	function commit() {
 		const parsed = parseEstimateInput(draft);
@@ -88,11 +93,9 @@ export function MilestoneEstimateField({
 
 			{error ? (
 				<p className="text-xs text-danger">{error}</p>
-			) : (
-				<p className="text-xs text-app-text-muted">
-					{minutes === null ? "No estimate" : formatEstimate(minutes)}
-				</p>
-			)}
+			) : hint ? (
+				<p className="text-xs text-app-text-muted">{hint}</p>
+			) : null}
 		</div>
 	);
 }

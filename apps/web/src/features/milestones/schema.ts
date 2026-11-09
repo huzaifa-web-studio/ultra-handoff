@@ -257,8 +257,9 @@ export function describeDateRange(
 /**
  * Format minutes as `1h 30m`.
  *
- * Used in the list meta row and as the estimate field helper, so the value the
- * user typed and the value they see afterwards are written the same way.
+ * Used in the list meta row, the read only detail value, and by estimateHint,
+ * so the value the user typed and the value they see afterwards are written the
+ * same way.
  */
 export function formatEstimate(minutes: number | null): string {
 	if (minutes == null || minutes <= 0) return "No estimate";
@@ -385,4 +386,32 @@ export function parseEstimateInput(raw: string): EstimateParseResult {
 /** The value shown inside the estimate input, without the "No estimate" copy. */
 export function estimateInputValue(minutes: number | null): string {
 	return minutes == null ? "" : formatEstimate(minutes);
+}
+
+/**
+ * The helper text under an estimate field, or null when it would only repeat
+ * what the input already shows.
+ *
+ * Why: the input displays the value, so printing the formatted estimate below
+ * it says the same thing twice. The hint earns its space only when the reading
+ * differs from what was typed ("90" becomes "1h 30m"), or when nothing is
+ * stored yet ("No estimate").
+ *
+ * `raw` is the text currently in the field, `minutes` the value it parses to.
+ * Used by: milestone-estimate-field.tsx, milestone-create-dialog.tsx.
+ */
+export function estimateHint(
+	raw: string,
+	minutes: number | null,
+): string | null {
+	const formatted = formatEstimate(minutes);
+	const typed = raw.trim().toLowerCase().replace(/\s+/g, " ");
+
+	// Empty field: the only useful thing to say is that nothing is stored.
+	if (typed.length === 0) return formatted;
+
+	// Same reading: the input already shows it, so there is nothing to add.
+	if (typed === formatted.toLowerCase().replace(/\s+/g, " ")) return null;
+
+	return formatted;
 }

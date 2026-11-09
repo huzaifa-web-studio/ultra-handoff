@@ -38,7 +38,7 @@ import { MilestoneDateRangeField } from "./milestone-date-range-field";
 import { MilestoneEstimateInput } from "./milestone-estimate-input";
 import { MilestoneStatusSelect } from "./milestone-status-select";
 import {
-	formatEstimate,
+	estimateHint,
 	MILESTONE_TITLE_MAX,
 	type MilestoneStatus,
 	normalizeDay,
@@ -184,17 +184,19 @@ export function MilestoneCreateDialog({
 								onChange={setEstimate}
 								invalid={!parsedEstimate.ok}
 							/>
+							{/*
+							 * Live reading of what was typed, kept only when it adds
+							 * something ("90" becomes "1h 30m"). The row stays mounted
+							 * with a min height so the dialog does not jump while typing.
+							 */}
 							<p
-								className={
-									parsedEstimate.ok
-										? "text-xs text-app-text-muted"
-										: "text-xs text-danger"
-								}
+								aria-live="polite"
+								className={`min-h-4 text-xs ${
+									parsedEstimate.ok ? "text-app-text-muted" : "text-danger"
+								}`}
 							>
 								{parsedEstimate.ok
-									? parsedEstimate.minutes === null
-										? "No estimate"
-										: formatEstimate(parsedEstimate.minutes)
+									? (estimateHint(estimate, parsedEstimate.minutes) ?? "")
 									: parsedEstimate.message}
 							</p>
 						</div>
