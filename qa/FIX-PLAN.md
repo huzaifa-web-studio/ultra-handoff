@@ -77,11 +77,14 @@ bun test
 | 7 | Performance | Medium | Done | none | 9 Nov 2026 | 00c64b9 |
 | 8 | Tooling, CI and test harness | Medium | Done | none | 9 Nov 2026 | 7d1a7e5 |
 
-**Re-test, 9 Nov 2026:** `qa/phase-4-retest-report.md`. All high findings independently verified. Two follow-ups remain:
+**Re-test, 9 Nov 2026:** `qa/phase-4-retest-report.md`. All high findings independently verified. The remaining deployment follow-ups were closed in `qa/FIX-PLAN-ROUND-2.md`:
 
-- **P4-F1:** the CI workflow has no Redis service, so the Redis paths are not exercised there. Batch 8 follow-up.
-- **P4-F2:** 39 old orphaned objects remain in SeaweedFS from before the new delete path. Review the dry run, then run `bun run db:reconcile-objects --apply` in a quiet window.
-- **P1-M26:** `compose.yaml` still defaults `SMTP_HOST` and `SMTP_FROM` to development values. Add it to the pre-deployment checklist or Batch 4 follow-up.
+- **P4-F1:** the CI workflow now starts a Redis service and runs `check:redis`. Done.
+- **P4-F2:** the reconciliation applied the backlog. 39 objects deleted, storage went 72 to 33, second dry run reports 0 orphaned. Done.
+- **P1-M26:** `SMTP_HOST` and `SMTP_FROM` are required in production by `compose.yaml` and `validate-env.ts`. Done.
+- **P4-F3:** the readiness window is documented in `docs/DEPLOYMENT.md`. Accepted.
+- **P4-F4:** Redis outage logs are one line, no stack. Done.
+- **P4-F5:** the production smoke passed on 9 Nov 2026. Done.
 
 Suggested order: **3, 1, 2, 4, 5, 6, 7, 8.** Batch 3 first because the Redis hang is the most severe live defect. Batch 1 next because the auth abuse is the most severe release gate. If you prefer to close the security work first, do 1 then 3; they are independent.
 
@@ -695,6 +698,7 @@ Append one row per session. Do not rewrite old rows.
 | 9 Nov 2026 | Batch 8 | Nx typecheck target made real for api, web and ui. Biome now clean: `.agents` ignored, 5 SVG marks get `aria-hidden`, field and input-group a11y fixes, alert and sonner import fixes. `test:db` script added with `--drop` and the `app_test` guard. `verify-rls.ts` extended to `comment` and `link_preview` plus a two-way drift check; `TENANT_TABLES` extracted to `tenant-tables.ts`. CI workflow added at `.github/workflows/ci.yml`. | `bunx nx run-many -t typecheck` 3/3 pass; `bun run check` 0 errors and 0 warnings; `bun test` api 455 pass / web 81 pass; `bun run test:db` 453 pass 0 fail; `db:verify-rls` 23/23 pass; drift check fails in both directions; YAML parses. | 7d1a7e5 | Batch 8 complete. |
 
 | 9 Nov 2026 | Re-test | Independent verification of Batches 1 to 8. All high findings hold. New follow-ups: P4-F1 (CI has no Redis service) and P4-F2 (39 old orphans still in storage). | API 406 pass / 49 skip, web 81 pass, test:db 453 pass, typecheck 3/3, biome 0, RLS 23/23, live Redis 16 ms with DB fallback, file gating and delete cleanup, checklist 403/200, empty PATCH unchanged, deep-link redirect. | none | Add Redis to CI (P4-F1), review and apply the orphan reconciliation (P4-F2). |
+| 9 Nov 2026 | Round 2 | Deployment readiness. `compose.yaml` and `validate-env.ts` require `SMTP_HOST` and a `SMTP_FROM` containing `@`. CI starts Redis and runs `check:redis`. Redis outage logs are one line. Orphan reconciliation removed 39 objects. Added `docs/DEPLOYMENT.md`. Found P4-F6: the `REDIS_URL` database path is ignored. | `bun run check` 0, typecheck 3/3, API 413 pass / 49 skip, web 81 pass, `test:db` 460 pass, RLS 23/23. `docker compose config` exits 1 without SMTP and 0 with it. Production boot refuses without SMTP and returns `/health` 200 with it. `check:redis` passed. Storage 72 to 33, second dry run 0 orphaned, both referenced objects still present. Smoke: `/health` 200, `/ready` ok on the second poll (reconnect window), `/bull-board` and `/openapi` 404, API CSP `default-src 'none'` with `no-referrer`, `DENY`, `nosniff`, web CSP names the API and storage origins, favicon and robots 200, 0 devtools strings. | f82ad81 (smtp), e79bfe4 (ci), cfb0afb (logging), plus the docs commit | Close P4-F6 (the `REDIS_URL` database path is ignored). |
 
 **Template for a new row**
 
@@ -769,10 +773,11 @@ Add them here, not in the old reports. Give them the next free ID in the batch t
 
 | Date | Batch | New finding | Severity | Status |
 |---|---|---|---|---|
-| 9 Nov 2026 | 4 | P1-M26: `compose.yaml` still defaults `SMTP_HOST` and `SMTP_FROM` to development values (`localhost` and a `handoff.local` sender). A production deployment can boot with a broken mail transport. Not fixed here because it was outside the Batch 4 scope. | Low | Open |
+| 9 Nov 2026 | 4 | P1-M26: `compose.yaml` still defaults `SMTP_HOST` and `SMTP_FROM` to development values (`localhost` and a `handoff.local` sender). A production deployment can boot with a broken mail transport. Not fixed here because it was outside the Batch 4 scope. | Low | Done (round 2) |
 | 9 Nov 2026 | 7 | The phase 1 index table said milestone description search was in the mention picker. It is actually `listMilestones`, which is project scoped. The planned `description_text` index was dropped and the milestone list search is now title only. | Info | Closed |
-| 9 Nov 2026 | 8 | P4-F1: the CI workflow declares `REDIS_URL` but starts no Redis service, so the Redis paths and `check:redis` are not exercised. | Medium | Open |
-| 9 Nov 2026 | 2 | P4-F2: the reconciliation dry run still finds 39 old orphaned objects (72 scanned, 2 referenced). The new delete path is correct; the backlog needs `--apply`. | Operational | Open |
-| 9 Nov 2026 | 3 | P4-F3: `/ready` takes about 10 to 12 seconds to return to ok after Redis restarts while ioredis reconnects. It reports degraded correctly in the meantime. | Info | Accepted |
-| 9 Nov 2026 | 3 | P4-F4: throttled Redis outage logs still include full stack traces. | Low | Open |
-| 9 Nov 2026 | 4 | P4-F5: production CSP and boot were verified by build strings, not a live production run in the re-test. | Info | Open |
+| 9 Nov 2026 | 8 | P4-F1: the CI workflow declares `REDIS_URL` but starts no Redis service, so the Redis paths and `check:redis` are not exercised. | Medium | Done (round 2) |
+| 9 Nov 2026 | 2 | P4-F2: the reconciliation dry run still finds 39 old orphaned objects (72 scanned, 2 referenced). The new delete path is correct; the backlog needs `--apply`. | Operational | Done (round 2) |
+| 9 Nov 2026 | 3 | P4-F3: `/ready` takes about 10 to 12 seconds to return to ok after Redis restarts while ioredis reconnects. It reports degraded correctly in the meantime. | Info | Accepted (documented) |
+| 9 Nov 2026 | 3 | P4-F4: throttled Redis outage logs still include full stack traces. | Low | Done (round 2) |
+| 9 Nov 2026 | 4 | P4-F5: production CSP and boot were verified by build strings, not a live production run in the re-test. | Info | Done (round 2) |
+| 9 Nov 2026 | 3 | P4-F6: `REDIS_URL` database path is ignored. `parseRedisUrl` keeps only host, port and credentials, so `redis://host/1` silently uses database 0. Queue separation by database index does not work yet. | Low | Open |

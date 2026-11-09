@@ -13,14 +13,14 @@ This plan is meant to be executed in **one session**. It has 4 code commits, 1 o
 
 Tick these as you go. Update this section before you finish so the next session knows exactly where things stopped.
 
-- [ ] Step 0: branch and baseline
-- [ ] Step 1: SMTP fail-closed in production (P1-M26)
-- [ ] Step 2: Redis service and deadline check in CI (P4-F1)
-- [ ] Step 3: Redis outage logs are one line (P4-F4)
-- [ ] Step 4: orphan cleanup dry run and apply (P4-F2)
-- [ ] Step 5: production smoke (P4-F5)
-- [ ] Step 6: deployment checklist doc, including the readiness note (P4-F3)
-- [ ] Step 7: final verification and commit
+- [x] Step 0: branch and baseline
+- [x] Step 1: SMTP fail-closed in production (P1-M26)
+- [x] Step 2: Redis service and deadline check in CI (P4-F1)
+- [x] Step 3: Redis outage logs are one line (P4-F4)
+- [x] Step 4: orphan cleanup dry run and apply (P4-F2)
+- [x] Step 5: production smoke (P4-F5)
+- [x] Step 6: deployment checklist doc, including the readiness note (P4-F3)
+- [x] Step 7: final verification and commit
 
 ---
 
