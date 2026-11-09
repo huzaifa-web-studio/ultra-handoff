@@ -23,6 +23,8 @@ const REQUIRED_IN_PRODUCTION = [
 	"S3_ACCESS_KEY",
 	"S3_SECRET_KEY",
 	"S3_PUBLIC_ENDPOINT",
+	"SMTP_HOST",
+	"SMTP_FROM",
 ] as const;
 
 /** Variables that must be absolute http(s) URLs when present. */
@@ -31,6 +33,16 @@ const URL_VARIABLES = [
 	"WEB_URL",
 	"S3_PUBLIC_ENDPOINT",
 ] as const;
+
+/**
+ * Variables that must look like a mailbox address when present.
+ *
+ * Why only an `@` check: the sender reaches Nodemailer as a whole
+ * `Name <address>` string, and fully parsing RFC 5322 here would reject
+ * legitimate senders. An `@` catches the realistic mistake, which is an empty
+ * or hostname-only value that fails at send time instead of at boot.
+ */
+const SENDER_VARIABLES = ["SMTP_FROM"] as const;
 
 type EnvSource = Readonly<Record<string, string | undefined>>;
 
@@ -73,6 +85,18 @@ export function findProductionEnvProblems(source: EnvSource): string[] {
 	});
 	if (invalidUrls.length > 0) {
 		problems.push(`not an absolute http(s) URL: ${invalidUrls.join(", ")}`);
+	}
+
+	const invalidSenders = SENDER_VARIABLES.filter((key) => {
+		const value = source[key]?.trim();
+		// A missing value is already reported above, so only check the shape of
+		// values that were supplied.
+		return value ? !value.includes("@") : false;
+	});
+	if (invalidSenders.length > 0) {
+		problems.push(
+			`not a mailbox address (must contain @): ${invalidSenders.join(", ")}`,
+		);
 	}
 
 	// Row level security is only enforced for the unprivileged app role, so a

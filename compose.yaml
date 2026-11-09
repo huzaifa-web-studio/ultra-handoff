@@ -135,12 +135,15 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      SMTP_HOST: ${SMTP_HOST:-}
+      # Required: sign-in needs a verified address, so a deployment with no
+      # working relay would boot healthy and then block every signup and invite.
+      SMTP_HOST: ${SMTP_HOST:?set the SMTP host}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      # Optional: an internal relay may not require authentication.
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-Handoff <[email protected]>}
+      SMTP_FROM: ${SMTP_FROM:?set the sender address, for example Handoff <no-reply@yourdomain.com>}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}

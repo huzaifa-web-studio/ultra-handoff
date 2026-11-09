@@ -24,6 +24,8 @@ const completeEnv = {
 	S3_ACCESS_KEY: "access-key",
 	S3_SECRET_KEY: "secret-key",
 	S3_PUBLIC_ENDPOINT: "https://storage.example.com",
+	SMTP_HOST: "smtp.example.com",
+	SMTP_FROM: "Handoff <no-reply@example.com>",
 } as const;
 
 describe("findProductionEnvProblems", () => {
@@ -69,6 +71,27 @@ describe("findProductionEnvProblems", () => {
 		});
 
 		expect(problems).toEqual(["not an absolute http(s) URL: WEB_URL"]);
+	});
+
+	test("reports a missing sender address", () => {
+		const problems = findProductionEnvProblems({
+			...completeEnv,
+			SMTP_FROM: undefined,
+		});
+
+		expect(problems).toEqual(["missing: SMTP_FROM"]);
+	});
+
+	test("rejects a sender address without @", () => {
+		// A name only value boots a healthy API that cannot send any mail.
+		const problems = findProductionEnvProblems({
+			...completeEnv,
+			SMTP_FROM: "Handoff",
+		});
+
+		expect(problems).toEqual([
+			"not a mailbox address (must contain @): SMTP_FROM",
+		]);
 	});
 
 	test("rejects the same URL for the owner and tenant roles", () => {
