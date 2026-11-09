@@ -6,6 +6,8 @@
 
 This file is the single place to see what is fixed, what is next, and what the next session must not redo. Update it at the end of every session.
 
+**Next round:** `qa/FIX-PLAN-ROUND-2.md` covers the remaining deployment items (SMTP fail-closed, CI Redis, orphan cleanup, production smoke, deployment checklist).
+
 ---
 
 ## 1. How to use this file
@@ -74,6 +76,12 @@ bun test
 | 6 | Web shell, headers and UX | Medium | Done | Batch 4 (API origin) | 9 Nov 2026 | uncommitted |
 | 7 | Performance | Medium | Done | none | 9 Nov 2026 | 00c64b9 |
 | 8 | Tooling, CI and test harness | Medium | Done | none | 9 Nov 2026 | 7d1a7e5 |
+
+**Re-test, 9 Nov 2026:** `qa/phase-4-retest-report.md`. All high findings independently verified. Two follow-ups remain:
+
+- **P4-F1:** the CI workflow has no Redis service, so the Redis paths are not exercised there. Batch 8 follow-up.
+- **P4-F2:** 39 old orphaned objects remain in SeaweedFS from before the new delete path. Review the dry run, then run `bun run db:reconcile-objects --apply` in a quiet window.
+- **P1-M26:** `compose.yaml` still defaults `SMTP_HOST` and `SMTP_FROM` to development values. Add it to the pre-deployment checklist or Batch 4 follow-up.
 
 Suggested order: **3, 1, 2, 4, 5, 6, 7, 8.** Batch 3 first because the Redis hang is the most severe live defect. Batch 1 next because the auth abuse is the most severe release gate. If you prefer to close the security work first, do 1 then 3; they are independent.
 
@@ -686,6 +694,8 @@ Append one row per session. Do not rewrite old rows.
 | 9 Nov 2026 | Batch 7 | Invitation history now filters, sorts, counts and pages in Postgres (one grouped count plus one limited page, inviters loaded for the page only). Project bulk archive, delete, add and remove use one transaction, one access read and one write per action, with the same per-item results. Upload completion enqueues and returns 202, and the 8 second wait plus its QueueEvents connection are gone. `readLimited` caps every buffer return and a new test pins the exact limit. Added the `project.slug` trigram index; dropped the planned `milestone.description_text` index after confirming the description search is project scoped and the mention picker never used it, and removed description matching from the milestone list search. | `bun test` api 453 pass / 0 fail on `app_test`, web 81 pass, tsc clean for api, web and ui, biome clean on the 12 touched files, integration suite 47 pass. Benchmark on 20,000 invitations: old 107 to 132 ms, new service 35 ms. Bulk archive 100 projects: old 2,396 ms, new 115 ms with `xact_commit` delta 1. `EXPLAIN` with `enable_seqscan = off` uses `project_slug_trgm_idx`; migration `0021` applied to `app` and `app_test`. | 00c64b9 | Review the branch, then start Batch 8. Live upload click-through and the Batch 6 deep-link redirect check are still outstanding. |
 | 9 Nov 2026 | Batch 8 | Nx typecheck target made real for api, web and ui. Biome now clean: `.agents` ignored, 5 SVG marks get `aria-hidden`, field and input-group a11y fixes, alert and sonner import fixes. `test:db` script added with `--drop` and the `app_test` guard. `verify-rls.ts` extended to `comment` and `link_preview` plus a two-way drift check; `TENANT_TABLES` extracted to `tenant-tables.ts`. CI workflow added at `.github/workflows/ci.yml`. | `bunx nx run-many -t typecheck` 3/3 pass; `bun run check` 0 errors and 0 warnings; `bun test` api 455 pass / web 81 pass; `bun run test:db` 453 pass 0 fail; `db:verify-rls` 23/23 pass; drift check fails in both directions; YAML parses. | 7d1a7e5 | Batch 8 complete. |
 
+| 9 Nov 2026 | Re-test | Independent verification of Batches 1 to 8. All high findings hold. New follow-ups: P4-F1 (CI has no Redis service) and P4-F2 (39 old orphans still in storage). | API 406 pass / 49 skip, web 81 pass, test:db 453 pass, typecheck 3/3, biome 0, RLS 23/23, live Redis 16 ms with DB fallback, file gating and delete cleanup, checklist 403/200, empty PATCH unchanged, deep-link redirect. | none | Add Redis to CI (P4-F1), review and apply the orphan reconciliation (P4-F2). |
+
 **Template for a new row**
 
 ```
@@ -761,3 +771,8 @@ Add them here, not in the old reports. Give them the next free ID in the batch t
 |---|---|---|---|---|
 | 9 Nov 2026 | 4 | P1-M26: `compose.yaml` still defaults `SMTP_HOST` and `SMTP_FROM` to development values (`localhost` and a `handoff.local` sender). A production deployment can boot with a broken mail transport. Not fixed here because it was outside the Batch 4 scope. | Low | Open |
 | 9 Nov 2026 | 7 | The phase 1 index table said milestone description search was in the mention picker. It is actually `listMilestones`, which is project scoped. The planned `description_text` index was dropped and the milestone list search is now title only. | Info | Closed |
+| 9 Nov 2026 | 8 | P4-F1: the CI workflow declares `REDIS_URL` but starts no Redis service, so the Redis paths and `check:redis` are not exercised. | Medium | Open |
+| 9 Nov 2026 | 2 | P4-F2: the reconciliation dry run still finds 39 old orphaned objects (72 scanned, 2 referenced). The new delete path is correct; the backlog needs `--apply`. | Operational | Open |
+| 9 Nov 2026 | 3 | P4-F3: `/ready` takes about 10 to 12 seconds to return to ok after Redis restarts while ioredis reconnects. It reports degraded correctly in the meantime. | Info | Accepted |
+| 9 Nov 2026 | 3 | P4-F4: throttled Redis outage logs still include full stack traces. | Low | Open |
+| 9 Nov 2026 | 4 | P4-F5: production CSP and boot were verified by build strings, not a live production run in the re-test. | Info | Open |
