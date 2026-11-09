@@ -37,7 +37,7 @@ This file is the single place to see what is fixed, what is next, and what the n
 - One batch per branch and commit series.
 - No unrelated refactors. If you spot a new issue, add it to the appendix and keep going.
 - No em dashes, design tokens only, no `any`, comment non-obvious logic.
-- Run `bun run format` and `bun run check` on the files you touched. The repo-wide `bun run check` has 17 pre-existing errors tracked in Batch 8; do not add new ones.
+- Run `bun run format` and `bun run check` on the files you touched. Batch 8 cleared the repo-wide `bun run check` to zero errors and zero warnings; keep it that way.
 - Update this file in the same commit as the fix.
 
 **Global verify (run after every batch)**
@@ -73,7 +73,7 @@ bun test
 | 5 | Authorization and error handling | Medium | Done | Batch 1 (same auth files) | 9 Nov 2026 | 7eafffc |
 | 6 | Web shell, headers and UX | Medium | Done | Batch 4 (API origin) | 9 Nov 2026 | uncommitted |
 | 7 | Performance | Medium | Done | none | 9 Nov 2026 | 00c64b9 |
-| 8 | Tooling, CI and test harness | Medium | Not started | none | 8 Nov 2026 | none |
+| 8 | Tooling, CI and test harness | Medium | Done | none | 9 Nov 2026 | 7d1a7e5 |
 
 Suggested order: **3, 1, 2, 4, 5, 6, 7, 8.** Batch 3 first because the Redis hang is the most severe live defect. Batch 1 next because the auth abuse is the most severe release gate. If you prefer to close the security work first, do 1 then 3; they are independent.
 
@@ -614,7 +614,7 @@ Development sends the same headers without the CSP, so HMR, its websocket and Vi
 
 ### P2-F3: Nx typecheck target is broken
 
-- [ ] Not started
+- [x] Done: explicit `typecheck` target using `bunx tsc --noEmit -p tsconfig.json` on api, web and ui (new `packages/ui/project.json`). `bunx nx run-many -t typecheck` now runs all three and exits 0.
 
 **Where:** `nx.json`, `apps/api/tsconfig.json`, `packages/ui/tsconfig.json`.
 **Problem:** `tsc --build tsconfig.json --emitDeclarationOnly` fails with TS5069, and the UI target is disabled by `noEmit`.
@@ -623,7 +623,7 @@ Development sends the same headers without the CSP, so HMR, its websocket and Vi
 
 ### P2-F4: Biome check is red and lints vendored files
 
-- [ ] Not started
+- [x] Done: `.agents` ignored in `packages/biome-config/biome.json`. 5 SVG marks get `aria-hidden="true"`. `field.tsx` drops `role="group"`, `==` to `===`, index key to message key. `input-group.tsx` drops `role="group"` and suppresses the two a11y rules on the pointer-only handler. alert and sonner import fixes. `bun run check` exits 0 with 0 errors and 0 warnings.
 
 **Where:** `biome.json`, `packages/ui/src/components/ui/*`.
 **Fix:** Add `.agents` to the Biome ignore list. Fix the 13 source errors: the five SVG components need a title or `aria-hidden`, `input-group.tsx` and `field.tsx` need semantic and keyboard fixes, and `alert.tsx` and `sonner.tsx` need import order and type-only imports.
@@ -631,7 +631,7 @@ Development sends the same headers without the CSP, so HMR, its websocket and Vi
 
 ### P2-F5: No CI
 
-- [ ] Not started
+- [x] Done: `.github/workflows/ci.yml` with install, Biome, Nx typecheck, unit tests for api and web, `bun run test:db`, and the RLS script against a Postgres service. YAML parses cleanly; every step replayed locally. First real run lands on the first push.
 
 **Where:** `.github/workflows/`.
 **Fix:** Add one workflow with install, `bun run check`, direct typecheck, `bun test` in api and web, and the RLS script against a Postgres service. Cache Bun and Nx.
@@ -639,7 +639,7 @@ Development sends the same headers without the CSP, so HMR, its websocket and Vi
 
 ### P2-F6: Integration suite needs manual setup
 
-- [ ] Not started
+- [x] Done: `apps/api/scripts/test-db.ts` plus `test:db` scripts. Creates `app_test` if missing, runs `db:setup`, runs the suite, optional `--drop`. Keeps the `TEST_DATABASE=1` and `app_test` name guard. Verified locally: 453 pass, 0 fail.
 
 **Where:** root `package.json`, `apps/api/package.json`, `apps/api/scripts`.
 **Fix:** Add a `test:db` script that creates `app_test` if missing, runs `db:setup`, runs the suite, and optionally drops the database. Keep the `TEST_DATABASE=1` and `app_test` name guard.
@@ -647,7 +647,7 @@ Development sends the same headers without the CSP, so HMR, its websocket and Vi
 
 ### P1-M21 and P1-M22: Test execution and RLS coverage
 
-- [ ] Not started
+- [x] Done: `verify-rls.ts` now covers `comment` and `link_preview` (seed, scoped read, cross-tenant insert, cascade). `TENANT_TABLES` extracted to `scripts/tenant-tables.ts` and compared both ways against `pg_class.relrowsecurity`. Verified 23/23 checks pass and the drift check fails in both directions.
 
 **Where:** `apps/api/scripts/verify-rls.ts`.
 **Fix:** Extend the script to `comment` and `link_preview`, and add a check that `TENANT_TABLES` in `bootstrap-db.ts` matches the business tables that have an RLS policy.
@@ -661,9 +661,9 @@ September renders as "Sept" with `en-GB`; the date test is timezone local by des
 
 ### Batch 8 exit criteria
 
-- [ ] Typecheck, lint, unit tests and the RLS script all run in CI.
-- [ ] The database suite is one command.
-- [ ] The status board is updated.
+- [x] Typecheck, lint, unit tests and the RLS script all run in CI.
+- [x] The database suite is one command.
+- [x] The status board is updated.
 
 ---
 
@@ -684,6 +684,7 @@ Append one row per session. Do not rewrite old rows.
 | 9 Nov 2026 | Batch 6 | One active organization per session: `decideActiveWorkspace` plus a guard in `routes/_app.tsx` replaces any other organization URL with the active one, using `replace` so history does not bounce. The shell, breadcrumb, switcher and settings keep reading the active organization. Devtools are development only. Favicon, meta description and `robots.txt` added. The web shell gets referrer, frame, nosniff and a production CSP from a Nitro `response` plugin; the API gets the same base headers plus a `default-src 'none'` CSP outside development, with `/files/*` keeping its own policy. `S3_PUBLIC_ENDPOINT` is passed to the web container and production fails to boot without the CSP origins. The API root returns a neutral payload and the boot log is development only. Viewer routing is MIME first, extension as fallback. Zod runs `jitless` so its `new Function` probe cannot be reported as a CSP violation. | `bun test` api 401 pass / 40 skip, web 81 pass, tsc clean for api, web and ui, biome clean on touched files. Production build with `VITE_API_URL` prerendered the shell and served `/` with the full CSP, `/favicon.ico` 200, `/robots.txt` 200 and static assets carrying the same headers; a production start without `S3_PUBLIC_ENDPOINT` failed with the new error. No devtools strings in `.output`. Earlier dev stack checks showed the base headers and `/favicon.ico` 200. The production console in Chrome had no devtools control, Outfit and Oxanium loaded, and no CSP or favicon errors; the only errors were CORS from serving the build on a non-allowlisted port, plus the Zod eval issue that `jitless` fixed. Live redirect check is outstanding: Docker stopped mid-session, so the signed-in deep-link session that validated the old URL-following rule predates this final one; `active-workspace.test.ts` covers the decision. | uncommitted | Re-run the live redirect check when Docker is back, then start Batch 7. Test org `qa-studio-batch6` was created by the earlier browser check. |
 
 | 9 Nov 2026 | Batch 7 | Invitation history now filters, sorts, counts and pages in Postgres (one grouped count plus one limited page, inviters loaded for the page only). Project bulk archive, delete, add and remove use one transaction, one access read and one write per action, with the same per-item results. Upload completion enqueues and returns 202, and the 8 second wait plus its QueueEvents connection are gone. `readLimited` caps every buffer return and a new test pins the exact limit. Added the `project.slug` trigram index; dropped the planned `milestone.description_text` index after confirming the description search is project scoped and the mention picker never used it, and removed description matching from the milestone list search. | `bun test` api 453 pass / 0 fail on `app_test`, web 81 pass, tsc clean for api, web and ui, biome clean on the 12 touched files, integration suite 47 pass. Benchmark on 20,000 invitations: old 107 to 132 ms, new service 35 ms. Bulk archive 100 projects: old 2,396 ms, new 115 ms with `xact_commit` delta 1. `EXPLAIN` with `enable_seqscan = off` uses `project_slug_trgm_idx`; migration `0021` applied to `app` and `app_test`. | 00c64b9 | Review the branch, then start Batch 8. Live upload click-through and the Batch 6 deep-link redirect check are still outstanding. |
+| 9 Nov 2026 | Batch 8 | Nx typecheck target made real for api, web and ui. Biome now clean: `.agents` ignored, 5 SVG marks get `aria-hidden`, field and input-group a11y fixes, alert and sonner import fixes. `test:db` script added with `--drop` and the `app_test` guard. `verify-rls.ts` extended to `comment` and `link_preview` plus a two-way drift check; `TENANT_TABLES` extracted to `tenant-tables.ts`. CI workflow added at `.github/workflows/ci.yml`. | `bunx nx run-many -t typecheck` 3/3 pass; `bun run check` 0 errors and 0 warnings; `bun test` api 455 pass / web 81 pass; `bun run test:db` 453 pass 0 fail; `db:verify-rls` 23/23 pass; drift check fails in both directions; YAML parses. | 7d1a7e5 | Batch 8 complete. |
 
 **Template for a new row**
 
@@ -730,17 +731,17 @@ Every finding from the three reports, mapped to its batch. Use this to check tha
 | P1-M18 | Low | 2 | Done |
 | P1-M19 | Low | 5 | Done |
 | P1-M20 | Low | 5 | Done |
-| P1-M21 | Low | 8 | Not started |
-| P1-M22 | Low | 8 | Not started |
+| P1-M21 | Low | 8 | Done |
+| P1-M22 | Low | 8 | Done |
 | P1-M23 | Low, dev only | 4 | Covered by P1-M1 |
 | P1-M24 | Low | 2 | Done |
 | P1-M25 | Low | 1 | Decision: option 3 |
 | P2-F1 | Low | 6 | Done |
 | P2-F2 | Low | 5 | Done |
-| P2-F3 | Medium | 8 | Not started |
-| P2-F4 | Medium | 8 | Not started |
-| P2-F5 | Medium | 8 | Not started |
-| P2-F6 | Medium | 8 | Not started |
+| P2-F3 | Medium | 8 | Done |
+| P2-F4 | Medium | 8 | Done |
+| P2-F5 | Medium | 8 | Done |
+| P2-F6 | Medium | 8 | Done |
 | P2-F7 | Info | 8 | Closed |
 | P2-F8 | Info | 8 | Closed |
 | P3-F1 | High | 3 | Done |
