@@ -17,8 +17,8 @@
 			"!**/node_modules/**",
 			"!**/dist/**",
 			"!**/coverage/**",
-			"!**/.nx/**"
-		]
+			"!**/.nx/**",
+			"!**/.agents/**"		]
 	},
 	"formatter": {
 		"enabled": true,

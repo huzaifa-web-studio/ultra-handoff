@@ -1,7 +1,11 @@
 import type { SVGProps } from "react";
 
+/**
+ * Decorative brand mark. The button that renders it carries the accessible name,
+ * so the SVG itself is hidden from assistive technology.
+ */
 const GithubDark = (props: SVGProps<SVGSVGElement>) => (
-	<svg {...props} viewBox="0 0 1024 1024" fill="none">
+	<svg {...props} viewBox="0 0 1024 1024" fill="none" aria-hidden="true">
 		<path
 			fillRule="evenodd"
 			clipRule="evenodd"

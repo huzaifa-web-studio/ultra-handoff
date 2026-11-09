@@ -47,8 +47,11 @@ function InputGroupAddon({
 	...props
 }: React.ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) {
 	return (
+		// Pointer-only padding affordance. This addon is not focusable and performs
+		// no action; the input it focuses is already reachable by Tab, so a key
+		// handler here could never fire without a pointless tab stop.
+		// biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: deliberate upstream shadcn behaviour; see qa/FIX-PLAN.md Batch 8.
 		<div
-			role="group"
 			data-slot="input-group-addon"
 			data-align={align}
 			className={cn(inputGroupAddonVariants({ align }), className)}
