@@ -130,6 +130,29 @@ export const redisClientOptions = {
 const lastLoggedAt = new Map<string, number>();
 
 /**
+ * Build the one line Redis outage message.
+ *
+ * Why: `console.error(message, error)` printed the whole ioredis stack, which
+ * buried the useful line and filled the integration suite output. The error
+ * message and the ioredis code are the two parts an operator actually needs.
+ *
+ * Kept pure and exported so the shape can be tested without opening a socket.
+ */
+export function formatRedisIssue(key: string, error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	const rawCode =
+		error && typeof error === "object" && "code" in error
+			? (error as { code?: unknown }).code
+			: undefined;
+	// `String(undefined)` is the truthy string "undefined", so guard first.
+	const code = rawCode === undefined || rawCode === null ? "" : String(rawCode);
+
+	return code
+		? `[redis] ${key} failed (${code}): ${message}`
+		: `[redis] ${key} failed: ${message}`;
+}
+
+/**
  * Log a Redis problem at most once per key per window.
  *
  * Why throttled: during an outage every request fails, and one log line per
@@ -145,7 +168,7 @@ export function logRedisIssue(key: string, error: unknown): void {
 	if (now - previous < REDIS_LOG_INTERVAL_MS) return;
 
 	lastLoggedAt.set(key, now);
-	console.error(`[redis] ${key} failed`, error);
+	console.error(formatRedisIssue(key, error));
 }
 
 /**

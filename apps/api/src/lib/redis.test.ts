@@ -10,6 +10,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+	formatRedisIssue,
 	parseRedisUrl,
 	redisClientOptions,
 	redisConnectionOptions,
@@ -75,5 +76,41 @@ describe("connection option split", () => {
 		expect("enableOfflineQueue" in redisConnectionOptions).toBe(false);
 		expect("commandTimeout" in redisConnectionOptions).toBe(false);
 		expect("maxRetriesPerRequest" in redisConnectionOptions).toBe(false);
+	});
+});
+
+describe("formatRedisIssue", () => {
+	it("includes the key and the error message", () => {
+		const line = formatRedisIssue("ping", new Error("connect ECONNREFUSED"));
+
+		expect(line).toContain("ping");
+		expect(line).toContain("connect ECONNREFUSED");
+	});
+
+	it("stays on one line with no stack", () => {
+		const line = formatRedisIssue("ping", new Error("boom"));
+
+		expect(line).not.toContain("\n");
+		expect(line).not.toContain("    at ");
+	});
+
+	it("reads a non-Error value", () => {
+		expect(formatRedisIssue("ping", "boom")).toBe("[redis] ping failed: boom");
+	});
+
+	it("includes the ioredis code when present", () => {
+		const error = Object.assign(new Error("connect ECONNREFUSED"), {
+			code: "ECONNREFUSED",
+		});
+
+		expect(formatRedisIssue("ping", error)).toBe(
+			"[redis] ping failed (ECONNREFUSED): connect ECONNREFUSED",
+		);
+	});
+
+	it("does not print undefined for a missing code", () => {
+		expect(formatRedisIssue("ping", new Error("boom"))).toBe(
+			"[redis] ping failed: boom",
+		);
 	});
 });
