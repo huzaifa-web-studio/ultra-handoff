@@ -10,6 +10,7 @@ import { useMatches, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { authClient } from "#/features/auth/client";
 import { projectBreadcrumbStore } from "./project-breadcrumb";
+import { ThemeToggle } from "./theme-toggle";
 
 export function AppHeader() {
 	const navigate = useNavigate();
@@ -65,6 +66,13 @@ export function AppHeader() {
 					})}
 				</BreadcrumbList>
 			</Breadcrumb>
+			{/*
+			 * Pushed to the trailing edge so the control has a stable position on
+			 * every workspace screen, independent of breadcrumb length.
+			 */}
+			<div className="ml-auto flex items-center">
+				<ThemeToggle />
+			</div>
 		</header>
 	);
 }

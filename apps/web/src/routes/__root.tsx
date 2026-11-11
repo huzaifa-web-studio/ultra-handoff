@@ -1,4 +1,5 @@
 import { Toaster } from "@org/ui/components/sonner";
+import { ThemeProvider } from "@org/ui/components/theme-provider";
 import appCss from "@org/ui/styles/global.css?url";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -117,24 +118,32 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	return (
-		<html lang="en">
+		/*
+		 * `suppressHydrationWarning` is required by the theme provider. Its
+		 * pre-paint script writes `class="dark"` and `color-scheme` on this
+		 * element before React hydrates, so the server and client attribute
+		 * sets differ by design.
+		 */
+		<html lang="en" suppressHydrationWarning>
 			<head>
 				<HeadContent />
 			</head>
 			<body>
-				<QueryClientProvider client={queryClient}>
-					<FileViewerProvider>
-						<AuthBroadcastSync />
-						<Toaster position="top-right" />
-						{/*
-						 * Mounted at the root so the same blocked switch dialog is
-						 * available in the app shell and on the create-organization
-						 * flow outside it.
-						 */}
-						<SwitchBlockedDialog />
-						{children}
-					</FileViewerProvider>
-				</QueryClientProvider>
+				<ThemeProvider>
+					<QueryClientProvider client={queryClient}>
+						<FileViewerProvider>
+							<AuthBroadcastSync />
+							<Toaster position="top-right" />
+							{/*
+							 * Mounted at the root so the same blocked switch dialog is
+							 * available in the app shell and on the create-organization
+							 * flow outside it.
+							 */}
+							<SwitchBlockedDialog />
+							{children}
+						</FileViewerProvider>
+					</QueryClientProvider>
+				</ThemeProvider>
 				{/*
 				 * Development only. Rendering this unconditionally shipped the
 				 * devtools bundle and its floating trigger to every production

@@ -229,26 +229,90 @@
 	--ring: var(--app-focus);
 }
 
+/*
+ * Dark workspace.
+ *
+ * Why the app tokens are redefined here and the shadcn aliases point at them:
+ * almost every surface in the app is built from `--app-*`, `--status-*` and
+ * `--milestone-*`. Overriding only the shadcn aliases left those untouched,
+ * which produced a light page with dark cards. The aliases therefore mirror
+ * `:root` and follow the app tokens instead of carrying their own literals.
+ *
+ * Surfaces step up in lightness: canvas (darkest) under panel, with the forest
+ * sidebar kept a little lighter than the canvas so the rail still reads as a
+ * separate plane. Every text pair below clears WCAG AA on the surface it is
+ * meant for.
+ */
 .dark {
-	--background: #19382d;
-	--foreground: #f5f2e9;
-	--card: #1c3b30;
-	--card-foreground: #f5f2e9;
-	--popover: #1c3b30;
-	--popover-foreground: #f5f2e9;
-	--primary: #f5f2e9;
-	--primary-foreground: #19382d;
-	--secondary: #d8b65c;
-	--secondary-foreground: #29230f;
-	--muted: #162f26;
-	--muted-foreground: #d3dad0;
-	--accent: #315345;
-	--accent-foreground: #f5f2e9;
+	/* App surfaces (dark workspace) */
+	--app-canvas: #0e1c17;
+	--app-panel: #17332a;
+	--app-panel-subtle: #142d24;
+	--app-text: #f5f2e9;
+	--app-text-muted: #b9c7bd;
+	--app-border: #3a5a49;
+	--app-border-strong: #6b8a7a;
+	--app-focus: #e2c47a;
+	--app-selected: #2f5343;
+	--app-action: #f5f2e9;
+	--app-action-text: #14201a;
+	--app-attention: #d8b65c;
+	--app-attention-text: #29230f;
+
+	/* Status: light text on a deep tint, so the badge does not glow */
+	--status-success: #8fd8ab;
+	--status-success-bg: #163026;
+	--status-warning: #e8c67d;
+	--status-warning-bg: #33290f;
+	--status-danger: #f2a49c;
+	--status-danger-bg: #3a2020;
+	--status-info: #9ac9de;
+	--status-info-bg: #152f3a;
+	--status-neutral: #c3ccc6;
+	--status-neutral-bg: #253029;
+
+	/* Milestone statuses (AA contrast on their own background) */
+	--milestone-todo: #cfd6cf;
+	--milestone-todo-bg: #263029;
+	--milestone-in-development: #9ac9de;
+	--milestone-in-development-bg: #152f3a;
+	--milestone-in-testing: #e8c67d;
+	--milestone-in-testing-bg: #33290f;
+	--milestone-in-review: #8fd3cf;
+	--milestone-in-review-bg: #14312f;
+	--milestone-blocked: #f2a49c;
+	--milestone-blocked-bg: #3a2020;
+	--milestone-done: #8fd8ab;
+	--milestone-done-bg: #163026;
+	--milestone-cancelled: #c9b8df;
+	--milestone-cancelled-bg: #272232;
+
+	/* shadcn compatibility (dark) */
+	--background: var(--app-canvas);
+	--foreground: var(--app-text);
+	--card: var(--app-panel);
+	--card-foreground: var(--app-text);
+	--popover: var(--app-panel);
+	--popover-foreground: var(--app-text);
+	/*
+	 * Primary stays ivory so it is still distinct from the gold secondary.
+	 * `--primary-foreground` follows the action text token, which flips to a
+	 * dark ink in this theme.
+	 */
+	--primary: var(--brand-ivory);
+	--primary-foreground: var(--app-action-text);
+	--secondary: var(--brand-gold);
+	--secondary-foreground: var(--app-attention-text);
+	--muted: var(--app-panel-subtle);
+	--muted-foreground: var(--app-text-muted);
+	--accent: var(--app-selected);
+	--accent-foreground: var(--app-text);
+	/* Inverted danger: a light red fill needs dark text, not white. */
 	--destructive: #ffb4ab;
-	--destructive-foreground: #19382d;
-	--border: #536c5d;
-	--input: #536c5d;
-	--ring: #b18a32;
+	--destructive-foreground: var(--app-action-text);
+	--border: var(--app-border);
+	--input: var(--app-border);
+	--ring: var(--app-focus);
 
 	/* Sidebar (shadcn) tokens: keep dark forest sidebar in dark mode */
 	--sidebar: var(--app-sidebar);
