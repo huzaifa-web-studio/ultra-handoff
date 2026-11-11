@@ -763,3 +763,14 @@ export function sanitizeCommentBody(value: unknown): SanitizedRichText {
 
 	return sanitized;
 }
+
+/**
+ * Validate and clean an optional rich text body.
+ *
+ * Why a variant: a change request is titled, and the detail is optional. The
+ * title carries the ask, so an empty body is a complete request rather than a
+ * mistake. The profile and the limits are the same as a comment.
+ */
+export function sanitizeOptionalCommentBody(value: unknown): SanitizedRichText {
+	return sanitizeProfile(value, COMMENT_PROFILE);
+}

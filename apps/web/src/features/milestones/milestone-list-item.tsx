@@ -15,7 +15,7 @@
  */
 
 import { cn } from "cn";
-import { CalendarIcon, ClockIcon } from "lucide-react";
+import { CalendarIcon, ClockIcon, LockIcon } from "lucide-react";
 import type * as React from "react";
 
 import type { MilestoneSummary } from "./api";
@@ -48,6 +48,7 @@ export function MilestoneListItem({
 	buttonRef?: React.Ref<HTMLButtonElement>;
 }) {
 	const overdue = isMilestoneOverdue(milestone.dueDate, milestone.status);
+	const locked = milestone.lockedAt !== null;
 
 	return (
 		<div
@@ -85,6 +86,13 @@ export function MilestoneListItem({
 						<span className="inline-flex items-center gap-1">
 							<ClockIcon className="size-3" aria-hidden />
 							{formatEstimate(milestone.estimateMinutes)}
+						</span>
+					)}
+
+					{locked && (
+						<span className="inline-flex items-center gap-1 font-medium text-app-text">
+							<LockIcon className="size-3" aria-hidden />
+							Locked
 						</span>
 					)}
 

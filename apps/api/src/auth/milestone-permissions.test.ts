@@ -12,22 +12,28 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+	ACTIVE_MILESTONE_STATUSES,
+	canLockMilestones,
 	canWriteMilestones,
 	isMilestoneStatus,
 	MILESTONE_ESTIMATE_MAX,
+	MILESTONE_NOTE_MAX,
 	MILESTONE_TITLE_MAX,
 	validateMilestoneDate,
 	validateMilestoneDateRange,
 	validateMilestoneEstimate,
+	validateMilestoneNote,
 	validateMilestoneStatus,
 	validateMilestoneTitle,
 } from "./milestone-permissions";
 
 describe("milestone status", () => {
-	test("accepts the five product statuses", () => {
+	test("accepts the seven product statuses", () => {
 		const statuses = [
 			"todo",
-			"in_progress",
+			"in_development",
+			"in_testing",
+			"in_review",
 			"blocked",
 			"done",
 			"cancelled",
@@ -37,6 +43,13 @@ describe("milestone status", () => {
 			expect(isMilestoneStatus(status)).toBe(true);
 			expect(validateMilestoneStatus(status)).toBe(status);
 		}
+	});
+
+	test("rejects the removed in_progress status", () => {
+		expect(isMilestoneStatus("in_progress")).toBe(false);
+		expect(() => validateMilestoneStatus("in_progress")).toThrow(
+			/Unknown milestone status/,
+		);
 	});
 
 	test("rejects an unknown or differently cased status", () => {
@@ -180,5 +193,50 @@ describe("canWriteMilestones", () => {
 
 	test("no project role means no write", () => {
 		expect(canWriteMilestones("member", null)).toBe(false);
+	});
+});
+
+describe("canLockMilestones", () => {
+	test("owners and admins lock, members and clients do not", () => {
+		expect(canLockMilestones("member", "owner")).toBe(true);
+		expect(canLockMilestones("member", "admin")).toBe(true);
+		expect(canLockMilestones("member", "member")).toBe(false);
+		expect(canLockMilestones("member", "client")).toBe(false);
+	});
+
+	test("an organization owner locks through the owner overlay", () => {
+		expect(canLockMilestones("owner", "client")).toBe(true);
+	});
+});
+
+describe("active milestone statuses", () => {
+	test("the working states are active and the terminal ones are not", () => {
+		expect(ACTIVE_MILESTONE_STATUSES).toContain("todo");
+		expect(ACTIVE_MILESTONE_STATUSES).toContain("in_development");
+		expect(ACTIVE_MILESTONE_STATUSES).toContain("in_testing");
+		expect(ACTIVE_MILESTONE_STATUSES).toContain("in_review");
+		expect(ACTIVE_MILESTONE_STATUSES).toContain("blocked");
+		expect(ACTIVE_MILESTONE_STATUSES).not.toContain("done");
+		expect(ACTIVE_MILESTONE_STATUSES).not.toContain("cancelled");
+	});
+});
+
+describe("validateMilestoneNote", () => {
+	test("trims a note and keeps its text", () => {
+		expect(validateMilestoneNote("  Waiting on the API key  ")).toBe(
+			"Waiting on the API key",
+		);
+	});
+
+	test("an empty or missing note is null", () => {
+		expect(validateMilestoneNote(null)).toBeNull();
+		expect(validateMilestoneNote(undefined)).toBeNull();
+		expect(validateMilestoneNote("   ")).toBeNull();
+	});
+
+	test("rejects a note over the limit", () => {
+		expect(() =>
+			validateMilestoneNote("a".repeat(MILESTONE_NOTE_MAX + 1)),
+		).toThrow(/characters or fewer/);
 	});
 });

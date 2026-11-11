@@ -39,6 +39,7 @@ import {
 import { assertProjectActive } from "../auth/project-permissions";
 import { comment } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
+import { findChecklistItem } from "../lib/checklist";
 import type { MilestoneEventType } from "../lib/milestone-events";
 import { consumeRateLimit } from "../lib/rate-limit";
 import { sanitizeCommentBody } from "../lib/rich-text";
@@ -66,6 +67,8 @@ export type CommentEvent = {
 	from: string | null;
 	/** Null when the field was cleared by the change. */
 	to: string | null;
+	/** Optional prose attached to the event, such as a lock or decline reason. */
+	note: string | null;
 };
 
 /** One comment on the wire. */
@@ -302,6 +305,7 @@ function toCommentRow(
 					type: record.eventType as CommentEventType,
 					from: record.eventFrom,
 					to: record.eventTo,
+					note: record.eventNote,
 				}
 			: null;
 
@@ -724,36 +728,6 @@ export type ToggleChecklistInput = {
 	itemId: string;
 	checked: boolean;
 };
-
-/** One checklist item inside a sanitized body. */
-type ChecklistItem = Record<string, unknown> & {
-	id: string;
-	checked: boolean;
-};
-
-/** Find a checklist item by id, walking nested lists. */
-function findChecklistItem(
-	nodes: unknown[],
-	itemId: string,
-): ChecklistItem | null {
-	for (const node of nodes) {
-		if (!node || typeof node !== "object") continue;
-
-		const record = node as Record<string, unknown>;
-
-		if (record.id === itemId && typeof record.checked === "boolean") {
-			return record as ChecklistItem;
-		}
-
-		if (Array.isArray(record.children)) {
-			const found = findChecklistItem(record.children, itemId);
-
-			if (found) return found;
-		}
-	}
-
-	return null;
-}
 
 /**
  * Flip one checklist item.

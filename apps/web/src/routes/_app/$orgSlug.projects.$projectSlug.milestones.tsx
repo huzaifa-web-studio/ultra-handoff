@@ -20,7 +20,16 @@ import {
 	type MilestoneSelectionHandler,
 } from "#/features/milestones/milestone-page";
 
-/** Search params this route understands. Anything else is dropped. */
+/** Characters a focused comment tab id may contain. */
+const COMMENT_TAB_PATTERN = /^comment:[A-Za-z0-9_-]{1,64}$/;
+
+/** The tab values the URL contract accepts. */
+type MilestoneTabSearch = Extract<
+	MilestoneTabKey,
+	"scope" | "changes" | "comments" | `comment:${string}`
+>;
+
+/** The tab values the URL contract accepts. Anything else is dropped. */
 type MilestoneSearch = {
 	milestone?: string;
 	/**
@@ -28,15 +37,15 @@ type MilestoneSearch = {
 	 * milestone link stays short. A focused comment tab uses the `comment:` id
 	 * prefix.
 	 */
-	milestoneTab?: Extract<MilestoneTabKey, "comments" | `comment:${string}`>;
+	milestoneTab?: MilestoneTabSearch;
 };
 
-/** The tab values the URL contract accepts. */
+/** Map a tab key to the value stored in the URL. */
 function toTabSearchValue(
 	tab: MilestoneTabKey,
-): MilestoneSearch["milestoneTab"] {
-	if (tab === "comments") return "comments";
-	if (tab.startsWith("comment:")) return tab as `comment:${string}`;
+): MilestoneTabSearch | undefined {
+	if (tab === "scope" || tab === "changes" || tab === "comments") return tab;
+	if (COMMENT_TAB_PATTERN.test(tab)) return tab as `comment:${string}`;
 
 	return undefined;
 }
@@ -49,9 +58,11 @@ export const Route = createFileRoute(
 	validateSearch: (search: Record<string, unknown>): MilestoneSearch => {
 		const tab = search.milestoneTab;
 		const milestoneTab =
+			tab === "scope" ||
+			tab === "changes" ||
 			tab === "comments" ||
-			(typeof tab === "string" && /^comment:[A-Za-z0-9_-]{1,64}$/.test(tab))
-				? (tab as MilestoneSearch["milestoneTab"])
+			(typeof tab === "string" && COMMENT_TAB_PATTERN.test(tab))
+				? (tab as MilestoneTabSearch)
 				: undefined;
 
 		return {

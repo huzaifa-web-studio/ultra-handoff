@@ -13,6 +13,7 @@ import { queues } from "./queues";
 import { startRealtime } from "./realtime";
 import { realtimeRoutes } from "./realtime/gateway";
 import { accountRoutes } from "./routes/account";
+import { changeRequestRoutes } from "./routes/change-requests";
 import { commentRoutes } from "./routes/comments";
 import { fileRoutes } from "./routes/files";
 import { healthRoutes } from "./routes/health";
@@ -66,6 +67,8 @@ async function buildApp() {
 		.use(milestoneRoutes)
 		// Discussion threads on a milestone (tenant scoped).
 		.use(commentRoutes)
+		// Client change requests on a milestone (tenant scoped).
+		.use(changeRequestRoutes)
 		// Live comment, milestone and presence stream for the project workspace.
 		.use(realtimeRoutes)
 		// Mention suggestions for the comment editor (tenant scoped).
@@ -116,11 +119,13 @@ export type App = Awaited<ReturnType<typeof buildApp>>;
  * capabilities that `RealtimeComment` deliberately leaves out.
  */
 export type {
+	ChangeRequestRealtimePayload,
 	CommentRealtimePayload,
 	MilestoneChangedField,
 	MilestoneCreatedPayload,
 	MilestoneDeletedPayload,
 	MilestoneUpdatedPayload,
+	RealtimeChangeRequest,
 	RealtimeComment,
 } from "./realtime/events";
 /**

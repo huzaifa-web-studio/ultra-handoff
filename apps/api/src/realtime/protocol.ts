@@ -60,6 +60,8 @@ export type RealtimeEventType =
 	| "milestone.created"
 	| "milestone.updated"
 	| "milestone.deleted"
+	| "change_request.created"
+	| "change_request.updated"
 	| "presence.joined"
 	| "presence.left"
 	| "typing.started"

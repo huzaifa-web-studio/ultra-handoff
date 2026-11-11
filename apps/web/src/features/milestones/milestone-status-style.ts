@@ -19,6 +19,8 @@ import {
 	CircleDashedIcon,
 	CircleDotIcon,
 	CircleXIcon,
+	EyeIcon,
+	FlaskConicalIcon,
 	LayersIcon,
 	type LucideIcon,
 } from "lucide-react";
@@ -28,7 +30,9 @@ import type { MilestoneStatus, MilestoneStatusFilter } from "./schema";
 /** Text colour only, for places that already have their own surface. */
 export const MILESTONE_STATUS_TEXT_CLASSES: Record<MilestoneStatus, string> = {
 	todo: "text-milestone-todo",
-	in_progress: "text-milestone-in-progress",
+	in_development: "text-milestone-in-development",
+	in_testing: "text-milestone-in-testing",
+	in_review: "text-milestone-in-review",
 	blocked: "text-milestone-blocked",
 	done: "text-milestone-done",
 	cancelled: "text-milestone-cancelled",
@@ -37,7 +41,10 @@ export const MILESTONE_STATUS_TEXT_CLASSES: Record<MilestoneStatus, string> = {
 /** Text plus the matching tinted background, for the badge. */
 export const MILESTONE_STATUS_BADGE_CLASSES: Record<MilestoneStatus, string> = {
 	todo: "bg-milestone-todo-bg text-milestone-todo",
-	in_progress: "bg-milestone-in-progress-bg text-milestone-in-progress",
+	in_development:
+		"bg-milestone-in-development-bg text-milestone-in-development",
+	in_testing: "bg-milestone-in-testing-bg text-milestone-in-testing",
+	in_review: "bg-milestone-in-review-bg text-milestone-in-review",
 	blocked: "bg-milestone-blocked-bg text-milestone-blocked",
 	done: "bg-milestone-done-bg text-milestone-done",
 	cancelled: "bg-milestone-cancelled-bg text-milestone-cancelled line-through",
@@ -47,12 +54,16 @@ export const MILESTONE_STATUS_BADGE_CLASSES: Record<MilestoneStatus, string> = {
  * One icon per state.
  *
  * A shared circle family reads as a single progress scale, which is how the
- * statuses relate to each other. `blocked` uses a ban sign and `cancelled` an
- * X so the two terminal states are still distinct without relying on colour.
+ * statuses relate to each other. Testing adds a flask and review an eye, so the
+ * two checkpoints are recognisable without reading the label. `blocked` uses a
+ * ban sign and `cancelled` an X so the terminal states stay distinct without
+ * relying on colour.
  */
 export const MILESTONE_STATUS_ICONS: Record<MilestoneStatus, LucideIcon> = {
 	todo: CircleDashedIcon,
-	in_progress: CircleDotIcon,
+	in_development: CircleDotIcon,
+	in_testing: FlaskConicalIcon,
+	in_review: EyeIcon,
 	blocked: BanIcon,
 	done: CircleCheckIcon,
 	cancelled: CircleXIcon,

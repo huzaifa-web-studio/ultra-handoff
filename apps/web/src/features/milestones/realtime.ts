@@ -31,6 +31,8 @@ const CHANGED_FIELDS: readonly MilestoneChangedField[] = [
 	"dueDate",
 	"estimateMinutes",
 	"assignees",
+	"lock",
+	"checklist",
 ];
 
 function isChangedField(value: unknown): value is MilestoneChangedField {

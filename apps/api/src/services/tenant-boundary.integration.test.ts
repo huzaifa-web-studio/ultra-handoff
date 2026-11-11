@@ -30,6 +30,12 @@ import { closeTenantDb, getTenantDb, withTenant } from "../db/tenant";
 import { closeRedis } from "../lib/redis";
 import type { TenantContext } from "../middleware/tenant";
 import {
+	createChangeRequest,
+	listChangeRequests,
+	moveChangeRequestToMilestone,
+	updateChangeRequest,
+} from "./change-request.service";
+import {
 	createMilestoneComment,
 	deleteMilestoneComment,
 	listMilestoneComments,
@@ -41,7 +47,10 @@ import {
 	deleteMilestone,
 	getMilestone,
 	listMilestones,
+	lockMilestone,
 	setMilestoneAssignees,
+	toggleMilestoneChecklist,
+	unlockMilestone,
 	updateMilestone,
 } from "./milestone.service";
 import {
@@ -114,6 +123,46 @@ function bodyText(value: unknown): string {
 
 	return Array.isArray(record.children) ? bodyText(record.children) : "";
 }
+
+/** Find the sanitized id and checked state of the first checklist item. */
+function findChecklistItem(
+	value: unknown,
+): { id: string; checked: boolean } | null {
+	if (Array.isArray(value)) {
+		for (const node of value) {
+			const found = findChecklistItem(node);
+			if (found) return found;
+		}
+
+		return null;
+	}
+
+	if (!value || typeof value !== "object") return null;
+
+	const record = value as Record<string, unknown>;
+
+	if (typeof record.id === "string" && typeof record.checked === "boolean") {
+		return { id: record.id, checked: record.checked };
+	}
+
+	return Array.isArray(record.children)
+		? findChecklistItem(record.children)
+		: null;
+}
+
+/** One checklist list, in the shape the editor and sanitizer produce. */
+const checklistBody = () => [
+	{
+		type: "taskList",
+		children: [
+			{
+				type: "li",
+				checked: false,
+				children: [{ type: "lic", children: [{ text: "Ship it" }] }],
+			},
+		],
+	},
+];
 
 function tenant(
 	organizationId: string,
@@ -669,9 +718,9 @@ suite("tenant and project boundary", () => {
 				tenantMemberA(),
 				ids.pVisibleA,
 				created.milestone.id,
-				{ status: "in_progress" },
+				{ status: "in_development" },
 			);
-			expect(updated.milestone.status).toBe("in_progress");
+			expect(updated.milestone.status).toBe("in_development");
 
 			await deleteMilestone(
 				tenantMemberA(),
@@ -721,6 +770,519 @@ suite("tenant and project boundary", () => {
 			await expect(
 				listMilestones(tenantMemberA(), ids.pHiddenA, milestoneQuery),
 			).rejects.toThrow(/no longer exists/);
+		});
+	});
+
+	describe("milestone lifecycle and lock", () => {
+		test("a member moves through testing and review and back to development", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Lifecycle",
+			});
+			const milestoneId = created.milestone.id;
+
+			try {
+				for (const status of [
+					"in_development",
+					"in_testing",
+					"in_review",
+					"in_development",
+					"in_review",
+					"done",
+				] as const) {
+					const updated = await updateMilestone(
+						tenantMemberA(),
+						ids.pVisibleA,
+						milestoneId,
+						{ status },
+					);
+
+					expect(updated.milestone.status).toBe(status);
+				}
+			} finally {
+				await deleteMilestone(tenantMemberA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("blocked needs a reason and records it on the timeline", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Blocked work",
+			});
+			const milestoneId = created.milestone.id;
+
+			try {
+				await expect(
+					updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+						status: "blocked",
+					}),
+				).rejects.toThrow(/Say why/);
+
+				const blocked = await updateMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					{ status: "blocked", statusNote: "Waiting on the copy" },
+				);
+
+				expect(blocked.milestone.status).toBe("blocked");
+
+				const timeline = await listMilestoneComments(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					{ cursor: null, limit: 20 },
+				);
+				const statusEvent = timeline.threads
+					.map((thread) => thread.comment)
+					.find(
+						(comment) =>
+							comment.event?.type === "status" &&
+							comment.event.to === "blocked",
+					);
+
+				expect(statusEvent?.event?.note).toBe("Waiting on the copy");
+			} finally {
+				await deleteMilestone(tenantMemberA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("only an owner or admin can lock and unlock", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Locked work",
+			});
+			const milestoneId = created.milestone.id;
+
+			try {
+				await expect(
+					lockMilestone(tenantMemberA(), ids.pVisibleA, milestoneId),
+				).rejects.toThrow(/owner or admin/);
+
+				const locked = await lockMilestone(
+					tenantOwnerA(),
+					ids.pVisibleA,
+					milestoneId,
+					"Scope agreed",
+				);
+				expect(locked.milestone.lockedAt).not.toBeNull();
+				expect(locked.milestone.lockedByName).toBe("Owner A");
+
+				await expect(
+					lockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId),
+				).rejects.toThrow(/already locked/);
+
+				const unlocked = await unlockMilestone(
+					tenantAdminA(),
+					ids.pVisibleA,
+					milestoneId,
+					"New ask",
+				);
+				expect(unlocked.milestone.lockedAt).toBeNull();
+
+				await expect(
+					unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId),
+				).rejects.toThrow(/not locked/);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("a locked milestone keeps status and assignees open but refuses the document and delete", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Frozen work",
+			});
+			const milestoneId = created.milestone.id;
+
+			await lockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId, "Frozen");
+
+			try {
+				await expect(
+					updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+						title: "Hijacked",
+					}),
+				).rejects.toThrow(/locked/);
+
+				await expect(
+					updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+						startDate: "2026-01-01",
+					}),
+				).rejects.toThrow(/locked/);
+
+				// Status changes are progress, not a change to the agreed text.
+				const moved = await updateMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					{ status: "in_testing" },
+				);
+				expect(moved.milestone.status).toBe("in_testing");
+
+				// Assignees follow the same rule.
+				const assigned = await setMilestoneAssignees(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					[ids.adminA],
+				);
+				expect(assigned.milestone.assignees.map((row) => row.userId)).toEqual([
+					ids.adminA,
+				]);
+
+				// The client still cannot touch either.
+				await expect(
+					updateMilestone(tenantClientA(), ids.pVisibleA, milestoneId, {
+						status: "done",
+					}),
+				).rejects.toThrow(/review milestones/);
+
+				await expect(
+					deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId),
+				).rejects.toThrow(/locked/);
+
+				// Comments stay open while the milestone is locked.
+				const comment = await createMilestoneComment(
+					tenantClientA(),
+					ids.pVisibleA,
+					milestoneId,
+					{ body: paragraph("Still talking") },
+				);
+
+				expect(comment.total).toBe(1);
+			} finally {
+				await unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("a checklist tick survives the lock for staff but not for the client", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Checklist work",
+				description: checklistBody(),
+			});
+			const milestoneId = created.milestone.id;
+
+			await lockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId, "Frozen");
+
+			try {
+				const item = findChecklistItem(created.milestone.description);
+
+				expect(item).not.toBeNull();
+
+				const ticked = await toggleMilestoneChecklist(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					{ itemId: item?.id ?? "", checked: true },
+				);
+
+				expect(findChecklistItem(ticked.milestone.description)?.checked).toBe(
+					true,
+				);
+
+				await expect(
+					toggleMilestoneChecklist(
+						tenantClientA(),
+						ids.pVisibleA,
+						milestoneId,
+						{
+							itemId: item?.id ?? "",
+							checked: false,
+						},
+					),
+				).rejects.toThrow(/review milestones/);
+			} finally {
+				await unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+	});
+
+	describe("change requests", () => {
+		test("a client can raise a request on a locked milestone", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Change request target",
+			});
+			const milestoneId = created.milestone.id;
+
+			await lockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId, "Frozen");
+
+			try {
+				const result = await createChangeRequest(
+					tenantClientA(),
+					ids.pVisibleA,
+					milestoneId,
+					{ title: "Add a page", body: paragraph("Please add one") },
+				);
+
+				expect(result.changeRequest.status).toBe("open");
+				expect(result.changeRequest.requestedBy?.id).toBe(ids.clientA);
+				expect(result.openCount).toBe(1);
+
+				const list = await listChangeRequests(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+				);
+
+				expect(list.changeRequests).toHaveLength(1);
+				expect(list.canDecide).toBe(true);
+				expect(list.openCount).toBe(1);
+			} finally {
+				await unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("accept needs staff and an unlocked milestone", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Accept target",
+			});
+			const milestoneId = created.milestone.id;
+			const request = await createChangeRequest(
+				tenantClientA(),
+				ids.pVisibleA,
+				milestoneId,
+				{ title: "Add a page" },
+			);
+
+			await lockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId, "Frozen");
+
+			try {
+				await expect(
+					updateChangeRequest(
+						tenantClientA(),
+						ids.pVisibleA,
+						milestoneId,
+						request.changeRequest.id,
+						{ status: "accepted" },
+					),
+				).rejects.toThrow(/Only staff/);
+
+				await expect(
+					updateChangeRequest(
+						tenantMemberA(),
+						ids.pVisibleA,
+						milestoneId,
+						request.changeRequest.id,
+						{ status: "accepted" },
+					),
+				).rejects.toThrow(/locked/);
+
+				await unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+
+				const accepted = await updateChangeRequest(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					request.changeRequest.id,
+					{ status: "accepted", note: "In scope" },
+				);
+
+				expect(accepted.changeRequest.status).toBe("accepted");
+				expect(accepted.changeRequest.decidedBy?.id).toBe(ids.memberA);
+				expect(accepted.changeRequest.decisionNote).toBe("In scope");
+				expect(accepted.openCount).toBe(0);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("decline needs a reason and is final", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Decline target",
+			});
+			const milestoneId = created.milestone.id;
+			const request = await createChangeRequest(
+				tenantClientA(),
+				ids.pVisibleA,
+				milestoneId,
+				{ title: "Add a page" },
+			);
+
+			try {
+				await expect(
+					updateChangeRequest(
+						tenantMemberA(),
+						ids.pVisibleA,
+						milestoneId,
+						request.changeRequest.id,
+						{ status: "declined" },
+					),
+				).rejects.toThrow(/Say why/);
+
+				const declined = await updateChangeRequest(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					request.changeRequest.id,
+					{ status: "declined", note: "Out of scope" },
+				);
+
+				expect(declined.changeRequest.status).toBe("declined");
+				expect(declined.changeRequest.decisionNote).toBe("Out of scope");
+
+				await expect(
+					updateChangeRequest(
+						tenantClientA(),
+						ids.pVisibleA,
+						milestoneId,
+						request.changeRequest.id,
+						{ title: "Rewritten" },
+					),
+				).rejects.toThrow(/Only the person/);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("the author can edit and withdraw while open, another member cannot", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Withdraw target",
+			});
+			const milestoneId = created.milestone.id;
+			const request = await createChangeRequest(
+				tenantClientA(),
+				ids.pVisibleA,
+				milestoneId,
+				{ title: "Add a page", body: paragraph("Original") },
+			);
+
+			try {
+				await expect(
+					updateChangeRequest(
+						tenantMemberA(),
+						ids.pVisibleA,
+						milestoneId,
+						request.changeRequest.id,
+						{ title: "Hijacked" },
+					),
+				).rejects.toThrow(/Only the person/);
+
+				const edited = await updateChangeRequest(
+					tenantClientA(),
+					ids.pVisibleA,
+					milestoneId,
+					request.changeRequest.id,
+					{ title: "Add a contact page", body: paragraph("Edited") },
+				);
+
+				expect(edited.changeRequest.title).toBe("Add a contact page");
+				expect(bodyText(edited.changeRequest.body)).toBe("Edited");
+
+				const withdrawn = await updateChangeRequest(
+					tenantClientA(),
+					ids.pVisibleA,
+					milestoneId,
+					request.changeRequest.id,
+					{ status: "withdrawn" },
+				);
+
+				expect(withdrawn.changeRequest.status).toBe("withdrawn");
+				expect(withdrawn.openCount).toBe(0);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("moving a request creates a milestone and links it", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Move source",
+			});
+			const milestoneId = created.milestone.id;
+			const request = await createChangeRequest(
+				tenantClientA(),
+				ids.pVisibleA,
+				milestoneId,
+				{ title: "Contact page", body: paragraph("New page") },
+			);
+
+			await lockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId, "Frozen");
+
+			try {
+				const moved = await moveChangeRequestToMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					request.changeRequest.id,
+					{},
+				);
+
+				expect(moved.changeRequest.status).toBe("moved");
+				expect(moved.changeRequest.targetMilestoneId).toBe(moved.milestone.id);
+				expect(moved.changeRequest.targetMilestoneTitle).toBe("Contact page");
+				expect(moved.milestone.title).toBe("Contact page");
+				expect(bodyText(moved.milestone.description)).toBe("New page");
+
+				// The source milestone is untouched: still locked, still the same
+				// title and body.
+				const source = await getMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+				);
+				expect(source.milestone.lockedAt).not.toBeNull();
+				expect(source.milestone.title).toBe("Move source");
+
+				await deleteMilestone(
+					tenantOwnerA(),
+					ids.pVisibleA,
+					moved.milestone.id,
+				);
+			} finally {
+				await unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("a request in another organization is not reachable", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Tenant target",
+			});
+			const milestoneId = created.milestone.id;
+			const request = await createChangeRequest(
+				tenantClientA(),
+				ids.pVisibleA,
+				milestoneId,
+				{ title: "Add a page" },
+			);
+
+			try {
+				await expect(
+					createChangeRequest(tenantOwnerB(), ids.pVisibleA, milestoneId, {
+						title: "Cross tenant",
+					}),
+				).rejects.toThrow(/no longer exists/);
+
+				await expect(
+					updateChangeRequest(
+						tenantOwnerB(),
+						ids.pVisibleA,
+						milestoneId,
+						request.changeRequest.id,
+						{ status: "declined", note: "No" },
+					),
+				).rejects.toThrow(/no longer exists/);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("an archived project refuses new change requests", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Archived target",
+			});
+			const milestoneId = created.milestone.id;
+
+			await setProjectArchived(tenantOwnerA(), ids.pVisibleA, true);
+
+			try {
+				await expect(
+					createChangeRequest(tenantAdminA(), ids.pVisibleA, milestoneId, {
+						title: "Not now",
+					}),
+				).rejects.toThrow(/archived/);
+			} finally {
+				await setProjectArchived(tenantOwnerA(), ids.pVisibleA, false);
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
 		});
 	});
 

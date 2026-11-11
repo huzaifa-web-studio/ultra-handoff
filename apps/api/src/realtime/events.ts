@@ -15,6 +15,7 @@
  * src/index.ts (which the web app imports as a type only).
  */
 
+import type { ChangeRequestRow } from "../services/change-request.service";
 import type { CommentRow } from "../services/comment.service";
 import type { MilestoneSummary } from "../services/milestone.service";
 
@@ -43,7 +44,9 @@ export type MilestoneChangedField =
 	| "startDate"
 	| "dueDate"
 	| "estimateMinutes"
-	| "assignees";
+	| "assignees"
+	| "lock"
+	| "checklist";
 
 /**
  * The milestone a create or update broadcasts.
@@ -82,6 +85,9 @@ export function toRealtimeMilestone(
 		dueDate: milestone.dueDate,
 		estimateMinutes: milestone.estimateMinutes,
 		assignees: milestone.assignees,
+		lockedAt: milestone.lockedAt,
+		lockedByName: milestone.lockedByName,
+		openChangeRequestCount: milestone.openChangeRequestCount,
 		completedAt: milestone.completedAt,
 		createdBy: milestone.createdBy,
 		createdByName: milestone.createdByName,
@@ -91,6 +97,48 @@ export function toRealtimeMilestone(
 		updatedAt: milestone.updatedAt,
 	};
 }
+
+/**
+ * Strip the viewer specific capabilities from a change request.
+ *
+ * Same rule as a comment: `canEdit` and `canWithdraw` are answers for the
+ * writer, so broadcasting them would tell every reader they may change a
+ * request that is not theirs. The browser recomputes both for its viewer.
+ */
+export function toRealtimeChangeRequest(
+	changeRequest: ChangeRequestRow,
+): RealtimeChangeRequest {
+	return {
+		id: changeRequest.id,
+		projectId: changeRequest.projectId,
+		milestoneId: changeRequest.milestoneId,
+		title: changeRequest.title,
+		body: changeRequest.body,
+		bodyText: changeRequest.bodyText,
+		status: changeRequest.status,
+		requestedBy: changeRequest.requestedBy,
+		decidedBy: changeRequest.decidedBy,
+		decidedAt: changeRequest.decidedAt,
+		decisionNote: changeRequest.decisionNote,
+		targetMilestoneId: changeRequest.targetMilestoneId,
+		targetMilestoneTitle: changeRequest.targetMilestoneTitle,
+		createdAt: changeRequest.createdAt,
+		updatedAt: changeRequest.updatedAt,
+	};
+}
+
+/** A change request as it travels over the stream. */
+export type RealtimeChangeRequest = Omit<
+	ChangeRequestRow,
+	"canEdit" | "canWithdraw"
+>;
+
+/** One change request event. `openCount` feeds the tab badge. */
+export type ChangeRequestRealtimePayload = {
+	milestoneId: string;
+	changeRequest: RealtimeChangeRequest;
+	openCount: number;
+};
 
 /**
  * Strip the viewer specific capabilities from a comment.

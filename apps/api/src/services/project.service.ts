@@ -59,6 +59,7 @@ import {
 import { adminDb } from "../db";
 import { user } from "../db/auth-schema";
 import {
+	changeRequest,
 	comment,
 	milestone,
 	project,
@@ -1428,10 +1429,10 @@ export async function deleteProject(
 			// `inArray` with an empty list is not a valid predicate, so a project
 			// with no milestones skips the comment read entirely.
 			const milestoneIds = milestones.map((row) => row.id);
-			const bodies =
+			const [bodies, requestBodies] = await Promise.all([
 				milestoneIds.length === 0
 					? []
-					: await tx
+					: tx
 							.select({ body: comment.body })
 							.from(comment)
 							.where(
@@ -1439,11 +1440,24 @@ export async function deleteProject(
 									eq(comment.organizationId, tenant.organizationId),
 									inArray(comment.milestoneId, milestoneIds),
 								),
-							);
+							),
+				// Change requests carry attachments too, and they cascade with
+				// the project, so their bodies are part of the same walk.
+				tx
+					.select({ body: changeRequest.body })
+					.from(changeRequest)
+					.where(
+						and(
+							eq(changeRequest.organizationId, tenant.organizationId),
+							eq(changeRequest.projectId, projectId),
+						),
+					),
+			]);
 
 			const keys = keyFromRichText([
 				...milestones.map((row) => row.description),
 				...bodies.map((row) => row.body),
+				...requestBodies.map((row) => row.body),
 			]);
 
 			await tx
@@ -1682,10 +1696,10 @@ export async function bulkDeleteProjects(
 				);
 
 			const milestoneIds = milestones.map((row) => row.id);
-			const bodies =
+			const [bodies, requestBodies] = await Promise.all([
 				milestoneIds.length === 0
 					? []
-					: await tx
+					: tx
 							.select({ body: comment.body })
 							.from(comment)
 							.where(
@@ -1693,11 +1707,22 @@ export async function bulkDeleteProjects(
 									eq(comment.organizationId, tenant.organizationId),
 									inArray(comment.milestoneId, milestoneIds),
 								),
-							);
+							),
+				tx
+					.select({ body: changeRequest.body })
+					.from(changeRequest)
+					.where(
+						and(
+							eq(changeRequest.organizationId, tenant.organizationId),
+							inArray(changeRequest.projectId, toDelete),
+						),
+					),
+			]);
 
 			const removedKeys = keyFromRichText([
 				...milestones.map((row) => row.description),
 				...bodies.map((row) => row.body),
+				...requestBodies.map((row) => row.body),
 			]);
 
 			// Deduplicate logos: a duplicated id in the request must not delete

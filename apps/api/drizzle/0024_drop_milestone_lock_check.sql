@@ -1,0 +1,1 @@
+ALTER TABLE "milestone" DROP CONSTRAINT "milestone_lock_check";

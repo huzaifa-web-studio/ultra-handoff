@@ -680,11 +680,13 @@ export function CommentBody({
 				}}
 			>
 				<EditorStaticProvider>
-					<PlateStatic
-						editor={editor}
-						aria-label={ariaLabel}
-						className="text-sm break-words whitespace-pre-wrap text-app-text"
-					/>
+					<Plate editor={editor} readOnly>
+						<PlateStatic
+							editor={editor}
+							aria-label={ariaLabel}
+							className="text-sm break-words whitespace-pre-wrap text-app-text"
+						/>
+					</Plate>
 				</EditorStaticProvider>
 			</CommentChecklistProvider>
 		</LinkPreviewProvider>

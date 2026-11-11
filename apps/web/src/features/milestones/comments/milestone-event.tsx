@@ -14,10 +14,17 @@
  */
 
 import {
+	ArrowRightIcon,
 	CalendarClockIcon,
 	CalendarDaysIcon,
+	CircleCheckIcon,
+	CircleXIcon,
+	FilePenIcon,
+	LockIcon,
+	LockOpenIcon,
 	RefreshCwIcon,
 	TimerIcon,
+	UndoIcon,
 	UsersIcon,
 } from "lucide-react";
 
@@ -55,6 +62,34 @@ function EventIcon({ type }: { type: MilestoneEventType }) {
 
 	if (type === "estimate_minutes") {
 		return <TimerIcon className="size-3.5" aria-hidden />;
+	}
+
+	if (type === "milestone_locked") {
+		return <LockIcon className="size-3.5" aria-hidden />;
+	}
+
+	if (type === "milestone_unlocked") {
+		return <LockOpenIcon className="size-3.5" aria-hidden />;
+	}
+
+	if (type === "change_request_created") {
+		return <FilePenIcon className="size-3.5" aria-hidden />;
+	}
+
+	if (type === "change_request_accepted") {
+		return <CircleCheckIcon className="size-3.5" aria-hidden />;
+	}
+
+	if (type === "change_request_declined") {
+		return <CircleXIcon className="size-3.5" aria-hidden />;
+	}
+
+	if (type === "change_request_moved") {
+		return <ArrowRightIcon className="size-3.5" aria-hidden />;
+	}
+
+	if (type === "change_request_withdrawn") {
+		return <UndoIcon className="size-3.5" aria-hidden />;
 	}
 
 	return null;
@@ -122,6 +157,22 @@ function describeEvent(event: Comment) {
 	if (!data) return null;
 
 	if (data.type === "status") {
+		// A milestone can be created already blocked, which has no previous
+		// status. Rendering a badge for null would crash, so it reads as a set.
+		if (!data.from) {
+			return {
+				before: "set the status to",
+				from: null,
+				after: "",
+				to: data.to ? (
+					<MilestoneStatusBadge
+						status={data.to as MilestoneStatus}
+						className="mx-1 align-middle"
+					/>
+				) : null,
+			};
+		}
+
 		return {
 			before: "changed the status from",
 			from: (
@@ -137,6 +188,69 @@ function describeEvent(event: Comment) {
 					className="mx-1 align-middle"
 				/>
 			),
+		};
+	}
+
+	if (data.type === "milestone_locked") {
+		return {
+			before: "locked the milestone",
+			from: null,
+			after: "",
+			to: null,
+		};
+	}
+
+	if (data.type === "milestone_unlocked") {
+		return {
+			before: "unlocked the milestone",
+			from: null,
+			after: "",
+			to: null,
+		};
+	}
+
+	if (data.type === "change_request_created") {
+		return {
+			before: "raised a change request:",
+			from: null,
+			after: "",
+			to: data.to,
+		};
+	}
+
+	if (data.type === "change_request_accepted") {
+		return {
+			before: "accepted the change request:",
+			from: null,
+			after: "",
+			to: data.to,
+		};
+	}
+
+	if (data.type === "change_request_declined") {
+		return {
+			before: "declined the change request:",
+			from: null,
+			after: "",
+			to: data.to,
+		};
+	}
+
+	if (data.type === "change_request_moved") {
+		return {
+			before: "moved the change request to a new milestone:",
+			from: null,
+			after: "",
+			to: data.to,
+		};
+	}
+
+	if (data.type === "change_request_withdrawn") {
+		return {
+			before: "withdrew the change request:",
+			from: null,
+			after: "",
+			to: data.to,
 		};
 	}
 
@@ -163,6 +277,18 @@ function describeEvent(event: Comment) {
 	const label = data.type === "start_date" ? "start date" : "due date";
 
 	return describeValueChange(label, data.from, data.to, dayLabel);
+}
+
+/** The label shown before an event note. */
+function noteLabel(type: MilestoneEventType): string {
+	if (type === "milestone_locked" || type === "milestone_unlocked") {
+		return "Reason";
+	}
+
+	if (type === "change_request_declined") return "Reason";
+	if (type === "change_request_moved") return "New milestone";
+
+	return "Note";
 }
 
 export function MilestoneEventItem({ event }: { event: Comment }) {
@@ -202,6 +328,13 @@ export function MilestoneEventItem({ event }: { event: Comment }) {
 							sentence.to
 						)}
 					</p>
+
+					{data.note && (
+						<p className="text-[0.7rem] text-app-text-muted">
+							{noteLabel(data.type)}:{" "}
+							<span className="text-app-text">{data.note}</span>
+						</p>
+					)}
 
 					<time
 						dateTime={event.createdAt}

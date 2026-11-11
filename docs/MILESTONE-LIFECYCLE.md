@@ -100,13 +100,13 @@ A lock is an explicit owner or admin action. It is not tied to a status.
 ### Rules
 
 - Project owner or admin can lock and unlock.
-- While locked, no one can edit the milestone:
+- While locked, no one can edit:
   - title
   - scope document
-  - status
   - dates
   - estimate
-  - assignees
+- Status, assignees and checklist progress stay available to staff (owner,
+  admin, member). The client still cannot change them.
 - Comments and change requests stay open while locked.
 - Deleting a locked milestone is refused. Unlock first.
 - Every lock and unlock is recorded in the activity timeline with the actor and the time.
@@ -340,12 +340,14 @@ This creates the milestone, copies the request title and body into it, and marks
 
 | Action | Who |
 |---|---|
-| Change status | Any project member, unless locked |
+| Change status | Staff, even when locked |
+| Change assignees | Staff, even when locked |
+| Tick checklist progress | Staff, even when locked |
 | Lock / unlock | Project owner or admin |
 | Create change request | Client and staff |
 | Edit or withdraw an open request | Its author |
 | Accept, decline, move | Staff |
-| Edit the milestone | Staff, unless locked |
+| Edit the milestone document and fields | Staff, unless locked |
 | Comment | Every project member |
 
 ---
@@ -366,7 +368,7 @@ This creates the milestone, copies the request title and body into it, and marks
 Overview | Scope | Changes | Comments
 ```
 
-- **Overview:** status, estimate, dates, assignees, scope summary, a compact changes summary with the open count.
+- **Overview:** status, estimate, dates, assignees, an editable scope preview that expands to the full document, and every change request title as a card with the open count.
 - **Scope:** the document and checklist progress. Editable unless locked. No submit, approve or revision history.
 - **Changes:** the client request list and detail. New request action for the client. Decision actions for staff.
 - **Comments:** the existing discussion timeline.
@@ -395,7 +397,8 @@ Create:
 ### Locked state
 
 - the scope editor becomes read-only
-- status, dates, estimate and assignees are read-only
+- title, dates and estimate are read-only
+- status, assignees and checklist progress stay available to staff
 - comments and Changes stay available
 - the lock badge is visible in the list row and the detail header
 
@@ -426,9 +429,10 @@ Never edit `drizzle/` by hand.
 
 - Locked milestone plus client change request: allowed.
 - Locked milestone plus comment: allowed.
-- Locked milestone plus status change: blocked.
+- Locked milestone plus status change: allowed for staff, refused for a client.
+- Locked milestone plus assignee change: allowed for staff, refused for a client.
 - Locked milestone plus delete: blocked.
-- Locked milestone plus checklist tick: decide in section 4. Recommended allowed.
+- Locked milestone plus checklist tick: allowed for staff.
 - Client creates a request in any status: allowed.
 - Client withdraws an open request: allowed.
 - Agency accepts a request while locked: blocked until unlock, with a clear prompt.
@@ -477,7 +481,8 @@ The direction is complete when:
 - a milestone can move through development, testing and review, and back to development from either loop
 - `in_progress` no longer exists
 - an owner or admin can lock and unlock a milestone
-- while locked, milestone fields and status cannot be edited through the API or the UI
+- while locked, the scope document, title, dates and estimate cannot be edited through the API or the UI
+- while locked, status, assignees and checklist progress still work for staff
 - comments and change requests still work while locked
 - a client can create a change request at any time
 - staff can accept, decline or move a request

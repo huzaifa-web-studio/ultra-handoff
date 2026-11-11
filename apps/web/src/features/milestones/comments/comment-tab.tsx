@@ -100,7 +100,7 @@ export function CommentTab({
 	milestoneId,
 	viewerId,
 	canComment,
-	locked,
+	archived,
 	active,
 	onOpenCommentTab,
 }: {
@@ -111,7 +111,7 @@ export function CommentTab({
 	/** The signed in user, so their own comments can be marked. */
 	viewerId: string;
 	canComment: boolean;
-	locked: boolean;
+	archived: boolean;
 	/** True while this tab is selected, which is when the list is worth loading. */
 	active: boolean;
 	/** Open a root comment as its own tab. */
@@ -445,7 +445,7 @@ export function CommentTab({
 									milestoneId={milestoneId}
 									viewerId={viewerId}
 									thread={thread}
-									canComment={canComment && !locked}
+									canComment={canComment && !archived}
 									collapsed={!expandedThreads.has(thread.comment.id)}
 									isReplyTarget={replyingTo?.id === thread.comment.id}
 									onToggle={() => toggleThread(thread.comment.id)}
@@ -527,7 +527,7 @@ export function CommentTab({
 					)}
 				</div>
 
-				{locked ? (
+				{archived ? (
 					<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
 						This project is archived, so the discussion is read only. Restore
 						the project to reply.

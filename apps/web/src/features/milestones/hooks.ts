@@ -32,11 +32,14 @@ import {
 	deleteMilestone,
 	fetchMilestone,
 	fetchMilestones,
+	lockMilestone,
 	type MilestoneDetail,
 	type MilestoneDetailResponse,
 	type MilestonePatch,
 	type MilestoneSummary,
 	setMilestoneAssignees,
+	toggleMilestoneChecklist,
+	unlockMilestone,
 	updateMilestone,
 } from "./api";
 import {
@@ -65,8 +68,12 @@ function listKey(
 	return [...milestonesKey(orgSlug, projectId), "list", filters] as const;
 }
 
-/** One milestone detail. Exported so the comments feature can patch its count. */
-function detailKey(orgSlug: string, projectId: string, milestoneId: string) {
+/** One milestone detail. Exported so other feature modules can patch it. */
+export function milestoneDetailKey(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+) {
 	return [...milestonesKey(orgSlug, projectId), "detail", milestoneId] as const;
 }
 
@@ -113,7 +120,7 @@ export function useMilestoneDetail(
 	milestoneId: string | null,
 ) {
 	return useQuery({
-		queryKey: detailKey(orgSlug, projectId, milestoneId ?? ""),
+		queryKey: milestoneDetailKey(orgSlug, projectId, milestoneId ?? ""),
 		queryFn: () => fetchMilestone(orgSlug, projectId, milestoneId ?? ""),
 		enabled: Boolean(orgSlug) && Boolean(projectId) && Boolean(milestoneId),
 		staleTime: 10_000,
@@ -145,14 +152,16 @@ function syncMilestone(
 	const milestoneId = normalized.id;
 
 	queryClient.setQueryData<MilestoneDetailResponse>(
-		detailKey(orgSlug, projectId, milestoneId),
+		milestoneDetailKey(orgSlug, projectId, milestoneId),
 		(current) => ({
 			projectId,
 			viewer: current?.viewer ?? {
 				userId: "",
 				canWrite: true,
+				canTickChecklist: true,
 				canComment: true,
-				locked: false,
+				canLock: true,
+				archived: false,
 			},
 			milestone: normalized,
 		}),
@@ -201,7 +210,7 @@ export function applyMilestoneEvent(
 		);
 
 		queryClient.removeQueries({
-			queryKey: detailKey(orgSlug, projectId, event.milestoneId),
+			queryKey: milestoneDetailKey(orgSlug, projectId, event.milestoneId),
 		});
 
 		void queryClient.invalidateQueries(listQuery);
@@ -221,7 +230,7 @@ export function applyMilestoneEvent(
 	// The broadcast carries the summary, not the body, so merging keeps the
 	// description the detail cache already holds.
 	queryClient.setQueryData<MilestoneDetailResponse>(
-		detailKey(orgSlug, projectId, summary.id),
+		milestoneDetailKey(orgSlug, projectId, summary.id),
 		(current) =>
 			current
 				? { ...current, milestone: { ...current.milestone, ...summary } }
@@ -374,9 +383,87 @@ export function useDeleteMilestone(orgSlug: string, projectId: string) {
 			deleteMilestone(orgSlug, projectId, milestoneId),
 		onSuccess: (_data, milestoneId) => {
 			queryClient.removeQueries({
-				queryKey: detailKey(orgSlug, projectId, milestoneId),
+				queryKey: milestoneDetailKey(orgSlug, projectId, milestoneId),
 			});
 			void invalidate();
+		},
+	});
+}
+
+/**
+ * Lock or unlock a milestone.
+ *
+ * The lock changes only the row and the detail, never the filter or the counts,
+ * so the list rows are patched rather than refetched.
+ */
+export function useSetMilestoneLock(orgSlug: string, projectId: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			milestoneId,
+			locked,
+			reason,
+		}: {
+			milestoneId: string;
+			locked: boolean;
+			reason?: string | null;
+		}) =>
+			locked
+				? lockMilestone(orgSlug, projectId, milestoneId, reason)
+				: unlockMilestone(orgSlug, projectId, milestoneId, reason),
+		onSuccess: (data) => {
+			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+		},
+		onError: (error) => {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Could not change the milestone lock.",
+			);
+		},
+	});
+}
+
+/**
+ * Tick one scope checklist item.
+ *
+ * Used only while the milestone is locked, where the scope is rendered read
+ * only. The response is the whole detail, so the cache replaces the body
+ * instead of guessing which node changed.
+ */
+export function useToggleMilestoneChecklist(
+	orgSlug: string,
+	projectId: string,
+) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			milestoneId,
+			itemId,
+			checked,
+		}: {
+			milestoneId: string;
+			itemId: string;
+			checked: boolean;
+		}) =>
+			toggleMilestoneChecklist(
+				orgSlug,
+				projectId,
+				milestoneId,
+				itemId,
+				checked,
+			),
+		onSuccess: (data) => {
+			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+		},
+		onError: (error) => {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Could not update the checklist.",
+			);
 		},
 	});
 }

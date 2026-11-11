@@ -247,6 +247,11 @@ export const projectPin = pgTable(
  *
  * `updated_by` exists because anyone on the project may edit a milestone.
  * Without it, "who changed this" has no answer at all.
+ *
+ * `locked_at` and `locked_by` are the manual baseline. They are a separate pair
+ * rather than a boolean so the timeline can say who froze the scope and when.
+ * `locked_by` is nullable because deleting the actor's account must not fail:
+ * the row keeps its lock time and the UI says "an owner".
  */
 export const milestone = pgTable(
 	"milestone",
@@ -266,7 +271,10 @@ export const milestone = pgTable(
 			.default(sql`'[]'::jsonb`),
 		/** Plain text mirror of `description`, used by search and previews. */
 		descriptionText: text("description_text").notNull().default(""),
-		/** todo | in_progress | blocked | done | cancelled, checked below. */
+		/**
+		 * todo | in_development | in_testing | in_review | blocked | done |
+		 * cancelled, checked below.
+		 */
 		status: text("status").notNull().default("todo"),
 		/** Both nullable: a milestone can exist before it is scheduled. */
 		startDate: date("start_date"),
@@ -275,6 +283,11 @@ export const milestone = pgTable(
 		estimateMinutes: integer("estimate_minutes"),
 		/** Set when the status becomes done, cleared on every other status. */
 		completedAt: timestamp("completed_at"),
+		/** Null while unlocked. Set together with `locked_by`. */
+		lockedAt: timestamp("locked_at"),
+		lockedBy: text("locked_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
 		createdBy: text("created_by").references(() => user.id, {
 			onDelete: "set null",
 		}),
@@ -307,7 +320,7 @@ export const milestone = pgTable(
 		),
 		check(
 			"milestone_status_check",
-			sql`${table.status} in ('todo', 'in_progress', 'blocked', 'done', 'cancelled')`,
+			sql`${table.status} in ('todo', 'in_development', 'in_testing', 'in_review', 'blocked', 'done', 'cancelled')`,
 		),
 		check(
 			"milestone_estimate_check",
@@ -426,13 +439,25 @@ export const comment = pgTable(
 		kind: text("kind").notNull().default("comment"),
 		/**
 		 * status | start_date | due_date | assignee_added | assignee_removed |
-		 * estimate_minutes, only when kind is "event".
+		 * estimate_minutes | milestone_locked | milestone_unlocked |
+		 * change_request_created | change_request_accepted |
+		 * change_request_declined | change_request_moved |
+		 * change_request_withdrawn, only when kind is "event".
 		 */
 		eventType: text("event_type"),
 		/** Previous value. Null means the field was empty. */
 		eventFrom: text("event_from"),
 		/** New value. Null means the field was cleared. */
 		eventTo: text("event_to"),
+		/**
+		 * Optional plain text note attached to an event.
+		 *
+		 * Why its own column: a lock reason, a blocked reason and a decline
+		 * reason are prose, not a from/to value. Reusing `event_from` or
+		 * `event_to` would make the timeline render a reason as a field value
+		 * and break the meaning of an edit event.
+		 */
+		eventNote: text("event_note"),
 		/** Plate value. Always an array; the service validates before writing. */
 		body: jsonb("body").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
 		/** Plain text mirror used by previews, search and validation. */
@@ -471,15 +496,103 @@ export const comment = pgTable(
 				and ${table.eventType} is null
 				and ${table.eventFrom} is null
 				and ${table.eventTo} is null
+				and ${table.eventNote} is null
 			) or (
 				${table.kind} = 'event'
-				and ${table.eventType} in ('status', 'start_date', 'due_date', 'assignee_added', 'assignee_removed', 'estimate_minutes')
+				and ${table.eventType} in (
+					'status', 'start_date', 'due_date', 'assignee_added',
+					'assignee_removed', 'estimate_minutes', 'milestone_locked',
+					'milestone_unlocked', 'change_request_created',
+					'change_request_accepted', 'change_request_declined',
+					'change_request_moved', 'change_request_withdrawn'
+				)
 			)`,
 		),
 		// An event is a root timeline row. Replies only belong to messages.
 		check(
 			"comment_event_parent_check",
 			sql`${table.kind} = 'comment' or ${table.parentId} is null`,
+		),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();
+
+/**
+ * A client request to change the agreed work of a milestone.
+ *
+ * Why its own table and not a comment: a request is a structured record with a
+ * decision. The client asks, the agency accepts, declines or moves it, and the
+ * answer stays attached to the question. Comments remain the free form
+ * discussion, so neither surface has to carry the other's state.
+ *
+ * Why it is not covered by the milestone lock: the whole point is that the
+ * client can still ask for work while the scope is frozen. The request never
+ * edits the milestone, so the lock has nothing to protect here.
+ *
+ * `body` holds the Plate value and `body_text` the plain text mirror, exactly
+ * like a comment, so previews and list rows never walk JSON.
+ *
+ * `target_milestone_id` is set when the request is moved. It uses `set null`
+ * rather than `cascade`: deleting the new milestone must not delete the record
+ * of what the client asked for.
+ *
+ * `requested_by` and `decided_by` use `set null`, so removing an account keeps
+ * the request history as "Former member" instead of deleting it.
+ */
+export const changeRequest = pgTable(
+	"change_request",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => project.id, { onDelete: "cascade" }),
+		/** The milestone the request was raised against. */
+		milestoneId: text("milestone_id")
+			.notNull()
+			.references(() => milestone.id, { onDelete: "cascade" }),
+		title: text("title").notNull(),
+		/** Plate value. Always an array; the service validates before writing. */
+		body: jsonb("body").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+		/** Plain text mirror used by previews and search. */
+		bodyText: text("body_text").notNull().default(""),
+		/** open | accepted | declined | moved | withdrawn, checked below. */
+		status: text("status").notNull().default("open"),
+		requestedBy: text("requested_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		decidedBy: text("decided_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		decidedAt: timestamp("decided_at"),
+		/** Short plain text excerpt of the decision, never rich text. */
+		decisionNote: text("decision_note"),
+		/** Set when the request is turned into a new milestone. */
+		targetMilestoneId: text("target_milestone_id").references(
+			() => milestone.id,
+			{ onDelete: "set null" },
+		),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		index("change_request_organization_idx").on(table.organizationId),
+		// The one list the Changes tab reads, and the open count per milestone.
+		index("change_request_project_milestone_status_idx").on(
+			table.projectId,
+			table.milestoneId,
+			table.status,
+		),
+		// Supports the "this request became that milestone" link and its cleanup.
+		index("change_request_target_milestone_idx").on(table.targetMilestoneId),
+		check(
+			"change_request_status_check",
+			sql`${table.status} in ('open', 'accepted', 'declined', 'moved', 'withdrawn')`,
 		),
 		tenantIsolation(table.organizationId),
 	],

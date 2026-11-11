@@ -21,6 +21,8 @@ export type MilestonePatch = {
 	title?: string;
 	description?: unknown;
 	status?: MilestoneStatus;
+	/** Required when the status becomes blocked. */
+	statusNote?: string | null;
 	startDate?: string | null;
 	dueDate?: string | null;
 	estimateMinutes?: number | null;
@@ -204,6 +206,93 @@ export async function deleteMilestone(
 
 	if (!response.data) {
 		throw new ApiRequestError("Could not delete the milestone.", 0);
+	}
+
+	return response.data;
+}
+
+/** Lock the milestone. Owner or admin only. */
+export async function lockMilestone(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	reason?: string | null,
+): Promise<MilestoneDetailResponse> {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.lock.post(reason ? { reason } : {});
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not lock the milestone."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not lock the milestone.", 0);
+	}
+
+	return response.data;
+}
+
+/** Unlock the milestone. Owner or admin only. */
+export async function unlockMilestone(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	reason?: string | null,
+): Promise<MilestoneDetailResponse> {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.unlock.post(reason ? { reason } : {});
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not unlock the milestone."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not unlock the milestone.", 0);
+	}
+
+	return response.data;
+}
+
+/**
+ * Tick one scope checklist item.
+ *
+ * Its own endpoint because it is the one milestone write that survives the
+ * lock. Returns the updated detail, so the caller can replace its cache.
+ */
+export async function toggleMilestoneChecklist(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	itemId: string,
+	checked: boolean,
+): Promise<MilestoneDetailResponse> {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.checklist.patch({ itemId, checked });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not update the checklist."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not update the checklist.", 0);
 	}
 
 	return response.data;

@@ -18,6 +18,7 @@ import { Elysia, t } from "elysia";
 import {
 	MILESTONE_ASSIGNEE_MAX,
 	MILESTONE_ESTIMATE_MAX,
+	MILESTONE_NOTE_MAX,
 	MILESTONE_STATUSES,
 	MILESTONE_TITLE_MAX,
 } from "../auth/milestone-permissions";
@@ -37,10 +38,13 @@ import {
 	deleteMilestone,
 	getMilestone,
 	listMilestones,
+	lockMilestone,
 	type MilestoneListQuery,
 	type MilestoneSummary,
 	type MilestoneTimelineComment,
 	setMilestoneAssignees,
+	toggleMilestoneChecklist,
+	unlockMilestone,
 	updateMilestone,
 } from "../services/milestone.service";
 
@@ -94,6 +98,11 @@ const assigneeField = t.Optional(
 	t.Array(t.String({ minLength: 1, maxLength: 64 }), {
 		maxItems: MILESTONE_ASSIGNEE_MAX,
 	}),
+);
+
+/** An optional prose note attached to a timeline event. */
+const noteField = t.Optional(
+	t.Union([t.String({ maxLength: MILESTONE_NOTE_MAX }), t.Null()]),
 );
 
 /**
@@ -248,6 +257,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 			body: t.Object({
 				title: t.String({ minLength: 1, maxLength: MILESTONE_TITLE_MAX }),
 				status: t.Optional(statusField),
+				statusNote: noteField,
 				description: descriptionField,
 				startDate: dateField,
 				dueDate: dateField,
@@ -317,6 +327,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					t.String({ minLength: 1, maxLength: MILESTONE_TITLE_MAX }),
 				),
 				status: t.Optional(statusField),
+				statusNote: noteField,
 				description: descriptionField,
 				startDate: dateField,
 				dueDate: dateField,
@@ -367,6 +378,115 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					maxItems: MILESTONE_ASSIGNEE_MAX,
 				}),
 			}),
+		},
+	)
+	/**
+	 * Flip one scope checklist item.
+	 *
+	 * This is the one milestone write the lock does not stop: ticking an item is
+	 * progress against the agreed document, not a change to its text.
+	 */
+	.patch(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/checklist",
+		async ({ tenant, status, params, body }) => {
+			try {
+				const result = await toggleMilestoneChecklist(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					body,
+				);
+
+				// A tick changes the body but not the excerpt, so the broadcast
+				// carries its own field name. A reader with the locked scope open
+				// refetches instead of showing a stale checkbox.
+				publishMilestoneUpdated(
+					params.projectId,
+					result.milestone,
+					["checklist"],
+					[],
+				);
+
+				return result;
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not update the checklist."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: milestoneParams,
+			body: t.Object({
+				itemId: t.String({ minLength: 1, maxLength: 64 }),
+				checked: t.Boolean(),
+			}),
+		},
+	)
+	/** Lock the milestone. Owner or admin only. */
+	.post(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/lock",
+		async ({ tenant, status, params, body }) => {
+			try {
+				const result = await lockMilestone(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					body.reason,
+				);
+				const { changed, timeline, ...detail } = result;
+
+				publishMilestoneUpdated(
+					params.projectId,
+					detail.milestone,
+					changed,
+					timeline,
+				);
+
+				return detail;
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not lock the milestone."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: milestoneParams,
+			body: t.Object({ reason: noteField }),
+		},
+	)
+	/** Unlock the milestone. Owner or admin only. The reason is optional. */
+	.post(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/unlock",
+		async ({ tenant, status, params, body }) => {
+			try {
+				const result = await unlockMilestone(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					body.reason,
+				);
+				const { changed, timeline, ...detail } = result;
+
+				publishMilestoneUpdated(
+					params.projectId,
+					detail.milestone,
+					changed,
+					timeline,
+				);
+
+				return detail;
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not unlock the milestone."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: milestoneParams,
+			body: t.Object({ reason: noteField }),
 		},
 	)
 	/** Permanently delete a milestone. */

@@ -32,6 +32,10 @@ import {
 import { cn } from "cn";
 import {
 	AlertTriangleIcon,
+	ChevronDownIcon,
+	ChevronUpIcon,
+	LockIcon,
+	LockOpenIcon,
 	RefreshCwIcon,
 	Trash2Icon,
 	XIcon,
@@ -44,8 +48,11 @@ import {
 import { UserAvatar } from "#/components/user-avatar";
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
-import { formatRelativeTime } from "#/lib/date";
+import { formatDate, formatRelativeTime } from "#/lib/date";
 import type { MilestoneDetail, MilestoneViewer } from "./api";
+import { ChangesTab } from "./changes/changes-tab";
+import { OverviewChanges } from "./changes/overview-changes";
+import { useRealtimeChangeRequests } from "./changes/realtime";
 import type { Comment } from "./comments/api";
 import { CommentTab } from "./comments/comment-tab";
 import { CommentThreadTab } from "./comments/comment-thread-tab";
@@ -60,12 +67,15 @@ import {
 import {
 	useMilestoneDetail,
 	useSetMilestoneAssignees,
+	useSetMilestoneLock,
+	useToggleMilestoneChecklist,
 	useUpdateMilestone,
 } from "./hooks";
 import {
 	type AssignableMember,
 	MilestoneAssigneeField,
 } from "./milestone-assignee-field";
+import { MilestoneBlockedReasonDialog } from "./milestone-blocked-reason-dialog";
 import { MilestoneDateRangeField } from "./milestone-date-range-field";
 import { MilestoneDeleteDialog } from "./milestone-delete-dialog";
 import { MilestoneEstimateField } from "./milestone-estimate-field";
@@ -87,7 +97,12 @@ type SaveState = "idle" | "saving" | "saved" | "error";
  * The first two are fixed. Every additional key is a focused comment tab whose
  * id follows the `comment:` prefix.
  */
-export type MilestoneTabKey = "overview" | "comments" | `comment:${string}`;
+export type MilestoneTabKey =
+	| "overview"
+	| "scope"
+	| "changes"
+	| "comments"
+	| `comment:${string}`;
 
 /** A small labelled cell in the metadata grid. */
 function MetaField({
@@ -110,6 +125,62 @@ function MetaField({
 }
 
 /**
+ * The save state as text, so it can sit in a footer or beside a hint without
+ * repeating the same live region in two places.
+ */
+function SaveStateText({
+	saveState,
+	saveError,
+	className,
+}: {
+	saveState: SaveState;
+	saveError: string | null;
+	className?: string;
+}) {
+	return (
+		<span
+			aria-live="polite"
+			className={cn(
+				saveState === "error" ? "text-danger" : "text-app-text-muted",
+				className,
+			)}
+		>
+			{saveState === "saving" && "Saving..."}
+			{saveState === "saved" && "Saved"}
+			{saveState === "error" && (saveError ?? "Could not save.")}
+		</span>
+	);
+}
+
+/**
+ * The save indicator for the fields that autosave.
+ *
+ * Why its own component: the metadata form and the scope document both need it,
+ * and repeating the live region in two tabs is how the two copies drift.
+ */
+function SaveStatus({
+	saveState,
+	saveError,
+	onRetry,
+}: {
+	saveState: SaveState;
+	saveError: string | null;
+	onRetry: () => void;
+}) {
+	return (
+		<div className="flex min-h-9 items-center justify-between gap-2 border-t border-app-border px-4 py-1.5 text-xs">
+			<SaveStateText saveState={saveState} saveError={saveError} />
+
+			{saveState === "error" && (
+				<Button size="xs" variant="outline" onPress={onRetry}>
+					Retry
+				</Button>
+			)}
+		</div>
+	);
+}
+
+/**
  * The pane with the query states folded in.
  *
  * `onReload` remounts the content through the parent's key, which is the only
@@ -118,6 +189,7 @@ function MetaField({
 export function MilestoneDetailPanel({
 	orgSlug,
 	organizationId,
+	projectSlug,
 	projectId,
 	milestoneId,
 	members,
@@ -129,6 +201,7 @@ export function MilestoneDetailPanel({
 }: {
 	orgSlug: string;
 	organizationId: string;
+	projectSlug: string;
 	projectId: string;
 	milestoneId: string | null;
 	members: AssignableMember[];
@@ -199,6 +272,7 @@ export function MilestoneDetailPanel({
 		<MilestoneDetailContent
 			orgSlug={orgSlug}
 			organizationId={organizationId}
+			projectSlug={projectSlug}
 			projectId={projectId}
 			milestone={query.data.milestone}
 			viewer={query.data.viewer}
@@ -216,6 +290,7 @@ export function MilestoneDetailPanel({
 function MilestoneDetailContent({
 	orgSlug,
 	organizationId,
+	projectSlug,
 	projectId,
 	milestone,
 	viewer,
@@ -228,6 +303,7 @@ function MilestoneDetailContent({
 }: {
 	orgSlug: string;
 	organizationId: string;
+	projectSlug: string;
 	projectId: string;
 	milestone: MilestoneDetail;
 	viewer: MilestoneViewer;
@@ -240,6 +316,19 @@ function MilestoneDetailContent({
 }) {
 	const update = useUpdateMilestone(orgSlug, projectId);
 	const setAssignees = useSetMilestoneAssignees(orgSlug, projectId);
+	const setLock = useSetMilestoneLock(orgSlug, projectId);
+	const toggleChecklist = useToggleMilestoneChecklist(orgSlug, projectId);
+
+	/*
+	 * A milestone lock is a separate flag from an archived project. The
+	 * discussion only stops when the project is archived; the milestone lock
+	 * leaves comments and change requests open.
+	 */
+	const locked = milestone.lockedAt !== null;
+	const canEditFields = viewer.canWrite && !locked;
+	// Status and assignees stay available to staff while the document is
+	// locked. A client still cannot touch either.
+	const canEditLifecycle = viewer.canWrite;
 
 	/*
 	 * One subscription covers every comment surface of this milestone: the main
@@ -252,7 +341,15 @@ function MilestoneDetailContent({
 		projectId,
 		milestoneId: milestone.id,
 		viewerId: viewer.userId,
-		locked: viewer.locked,
+		archived: viewer.archived,
+	});
+
+	// One subscription for the Changes tab, so the open badge follows a
+	// request raised or decided in another tab.
+	useRealtimeChangeRequests({
+		orgSlug,
+		projectId,
+		milestoneId: milestone.id,
 	});
 
 	const [title, setTitle] = useState(milestone.title);
@@ -264,9 +361,20 @@ function MilestoneDetailContent({
 	const [assigneeIds, setAssigneeIds] = useState(
 		milestone.assignees.map((assignee) => assignee.userId),
 	);
+	/*
+	 * The scope draft lives here, not inside the editor, so the Overview and
+	 * the Scope tab can hand the same text to one editor at a time. It is a
+	 * ref on purpose: typing updates the editor and the save without
+	 * re-rendering the whole detail pane on every keystroke.
+	 */
+	const scopeDraftRef = useRef<unknown[]>(milestone.description);
 	const [saveState, setSaveState] = useState<SaveState>("idle");
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
+	const [blockedOpen, setBlockedOpen] = useState(false);
+	// The Overview starts with a short formatted preview and can expand to the
+	// whole document without leaving the tab.
+	const [scopeExpanded, setScopeExpanded] = useState(false);
 	const [externalUpdate, setExternalUpdate] = useState(false);
 	// The Comments panel is only mounted after its first visit. Once open it
 	// stays mounted, so a draft and the list position survive a tab switch
@@ -298,8 +406,6 @@ function MilestoneDetailContent({
 	// A remote title must not overwrite what the user is typing right now.
 	const titleFocused = useRef(false);
 
-	const canWrite = viewer.canWrite;
-
 	/*
 	 * Only the rich text body is missing from the broadcast. Every other field
 	 * is patched into the detail cache, so a remote change to one of those needs
@@ -312,6 +418,15 @@ function MilestoneDetailContent({
 		if (!payload || payload.kind !== "updated") return;
 		if (payload.milestone.id !== milestone.id) return;
 		if (payload.milestone.updatedBy === viewer.userId) return;
+
+		// A locked scope is rendered from a static copy of the body. A remote
+		// tick changes that copy, so the pane reloads instead of showing a
+		// checkbox that no longer matches the server.
+		if (payload.changed.includes("checklist")) {
+			onReload();
+			return;
+		}
+
 		if (!payload.changed.includes("description")) return;
 
 		setExternalUpdate(true);
@@ -419,14 +534,40 @@ function MilestoneDetailContent({
 		);
 	}, 800);
 
+	/**
+	 * Keep the shared draft and schedule the autosave.
+	 *
+	 * Both the Overview and the Scope tab call this, so whichever editor is
+	 * mounted writes to the same draft and the same save. The draft is a ref,
+	 * so a keystroke does not re-render the rest of the pane.
+	 */
+	function changeScope(value: unknown[]) {
+		scopeDraftRef.current = value;
+		saveBody.schedule(value);
+	}
+
 	function changeStatus(next: MilestoneStatus) {
+		// Blocked is the one status that needs a reason, so the select opens a
+		// prompt instead of saving immediately. Every other status saves at once.
+		if (next === "blocked" && status !== "blocked") {
+			setBlockedOpen(true);
+			return;
+		}
+
+		persistStatus(next);
+	}
+
+	function persistStatus(next: MilestoneStatus, statusNote?: string) {
 		const previous = status;
 		setStatus(next);
 
 		void save(() =>
 			update.mutateAsync({
 				milestoneId: milestone.id,
-				patch: { status: next },
+				patch: {
+					status: next,
+					...(statusNote ? { statusNote } : {}),
+				},
 			}),
 		).then((ok) => {
 			if (!ok) setStatus(previous);
@@ -477,6 +618,23 @@ function MilestoneDetailContent({
 		);
 	}
 
+	/** Lock or unlock the milestone. The cache is patched by the mutation. */
+	function toggleLock() {
+		setLock.mutate({ milestoneId: milestone.id, locked: !locked });
+	}
+
+	/** Tick a scope item while the milestone is locked. */
+	async function toggleScopeChecklistItem(
+		itemId: string,
+		checked: boolean,
+	): Promise<void> {
+		await toggleChecklist.mutateAsync({
+			milestoneId: milestone.id,
+			itemId,
+			checked,
+		});
+	}
+
 	async function retryFailedSave() {
 		const task = retryRef.current;
 		if (!task) return;
@@ -522,10 +680,21 @@ function MilestoneDetailContent({
 	);
 	const effectiveSelectedTab: MilestoneTabKey =
 		selectedTab === "overview" ||
+		selectedTab === "scope" ||
+		selectedTab === "changes" ||
 		selectedTab === "comments" ||
 		openTabKeys.has(selectedTab)
 			? selectedTab
 			: "comments";
+
+	/*
+	 * The Overview can edit the scope in place when it is expanded and the
+	 * viewer may write. It shares the draft and the save with the Scope tab, so
+	 * only one editor is mounted at a time.
+	 */
+	const overviewScopeVisible = effectiveSelectedTab === "overview";
+	const overviewScopeEditable =
+		overviewScopeVisible && scopeExpanded && canEditFields;
 
 	// Reveal the active comment tab when the strip is wider than the pane.
 	useEffect(() => {
@@ -541,7 +710,7 @@ function MilestoneDetailContent({
 			{/* Header */}
 			<header className="flex items-start gap-2 border-b border-app-border p-4">
 				<div className="flex min-w-0 flex-1 flex-col gap-1">
-					{canWrite ? (
+					{canEditFields ? (
 						<Input
 							value={title}
 							maxLength={MILESTONE_TITLE_MAX}
@@ -581,6 +750,12 @@ function MilestoneDetailContent({
 
 					<div className="flex flex-wrap items-center gap-2 text-xs text-app-text-muted">
 						<MilestoneStatusBadge status={status} />
+						{locked && (
+							<span className="inline-flex items-center gap-1 bg-app-selected px-1.5 py-0.5 font-semibold text-app-text uppercase tracking-widest text-[0.6rem]">
+								<LockIcon className="size-3" aria-hidden />
+								Locked
+							</span>
+						)}
 						{milestone.updatedByName && (
 							<span>
 								Edited {formatRelativeTime(milestone.updatedAt)} by{" "}
@@ -594,7 +769,18 @@ function MilestoneDetailContent({
 				</div>
 
 				<div className="flex shrink-0 items-center gap-1">
-					{canWrite && (
+					{viewer.canLock && (
+						<Button
+							variant="ghost"
+							size="sm"
+							loading={setLock.isPending}
+							onPress={toggleLock}
+						>
+							{locked ? <LockOpenIcon aria-hidden /> : <LockIcon aria-hidden />}
+							{locked ? "Unlock" : "Lock"}
+						</Button>
+					)}
+					{canEditFields && (
 						<Button
 							variant="ghost"
 							size="icon-sm"
@@ -616,6 +802,18 @@ function MilestoneDetailContent({
 					)}
 				</div>
 			</header>
+
+			{locked && (
+				<div className="flex flex-wrap items-center gap-2 border-b border-warning bg-warning-bg px-4 py-2 text-xs text-warning">
+					<LockIcon className="size-3.5 shrink-0" aria-hidden />
+					<span>
+						Locked by {milestone.lockedByName ?? "an owner"} on{" "}
+						{formatDate(milestone.lockedAt ?? milestone.updatedAt)}. The scope,
+						title, dates and estimate are read-only. Status and assignees can
+						still change.
+					</span>
+				</div>
+			)}
 
 			{/*
 			 * Both panels are force mounted. Switching to Comments must not
@@ -639,6 +837,20 @@ function MilestoneDetailContent({
 				>
 					<TabsTrigger id="overview" className="flex-none cursor-pointer">
 						Overview
+					</TabsTrigger>
+					<TabsTrigger id="scope" className="flex-none cursor-pointer">
+						Scope
+					</TabsTrigger>
+					<TabsTrigger
+						id="changes"
+						className="flex-none cursor-pointer gap-1.5"
+					>
+						Changes
+						{milestone.openChangeRequestCount > 0 && (
+							<span className="bg-app-selected px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-app-text">
+								{milestone.openChangeRequestCount}
+							</span>
+						)}
 					</TabsTrigger>
 					<TabsTrigger id="comments" className="flex-none cursor-pointer">
 						Comments
@@ -722,7 +934,7 @@ function MilestoneDetailContent({
 									<MilestoneStatusSelect
 										status={status}
 										onChange={changeStatus}
-										readOnly={!canWrite}
+										readOnly={!canEditLifecycle}
 									/>
 								</MetaField>
 
@@ -730,7 +942,7 @@ function MilestoneDetailContent({
 									<MilestoneEstimateField
 										minutes={milestone.estimateMinutes}
 										onCommit={changeEstimate}
-										readOnly={!canWrite}
+										readOnly={!canEditFields}
 									/>
 								</MetaField>
 
@@ -739,7 +951,7 @@ function MilestoneDetailContent({
 										startDate={dates.startDate}
 										dueDate={dates.dueDate}
 										onChange={changeDates}
-										readOnly={!canWrite}
+										readOnly={!canEditFields}
 									/>
 								</MetaField>
 
@@ -749,40 +961,125 @@ function MilestoneDetailContent({
 										selected={assigneeIds}
 										assignees={milestone.assignees}
 										onChange={changeAssignees}
-										readOnly={!canWrite}
+										readOnly={!canEditLifecycle}
 									/>
 								</MetaField>
 							</div>
 
-							{/* Body */}
+							{/* Scope summary. The document itself lives on the Scope tab. */}
 							<section className="flex flex-col gap-2">
-								<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
-									Details
-								</h3>
+								<div className="flex items-center justify-between gap-2">
+									<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
+										Scope
+									</h3>
+									<div className="flex items-center gap-1">
+										{(canEditFields ||
+											milestone.description.length > 0 ||
+											scopeDraftRef.current.length > 0) && (
+											<Button
+												size="xs"
+												variant="ghost"
+												aria-expanded={scopeExpanded}
+												onPress={() => setScopeExpanded((current) => !current)}
+											>
+												{scopeExpanded ? (
+													<ChevronUpIcon aria-hidden />
+												) : (
+													<ChevronDownIcon aria-hidden />
+												)}
+												{scopeExpanded ? "Collapse" : "Expand"}
+											</Button>
+										)}
+										<Button
+											size="xs"
+											variant="outline"
+											onPress={() => onTabChange("scope")}
+										>
+											Open scope
+										</Button>
+									</div>
+								</div>
 
-								<div className="border-y border-app-border">
-									{canWrite ? (
+								{overviewScopeEditable ? (
+									/*
+									 * Editing in the Overview uses the same draft and save as the
+									 * Scope tab. The box grows with the text instead of clamping.
+									 */
+									<div className="border border-app-border bg-app-panel-subtle">
 										<MilestoneEditor
-											key={milestone.id}
-											initialValue={milestone.description}
-											onChange={(value) => saveBody.schedule(value)}
-											ariaLabel="Milestone details"
+											key={`overview-${milestone.id}`}
+											initialValue={scopeDraftRef.current}
+											onChange={changeScope}
+											ariaLabel="Milestone scope"
 											organizationId={organizationId}
 											organizationSlug={orgSlug}
 											projectId={projectId}
 										/>
-									) : milestone.description.length > 0 ? (
+									</div>
+								) : (canEditFields
+										? scopeDraftRef.current.length
+										: milestone.description.length) === 0 ? (
+									<p className="border border-dashed border-app-border p-3 text-sm text-app-text-muted">
+										No scope written yet.
+									</p>
+								) : overviewScopeVisible ? (
+									/*
+									 * The collapsed state still renders the real document, so
+									 * formatting shows instead of a plain excerpt. It is
+									 * clamped to a few lines and the expanded state removes
+									 * the clamp and reveals everything.
+									 */
+									<div
+										className={cn(
+											"border border-app-border bg-app-panel-subtle",
+											scopeExpanded ? "block" : "max-h-28 overflow-hidden",
+										)}
+									>
 										<MilestoneEditorStatic
-											value={milestone.description}
-											ariaLabel="Milestone details"
+											key={`overview-${milestone.id}-${milestone.updatedAt}`}
+											value={
+												canEditFields
+													? scopeDraftRef.current
+													: milestone.description
+											}
+											ariaLabel="Scope summary"
 											organizationSlug={orgSlug}
 										/>
-									) : (
-										<p className="p-3 text-sm text-app-text-muted">
-											No details yet.
-										</p>
-									)}
+									</div>
+								) : (
+									<p className="line-clamp-4 border border-app-border bg-app-panel-subtle p-3 text-sm text-app-text">
+										{milestone.excerpt}
+									</p>
+								)}
+							</section>
+
+							{/* Changes summary. Every request is a card, and the tab holds the detail. */}
+							<section className="flex flex-col gap-2">
+								<div className="flex items-center justify-between gap-2">
+									<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
+										Changes
+										{milestone.openChangeRequestCount > 0 && (
+											<span className="ml-2 bg-info-bg px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-info">
+												{milestone.openChangeRequestCount} open
+											</span>
+										)}
+									</h3>
+									<Button
+										size="xs"
+										variant="outline"
+										onPress={() => onTabChange("changes")}
+									>
+										Open changes
+									</Button>
 								</div>
+
+								<OverviewChanges
+									orgSlug={orgSlug}
+									projectId={projectId}
+									milestoneId={milestone.id}
+									active={effectiveSelectedTab === "overview"}
+									onOpen={() => onTabChange("changes")}
+								/>
 							</section>
 
 							{/* Authorship */}
@@ -801,30 +1098,96 @@ function MilestoneDetailContent({
 						</div>
 					</ScrollArea>
 
-					{/* Save state. A live region, so a screen reader hears the
-					    result without the visual line having to move. */}
-					<div className="flex min-h-9 items-center justify-between gap-2 border-t border-app-border px-4 py-1.5 text-xs">
-						<span
-							aria-live="polite"
-							className={cn(
-								saveState === "error" ? "text-danger" : "text-app-text-muted",
-							)}
-						>
-							{saveState === "saving" && "Saving..."}
-							{saveState === "saved" && "Saved"}
-							{saveState === "error" && (saveError ?? "Could not save.")}
-						</span>
+					<SaveStatus
+						saveState={saveState}
+						saveError={saveError}
+						onRetry={() => void retryFailedSave()}
+					/>
+				</TabsContent>
 
-						{saveState === "error" && retryRef.current && (
-							<Button
-								size="xs"
-								variant="outline"
-								onPress={() => void retryFailedSave()}
-							>
-								Retry
-							</Button>
-						)}
-					</div>
+				<TabsContent
+					id="scope"
+					shouldForceMount
+					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
+				>
+					<ScrollArea className="min-h-0 flex-1">
+						<div className="flex min-h-full flex-col gap-2 p-4">
+							<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-app-text-muted">
+								<p>
+									{locked
+										? "This milestone is locked. Staff can still tick checklist progress."
+										: canEditFields
+											? "Write the agreed work here. Checklist progress is saved as you tick items."
+											: "The agreed work for this milestone."}
+								</p>
+								<SaveStateText
+									saveState={saveState}
+									saveError={saveError}
+									className="shrink-0"
+								/>
+							</div>
+
+							<div className="flex min-h-0 flex-1 flex-col border-y border-app-border">
+								{effectiveSelectedTab !== "scope" ? null : canEditFields ? (
+									<MilestoneEditor
+										key={`scope-${milestone.id}`}
+										initialValue={scopeDraftRef.current}
+										onChange={changeScope}
+										ariaLabel="Milestone scope"
+										organizationId={organizationId}
+										organizationSlug={orgSlug}
+										projectId={projectId}
+										// Use the pane for writing instead of a short box.
+										contentClassName="min-h-[60svh]"
+									/>
+								) : milestone.description.length > 0 ? (
+									/*
+									 * The key remounts the static render when the stored body
+									 * changes, so a tick lands instead of leaving a checkbox
+									 * that disagrees with the server.
+									 */
+									<MilestoneEditorStatic
+										key={`${milestone.id}-${milestone.updatedAt}`}
+										value={milestone.description}
+										ariaLabel="Milestone scope"
+										organizationSlug={orgSlug}
+										checklist={
+											locked && viewer.canTickChecklist
+												? {
+														disabled: toggleChecklist.isPending,
+														onToggle: toggleScopeChecklistItem,
+													}
+												: undefined
+										}
+									/>
+								) : (
+									<p className="p-3 text-sm text-app-text-muted">
+										No scope written yet.
+									</p>
+								)}
+							</div>
+						</div>
+					</ScrollArea>
+				</TabsContent>
+
+				<TabsContent
+					id="changes"
+					shouldForceMount
+					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
+				>
+					<ChangesTab
+						orgSlug={orgSlug}
+						organizationId={organizationId}
+						projectSlug={projectSlug}
+						projectId={projectId}
+						milestoneId={milestone.id}
+						milestoneLocked={locked}
+						archived={viewer.archived}
+						canCreate={viewer.canComment}
+						canDecide={viewer.canWrite}
+						members={members}
+						active={effectiveSelectedTab === "changes"}
+					/>
 				</TabsContent>
 
 				<TabsContent
@@ -840,7 +1203,7 @@ function MilestoneDetailContent({
 							milestoneId={milestone.id}
 							viewerId={viewer.userId}
 							canComment={viewer.canComment}
-							locked={viewer.locked}
+							archived={viewer.archived}
 							active={effectiveSelectedTab === "comments"}
 							onOpenCommentTab={openCommentTab}
 						/>
@@ -862,7 +1225,7 @@ function MilestoneDetailContent({
 							viewerId={viewer.userId}
 							commentId={tab.id}
 							canComment={viewer.canComment}
-							locked={viewer.locked}
+							archived={viewer.archived}
 							active={effectiveSelectedTab === `comment:${tab.id}`}
 							onClose={() => closeCommentTab(tab.id)}
 						/>
@@ -870,7 +1233,7 @@ function MilestoneDetailContent({
 				))}
 			</Tabs>
 
-			{canWrite && (
+			{canEditFields && (
 				<MilestoneDeleteDialog
 					orgSlug={orgSlug}
 					projectId={projectId}
@@ -881,6 +1244,13 @@ function MilestoneDetailContent({
 					onDeleted={onDeleted}
 				/>
 			)}
+
+			<MilestoneBlockedReasonDialog
+				isOpen={blockedOpen}
+				onOpenChange={setBlockedOpen}
+				title={milestone.title}
+				onConfirm={(reason) => persistStatus("blocked", reason)}
+			/>
 		</section>
 	);
 }

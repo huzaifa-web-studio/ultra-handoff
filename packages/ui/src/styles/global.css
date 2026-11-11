@@ -110,8 +110,12 @@
 	 */
 	--color-milestone-todo: var(--milestone-todo);
 	--color-milestone-todo-bg: var(--milestone-todo-bg);
-	--color-milestone-in-progress: var(--milestone-in-progress);
-	--color-milestone-in-progress-bg: var(--milestone-in-progress-bg);
+	--color-milestone-in-development: var(--milestone-in-development);
+	--color-milestone-in-development-bg: var(--milestone-in-development-bg);
+	--color-milestone-in-testing: var(--milestone-in-testing);
+	--color-milestone-in-testing-bg: var(--milestone-in-testing-bg);
+	--color-milestone-in-review: var(--milestone-in-review);
+	--color-milestone-in-review-bg: var(--milestone-in-review-bg);
 	--color-milestone-blocked: var(--milestone-blocked);
 	--color-milestone-blocked-bg: var(--milestone-blocked-bg);
 	--color-milestone-done: var(--milestone-done);
@@ -186,8 +190,12 @@
 	/* Milestone statuses (AA contrast on their own background) */
 	--milestone-todo: #333f38;
 	--milestone-todo-bg: #e4e2d8;
-	--milestone-in-progress: #386b85;
-	--milestone-in-progress-bg: #e4eff4;
+	--milestone-in-development: #386b85;
+	--milestone-in-development-bg: #e4eff4;
+	--milestone-in-testing: #7a5a12;
+	--milestone-in-testing-bg: #f4e9c9;
+	--milestone-in-review: #2f6b6b;
+	--milestone-in-review-bg: #e0f0ef;
 	--milestone-blocked: #b84242;
 	--milestone-blocked-bg: #fbe5e1;
 	--milestone-done: #2f7651;

@@ -24,6 +24,8 @@
  * Used by: features/milestones/milestone-detail-panel.tsx.
  */
 
+import { ListItemPlugin } from "@platejs/list-classic/react";
+import { cn } from "cn";
 import { ElementApi, PathApi, RangeApi } from "platejs";
 import {
 	Plate,
@@ -42,6 +44,10 @@ import {
 } from "react";
 import { LinkPreviewProvider } from "#/features/link-previews/link-preview-context";
 import { extractLinkUrls } from "#/features/link-previews/utils";
+import {
+	CommentChecklistProvider,
+	CommentStaticListItemElement,
+} from "#/features/milestones/comments/comment-checklist";
 import { useMentionCandidates } from "#/features/milestones/comments/hooks";
 import { useDebouncedValue } from "#/hooks/use-debounced-value";
 import { BlockMenuProvider } from "./editor-draggable";
@@ -127,6 +133,7 @@ export function MilestoneEditor({
 	organizationId,
 	organizationSlug,
 	projectId,
+	contentClassName,
 }: {
 	initialValue: unknown[];
 	onChange: (value: unknown[]) => void;
@@ -137,6 +144,8 @@ export function MilestoneEditor({
 	organizationSlug?: string;
 	/** Project that scopes the visible mention suggestions. */
 	projectId: string;
+	/** Extra classes for the editable surface, for a taller writing area. */
+	contentClassName?: string;
 }) {
 	// Created once for this mounted instance. The parent key handles resets.
 	const editor = usePlateEditor({
@@ -350,7 +359,10 @@ export function MilestoneEditor({
 									//
 									// The left padding is the block gutter: 44px holds the insert
 									// button and the drag handle.
-									className="min-h-40 w-full cursor-text pl-11 pr-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100"
+									className={cn(
+										"min-h-40 w-full cursor-text pl-11 pr-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text outline-none [&_[data-slate-placeholder]]:text-app-text-muted [&_[data-slate-placeholder]]:opacity-100",
+										contentClassName,
+									)}
 									disableDefaultStyles
 									{...drop.dropProps}
 									onKeyUp={refreshMention}
@@ -390,27 +402,63 @@ export function MilestoneEditor({
 }
 
 /**
+ * The static plugin set with an interactive checklist item.
+ *
+ * Built once at module level because `usePlateEditor` only reads the array on
+ * mount. Only the `li` renderer changes; every other static renderer stays the
+ * same, so the locked scope looks identical to the read only view a client sees.
+ */
+const interactiveStaticEditorPlugins = [
+	...milestoneStaticEditorPlugins.filter((plugin) => plugin.key !== "li"),
+	ListItemPlugin.withComponent(CommentStaticListItemElement),
+];
+
+/**
  * A read only render of a stored body.
  *
  * `PlateStatic` renders the same node components without an editable surface,
  * so a client sees exactly the formatting the author used.
+ *
+ * The checklist variant swaps only the list item renderer for one whose
+ * checkbox stays interactive. That is how the scope stays readable while
+ * locked but progress can still be ticked. The provider is the same one the
+ * comment surface uses, because the rule is the same: a checkbox is a targeted
+ * write, not an editor.
  */
 export function MilestoneEditorStatic({
 	value,
 	ariaLabel,
 	organizationSlug,
+	checklist,
 }: {
 	value: unknown[];
 	ariaLabel: string;
 	/** Where the previews are read from. Omit to render links without cards. */
 	organizationSlug?: string;
+	/** Provided when this viewer may tick checklist items despite the lock. */
+	checklist?: {
+		disabled: boolean;
+		onToggle: (itemId: string, checked: boolean) => Promise<void>;
+	};
 }) {
 	const [initialValue] = useState(() => toEditorValue(value));
 	const [previewUrls] = useState(() => extractLinkUrls(value));
 	const editor = usePlateEditor({
-		plugins: milestoneStaticEditorPlugins,
+		plugins: checklist
+			? interactiveStaticEditorPlugins
+			: milestoneStaticEditorPlugins,
 		value: initialValue,
 	});
+
+	const body = (
+		<PlateStatic
+			editor={editor}
+			aria-label={ariaLabel}
+			// Match the editable surface, so a body with deliberate spacing is
+			// shown exactly as it was written.
+			className="px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text"
+		/>
+	);
 
 	return (
 		<LinkPreviewProvider orgSlug={organizationSlug ?? ""} urls={previewUrls}>
@@ -418,13 +466,17 @@ export function MilestoneEditorStatic({
 				<MentionProvider
 					value={{ orgSlug: organizationSlug ?? "", projectId: "" }}
 				>
-					<PlateStatic
-						editor={editor}
-						aria-label={ariaLabel}
-						// Match the editable surface, so a body with deliberate spacing is
-						// shown exactly as it was written.
-						className="px-3 py-3 text-sm break-words whitespace-pre-wrap text-app-text"
-					/>
+					{checklist ? (
+						<CommentChecklistProvider value={checklist}>
+							<Plate editor={editor} readOnly>
+								{body}
+							</Plate>
+						</CommentChecklistProvider>
+					) : (
+						<Plate editor={editor} readOnly>
+							{body}
+						</Plate>
+					)}
 				</MentionProvider>
 			</EditorStaticProvider>
 		</LinkPreviewProvider>

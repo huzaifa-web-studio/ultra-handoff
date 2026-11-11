@@ -32,12 +32,12 @@ import { applyCommentEvent } from "./hooks";
 export function toViewerComment(
 	comment: RealtimeComment,
 	viewerId: string,
-	locked: boolean,
+	archived: boolean,
 ): Comment {
 	const editable =
 		comment.kind === "comment" &&
 		comment.deletedAt === null &&
-		!locked &&
+		!archived &&
 		comment.author?.id === viewerId;
 
 	return { ...comment, canEdit: editable, canDelete: editable };
@@ -110,13 +110,13 @@ export function useRealtimeComments({
 	projectId,
 	milestoneId,
 	viewerId,
-	locked,
+	archived,
 }: {
 	orgSlug: string;
 	projectId: string;
 	milestoneId: string;
 	viewerId: string;
-	locked: boolean;
+	archived: boolean;
 }): void {
 	const queryClient = useQueryClient();
 
@@ -135,7 +135,7 @@ export function useRealtimeComments({
 			projectId,
 			{
 				milestoneId,
-				comment: toViewerComment(payload.comment, viewerId, locked),
+				comment: toViewerComment(payload.comment, viewerId, archived),
 				total: payload.total,
 			},
 			kind,

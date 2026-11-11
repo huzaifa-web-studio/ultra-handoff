@@ -39,6 +39,8 @@ import { MilestoneEstimateInput } from "./milestone-estimate-input";
 import { MilestoneStatusSelect } from "./milestone-status-select";
 import {
 	estimateHint,
+	estimateInputValue,
+	MILESTONE_NOTE_MAX,
 	MILESTONE_TITLE_MAX,
 	type MilestoneStatus,
 	normalizeDay,
@@ -53,6 +55,11 @@ export function MilestoneCreateDialog({
 	isOpen,
 	onOpenChange,
 	onCreated,
+	initialValues,
+	submit,
+	submitLabel = "Create milestone",
+	dialogTitle = "New milestone",
+	dialogDescription = "Define the outcome now. Everything except the title can be changed later.",
 }: {
 	orgSlug: string;
 	organizationId: string;
@@ -61,27 +68,70 @@ export function MilestoneCreateDialog({
 	isOpen: boolean;
 	onOpenChange: (open: boolean) => void;
 	onCreated: (milestone: MilestoneDetail) => void;
+	/** Prefilled values, used when a change request is turned into a milestone. */
+	initialValues?: {
+		title?: string;
+		description?: unknown[];
+		status?: MilestoneStatus;
+		statusNote?: string | null;
+		startDate?: string | null;
+		dueDate?: string | null;
+		estimateMinutes?: number | null;
+		assigneeUserIds?: string[];
+	};
+	/**
+	 * Replaces the create call. The move flow supplies its own endpoint so the
+	 * request is marked moved in the same transaction as the milestone insert.
+	 */
+	submit?: (input: {
+		title: string;
+		description?: unknown[];
+		status: MilestoneStatus;
+		statusNote?: string;
+		startDate: string | null;
+		dueDate: string | null;
+		estimateMinutes: number | null;
+		assigneeUserIds: string[];
+	}) => Promise<{ milestone: MilestoneDetail }>;
+	submitLabel?: string;
+	dialogTitle?: string;
+	dialogDescription?: string;
 }) {
 	const create = useCreateMilestone(orgSlug, projectId);
 
-	const [title, setTitle] = useState("");
-	const [status, setStatus] = useState<MilestoneStatus>("todo");
+	const [title, setTitle] = useState(initialValues?.title ?? "");
+	const [status, setStatus] = useState<MilestoneStatus>(
+		initialValues?.status ?? "todo",
+	);
 	const [dates, setDates] = useState<{
 		startDate: string | null;
 		dueDate: string | null;
-	}>({ startDate: null, dueDate: null });
-	const [estimate, setEstimate] = useState("");
-	const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+	}>({
+		startDate: normalizeDay(initialValues?.startDate),
+		dueDate: normalizeDay(initialValues?.dueDate),
+	});
+	const [estimate, setEstimate] = useState(
+		estimateInputValue(initialValues?.estimateMinutes ?? null),
+	);
+	const [assigneeIds, setAssigneeIds] = useState<string[]>(
+		initialValues?.assigneeUserIds ?? [],
+	);
+	const [statusNote, setStatusNote] = useState(initialValues?.statusNote ?? "");
 	const [error, setError] = useState<string | null>(null);
+	const [submitting, setSubmitting] = useState(false);
 
 	// A ref, not state: the editor emits on every keystroke and nothing in this
 	// form renders the body, so re-rendering the dialog per character would be
 	// pure cost.
-	const descriptionRef = useRef<unknown[]>([]);
+	const descriptionRef = useRef<unknown[]>(initialValues?.description ?? []);
 
 	// Live feedback for the estimate, so an unreadable value is caught before
 	// the submit instead of turning into a failed request.
 	const parsedEstimate = parseEstimateInput(estimate);
+	const pending = submit ? submitting : create.isPending;
+	// A blocked milestone needs a reason, on create as much as on update.
+	const blockedNeedsNote =
+		status === "blocked" && statusNote.trim().length === 0;
 
 	async function handleSubmit(event: React.FormEvent) {
 		event.preventDefault();
@@ -98,23 +148,40 @@ export function MilestoneCreateDialog({
 			return;
 		}
 
+		if (blockedNeedsNote) {
+			setError("Say why this milestone is blocked.");
+			return;
+		}
+
 		setError(null);
 
-		try {
-			const result = await create.mutateAsync({
-				title: trimmed,
-				status,
-				startDate: normalizeDay(dates.startDate),
-				dueDate: normalizeDay(dates.dueDate),
-				estimateMinutes: parsedEstimate.minutes,
-				assigneeUserIds: assigneeIds,
-				...(descriptionRef.current.length > 0
-					? { description: descriptionRef.current }
-					: {}),
-			});
+		const input = {
+			title: trimmed,
+			status,
+			...(status === "blocked" ? { statusNote: statusNote.trim() } : {}),
+			startDate: normalizeDay(dates.startDate),
+			dueDate: normalizeDay(dates.dueDate),
+			estimateMinutes: parsedEstimate.minutes,
+			assigneeUserIds: assigneeIds,
+			...(descriptionRef.current.length > 0
+				? { description: descriptionRef.current }
+				: {}),
+		};
 
-			toast.success("Milestone created.");
-			onCreated(result.milestone);
+		try {
+			if (submit) {
+				setSubmitting(true);
+				const result = await submit(input);
+
+				toast.success("Milestone created.");
+				onCreated(result.milestone);
+			} else {
+				const result = await create.mutateAsync(input);
+
+				toast.success("Milestone created.");
+				onCreated(result.milestone);
+			}
+
 			onOpenChange(false);
 		} catch (createError) {
 			setError(
@@ -122,6 +189,8 @@ export function MilestoneCreateDialog({
 					? createError.message
 					: "Could not create the milestone.",
 			);
+		} finally {
+			setSubmitting(false);
 		}
 	}
 
@@ -129,8 +198,8 @@ export function MilestoneCreateDialog({
 		<Dialog
 			isOpen={isOpen}
 			onOpenChange={onOpenChange}
-			isDismissable={!create.isPending}
-			showCloseButton={!create.isPending}
+			isDismissable={!pending}
+			showCloseButton={!pending}
 			className="sm:max-w-2xl"
 		>
 			<form
@@ -138,11 +207,8 @@ export function MilestoneCreateDialog({
 				onSubmit={handleSubmit}
 			>
 				<DialogHeader>
-					<DialogTitle>New milestone</DialogTitle>
-					<DialogDescription>
-						Define the outcome now. Everything except the title can be changed
-						later.
-					</DialogDescription>
+					<DialogTitle>{dialogTitle}</DialogTitle>
+					<DialogDescription>{dialogDescription}</DialogDescription>
 				</DialogHeader>
 
 				<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
@@ -202,6 +268,30 @@ export function MilestoneCreateDialog({
 						</div>
 					</div>
 
+					{/*
+					 * Blocked is the one status that needs a sentence. The field is
+					 * only rendered when it applies, so the dialog stays quiet
+					 * otherwise.
+					 */}
+					{status === "blocked" && (
+						<div className="flex flex-col gap-1">
+							<label
+								htmlFor="new-milestone-status-note"
+								className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase"
+							>
+								Why is it blocked?
+							</label>
+							<Input
+								id="new-milestone-status-note"
+								value={statusNote}
+								maxLength={MILESTONE_NOTE_MAX}
+								placeholder="For example: waiting on the client's copy."
+								onChange={(event) => setStatusNote(event.target.value)}
+								aria-invalid={blockedNeedsNote}
+							/>
+						</div>
+					)}
+
 					<div className="flex flex-col gap-1">
 						<span className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
 							Dates
@@ -231,7 +321,7 @@ export function MilestoneCreateDialog({
 						</span>
 						<div className="border-y border-app-border">
 							<MilestoneEditor
-								initialValue={[]}
+								initialValue={initialValues?.description ?? []}
 								onChange={(value) => {
 									descriptionRef.current = value;
 								}}
@@ -255,16 +345,20 @@ export function MilestoneCreateDialog({
 						type="button"
 						variant="outline"
 						onPress={() => onOpenChange(false)}
-						isDisabled={create.isPending}
+						isDisabled={pending}
 					>
 						Cancel
 					</Button>
 					<Button
 						type="submit"
-						loading={create.isPending}
-						isDisabled={title.trim().length === 0 || !parsedEstimate.ok}
+						loading={pending}
+						isDisabled={
+							title.trim().length === 0 ||
+							!parsedEstimate.ok ||
+							blockedNeedsNote
+						}
 					>
-						Create milestone
+						{submitLabel}
 					</Button>
 				</DialogFooter>
 			</form>

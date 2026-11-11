@@ -13,12 +13,20 @@
  */
 
 import { APIError } from "better-auth/api";
-import { effectiveProjectRole } from "./project-permissions";
+import { canEditProject, effectiveProjectRole } from "./project-permissions";
 
-/** The five states a milestone can be in. */
+/**
+ * The states a milestone can be in.
+ *
+ * `in_development`, `in_testing` and `in_review` are the working lifecycle.
+ * Status is free to move in any direction, because testing and review both send
+ * work back to development. `blocked` and `cancelled` are the exception states.
+ */
 export const MILESTONE_STATUSES = [
 	"todo",
-	"in_progress",
+	"in_development",
+	"in_testing",
+	"in_review",
 	"blocked",
 	"done",
 	"cancelled",
@@ -29,7 +37,9 @@ export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 /** Labels for the list, the filter chips and toasts. */
 export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
 	todo: "To do",
-	in_progress: "In progress",
+	in_development: "In development",
+	in_testing: "In testing",
+	in_review: "In review",
 	blocked: "Blocked",
 	done: "Done",
 	cancelled: "Cancelled",
@@ -39,11 +49,14 @@ export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
  * Statuses that count as live work.
  *
  * This is the default list filter: finished and abandoned milestones stay out
- * of the way until the user asks for them.
+ * of the way until the user asks for them. Every working state is active; only
+ * `done` and `cancelled` are terminal.
  */
 export const ACTIVE_MILESTONE_STATUSES: readonly MilestoneStatus[] = [
 	"todo",
-	"in_progress",
+	"in_development",
+	"in_testing",
+	"in_review",
 	"blocked",
 ];
 
@@ -67,6 +80,19 @@ export const MILESTONE_ESTIMATE_MAX = 60_000;
 
 /** Most people one milestone can be assigned to in one request. */
 export const MILESTONE_ASSIGNEE_MAX = 25;
+
+/**
+ * Longest free text note attached to a timeline event.
+ *
+ * Used for a blocked reason, a lock or unlock reason and a change request
+ * decision note. Long enough to explain a decision in a sentence or two,
+ * short enough that the timeline stays readable.
+ */
+export const MILESTONE_NOTE_MAX = 500;
+
+/** Message shown whenever a milestone write is attempted while locked. */
+export const MILESTONE_LOCKED_MESSAGE =
+	"This milestone is locked. Ask a project owner or admin to unlock it before editing.";
 
 /** True when a value is one of the five statuses. */
 export function isMilestoneStatus(value: string): value is MilestoneStatus {
@@ -195,6 +221,9 @@ export function validateMilestoneEstimate(
  * keeps the client side of the product about reviewing and approving rather
  * than authoring the plan. Archived projects are handled separately by
  * `assertProjectActive`, so this stays a pure role question.
+ *
+ * The same rule governs ticking a scope checklist item, because a tick is
+ * progress on the plan and not a client review action.
  */
 export function canWriteMilestones(
 	organizationRole: string,
@@ -203,4 +232,43 @@ export function canWriteMilestones(
 	const role = effectiveProjectRole(organizationRole, projectRole);
 
 	return role === "owner" || role === "admin" || role === "member";
+}
+
+/**
+ * True when the caller may lock or unlock a milestone.
+ *
+ * Deliberately narrower than `canWriteMilestones`: the lock is the agreed
+ * baseline, so only a project owner or admin may move it.
+ */
+export function canLockMilestones(
+	organizationRole: string,
+	projectRole: string | null | undefined,
+): boolean {
+	return canEditProject(organizationRole, projectRole);
+}
+
+/**
+ * Validate an optional timeline note.
+ *
+ * Null, undefined and an empty or whitespace only string all mean "no note",
+ * so a cleared field has one representation. A note that is present is trimmed
+ * and bounded, because it is rendered inline in the discussion.
+ */
+export function validateMilestoneNote(
+	value: string | null | undefined,
+	label = "The note",
+): string | null {
+	if (value == null) return null;
+
+	const note = value.trim();
+
+	if (note.length === 0) return null;
+
+	if (note.length > MILESTONE_NOTE_MAX) {
+		throw new APIError("BAD_REQUEST", {
+			message: `${label} must be ${MILESTONE_NOTE_MAX} characters or fewer.`,
+		});
+	}
+
+	return note;
 }

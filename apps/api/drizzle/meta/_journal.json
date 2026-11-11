@@ -155,6 +155,27 @@
       "when": 1794207617209,
       "tag": "0021_material_shiver_man",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794304563284,
+      "tag": "0022_milestone_status_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794304580020,
+      "tag": "0023_milestone_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794305303675,
+      "tag": "0024_drop_milestone_lock_check",
+      "breakpoints": true
     }
   ]
 }

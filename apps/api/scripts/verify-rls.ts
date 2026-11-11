@@ -45,6 +45,7 @@ const projectB = `rls-project-b-${suffix}`;
 const milestoneA = `rls-milestone-a-${suffix}`;
 const milestoneB = `rls-milestone-b-${suffix}`;
 const commentA = `rls-comment-a-${suffix}`;
+const changeRequestA = `rls-change-request-a-${suffix}`;
 const linkPreviewA = `rls-link-preview-a-${suffix}`;
 
 const scopeA = { organizationId: orgA, userId: userA };
@@ -185,6 +186,12 @@ async function seed(): Promise<void> {
 		insert into "comment" (id, organization_id, milestone_id, body, body_text)
 		values
 			(${commentA}, ${orgA}, ${milestoneA}, ${"[]"}::jsonb, ${""})
+	`);
+	await adminDb.execute(sql`
+		insert into "change_request"
+			(id, organization_id, project_id, milestone_id, title, status)
+		values
+			(${changeRequestA}, ${orgA}, ${projectA}, ${milestoneA}, ${"RLS Change Request"}, 'open')
 	`);
 	await adminDb.execute(sql`
 		insert into "link_preview" (id, organization_id, url, url_hash)
@@ -431,7 +438,36 @@ async function main(): Promise<void> {
 				),
 		);
 
-		// 4e. Link previews follow the same boundary.
+		// 4e. Change requests follow the same boundary.
+		await check("change requests are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "change_request"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a change request from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await expectFailure(
+			"change request insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "change_request"
+							(id, organization_id, project_id, milestone_id, title, status)
+							values (${`rls-change-intruder-${suffix}`}, ${orgB}, ${projectB}, ${milestoneB}, ${"Intruder"}, 'open')`,
+					),
+				),
+		);
+
+		// 4f. Link previews follow the same boundary.
 		await check("link previews are scoped to the tenant", async () => {
 			const rows = await withTenant(scopeA, async (tx) =>
 				tx.execute<{ organization_id: string }>(
@@ -459,7 +495,7 @@ async function main(): Promise<void> {
 				),
 		);
 
-		// 4f. The allowlist and the RLS policies must agree in both directions.
+		// 4g. The allowlist and the RLS policies must agree in both directions.
 		await check("tenant tables match rls policies", async () => {
 			const rows = await adminDb.execute<{ relname: string }>(sql`
 				select c.relname
@@ -539,6 +575,9 @@ async function main(): Promise<void> {
 			const comments = await adminDb.execute<{ id: string }>(
 				sql`select id from "comment" where organization_id = ${orgA}`,
 			);
+			const changeRequests = await adminDb.execute<{ id: string }>(
+				sql`select id from "change_request" where organization_id = ${orgA}`,
+			);
 			const linkPreviews = await adminDb.execute<{ id: string }>(
 				sql`select id from "link_preview" where organization_id = ${orgA}`,
 			);
@@ -550,14 +589,15 @@ async function main(): Promise<void> {
 				milestones.length !== 0 ||
 				assignments.length !== 0 ||
 				comments.length !== 0 ||
+				changeRequests.length !== 0 ||
 				linkPreviews.length !== 0
 			) {
 				throw new Error(
-					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships, ${pins.length} pins, ${milestones.length} milestones, ${assignments.length} assignments, ${comments.length} comments and ${linkPreviews.length} link previews`,
+					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships, ${pins.length} pins, ${milestones.length} milestones, ${assignments.length} assignments, ${comments.length} comments, ${changeRequests.length} change requests and ${linkPreviews.length} link previews`,
 				);
 			}
 
-			return "projects, memberships, pins, milestones, assignments, comments and link previews removed";
+			return "projects, memberships, pins, milestones, assignments, comments, change requests and link previews removed";
 		});
 	} finally {
 		await cleanup();

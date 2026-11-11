@@ -117,7 +117,7 @@ export function MilestonePage({
 	const total = pages[0]?.total ?? 0;
 	const viewer = pages[0]?.viewer;
 	const canWrite = viewer?.canWrite ?? false;
-	const locked = viewer?.locked ?? false;
+	const archived = viewer?.archived ?? false;
 
 	// Row elements, so closing the mobile sheet can return focus to the row that
 	// opened it instead of dropping focus on the body.
@@ -209,7 +209,7 @@ export function MilestonePage({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col gap-3">
-			{locked && (
+			{archived && (
 				<p className="border border-warning bg-warning-bg p-3 text-xs text-warning">
 					This project is archived, so its milestones are read only. Restore the
 					project to make changes.
@@ -241,6 +241,7 @@ export function MilestonePage({
 									key={`${selectedId ?? "none"}-${detailVersion}`}
 									orgSlug={orgSlug}
 									organizationId={organizationId}
+									projectSlug={projectSlug}
 									projectId={projectId}
 									milestoneId={selectedId}
 									members={members}
@@ -278,6 +279,7 @@ export function MilestonePage({
 							key={`${selectedId}-${detailVersion}`}
 							orgSlug={orgSlug}
 							organizationId={organizationId}
+							projectSlug={projectSlug}
 							projectId={projectId}
 							milestoneId={selectedId}
 							members={members}

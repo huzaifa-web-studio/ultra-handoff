@@ -30,6 +30,9 @@ function makeMilestone(
 		dueDate: "2026-01-10",
 		estimateMinutes: 60,
 		assignees: [],
+		lockedAt: null,
+		lockedByName: null,
+		openChangeRequestCount: 0,
 		completedAt: null,
 		createdBy: "user-1",
 		createdByName: "Ayesha",
@@ -50,14 +53,18 @@ function makePage(ids: string[], page = 1) {
 		viewer: {
 			userId: "user-1",
 			canWrite: true,
+			canTickChecklist: true,
 			canComment: true,
-			locked: false,
+			canLock: true,
+			archived: false,
 		},
 		counts: {
 			all: ids.length,
 			active: ids.length,
 			todo: ids.length,
-			inProgress: 0,
+			inDevelopment: 0,
+			inTesting: 0,
+			inReview: 0,
 			blocked: 0,
 			done: 0,
 			cancelled: 0,
@@ -163,10 +170,10 @@ describe("setMilestoneStatusInPages", () => {
 	it("keeps every other field of the row", () => {
 		const pages = makePages(["a"]);
 		const before = pages.pages[0]?.milestones[0];
-		const next = setMilestoneStatusInPages(pages, "a", "in_progress");
+		const next = setMilestoneStatusInPages(pages, "a", "in_development");
 		const after = next.pages[0]?.milestones[0];
 
-		expect(after).toEqual({ ...before, status: "in_progress" });
+		expect(after).toEqual({ ...before, status: "in_development" });
 	});
 
 	it("updates the row across every loaded page", () => {

@@ -2,9 +2,10 @@
  * Remove object storage keys that no business row references.
  *
  * Why this exists: attachments live only as `/files/<key>` URLs inside
- * `milestone.description` and `comment.body`. A delete path removes the
- * objects it can see, but a crashed request, an older release or a manual
- * database change can still leave bytes behind. This pass is the safety net.
+ * `milestone.description`, `comment.body` and `change_request.body`. A delete
+ * path removes the objects it can see, but a crashed request, an older release
+ * or a manual database change can still leave bytes behind. This pass is the
+ * safety net.
  *
  * Scope is deliberately narrow. Only keys under a project, milestone or
  * comment folder are considered. Avatars and organization logos are skipped,
@@ -25,7 +26,7 @@
  */
 
 import { adminClient, adminDb } from "../src/db";
-import { comment, milestone, project } from "../src/db/schema";
+import { changeRequest, comment, milestone, project } from "../src/db/schema";
 import {
 	deleteObject,
 	keyFromRichText,
@@ -76,6 +77,14 @@ async function collectReferencedKeys(): Promise<Set<string>> {
 	const comments = await adminDb.select({ body: comment.body }).from(comment);
 
 	for (const row of comments) {
+		for (const key of keyFromRichText(row.body)) referenced.add(key);
+	}
+
+	const requests = await adminDb
+		.select({ body: changeRequest.body })
+		.from(changeRequest);
+
+	for (const row of requests) {
 		for (const key of keyFromRichText(row.body)) referenced.add(key);
 	}
 

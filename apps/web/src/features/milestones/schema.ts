@@ -10,10 +10,12 @@
 
 import { formatDate } from "#/lib/date";
 
-/** The five states a milestone can be in. Mirrors the API allowlist. */
+/** The states a milestone can be in. Mirrors the API allowlist. */
 export const MILESTONE_STATUSES = [
 	"todo",
-	"in_progress",
+	"in_development",
+	"in_testing",
+	"in_review",
 	"blocked",
 	"done",
 	"cancelled",
@@ -23,7 +25,9 @@ export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 
 export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
 	todo: "To do",
-	in_progress: "In progress",
+	in_development: "In development",
+	in_testing: "In testing",
+	in_review: "In review",
 	blocked: "Blocked",
 	done: "Done",
 	cancelled: "Cancelled",
@@ -32,7 +36,9 @@ export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
 /** Statuses that count as live work. */
 export const ACTIVE_MILESTONE_STATUSES: readonly MilestoneStatus[] = [
 	"todo",
-	"in_progress",
+	"in_development",
+	"in_testing",
+	"in_review",
 	"blocked",
 ];
 
@@ -43,6 +49,9 @@ export type MilestoneSort = "dueDate" | "createdAt" | "title";
 
 /** Longest accepted title. Mirrors the API. */
 export const MILESTONE_TITLE_MAX = 160;
+
+/** Longest timeline note. Mirrors the API. */
+export const MILESTONE_NOTE_MAX = 500;
 
 /** Longest single estimate, in minutes (about 41 days). */
 export const MILESTONE_ESTIMATE_MAX = 60_000;

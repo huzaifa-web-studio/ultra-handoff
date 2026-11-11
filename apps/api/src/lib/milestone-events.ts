@@ -21,6 +21,13 @@ export const MILESTONE_EVENT_TYPES = [
 	"assignee_added",
 	"assignee_removed",
 	"estimate_minutes",
+	"milestone_locked",
+	"milestone_unlocked",
+	"change_request_created",
+	"change_request_accepted",
+	"change_request_declined",
+	"change_request_moved",
+	"change_request_withdrawn",
 ] as const;
 
 export type MilestoneEventType = (typeof MILESTONE_EVENT_TYPES)[number];
@@ -32,6 +39,15 @@ export type MilestoneEventDraft = {
 	from: string | null;
 	/** New value. Null means the field was cleared or the person was removed. */
 	to: string | null;
+	/**
+	 * Optional prose attached to the event.
+	 *
+	 * A lock reason, a blocked reason and a change request title or decision
+	 * note are sentences, not before and after values. Keeping them in their
+	 * own field means the timeline can render "Locked, reason: ..." without
+	 * pretending the reason is a changed value.
+	 */
+	note?: string | null;
 };
 
 /** The part of an assignee a change needs to describe itself. */

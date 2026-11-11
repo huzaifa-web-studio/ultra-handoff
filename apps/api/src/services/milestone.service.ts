@@ -23,28 +23,33 @@
 
 import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
-import { and, asc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, ne, sql } from "drizzle-orm";
 
 import { canCommentOnProject } from "../auth/comment-permissions";
 import {
 	ACTIVE_MILESTONE_STATUSES,
+	canLockMilestones,
 	canWriteMilestones,
 	MILESTONE_ASSIGNEE_MAX,
+	MILESTONE_LOCKED_MESSAGE,
 	type MilestoneStatus,
 	validateMilestoneDate,
 	validateMilestoneDateRange,
 	validateMilestoneEstimate,
+	validateMilestoneNote,
 	validateMilestoneStatus,
 	validateMilestoneTitle,
 } from "../auth/milestone-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
 import {
+	changeRequest,
 	comment,
 	milestone,
 	milestoneAssignee,
 	projectMember,
 } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
+import { findChecklistItem } from "../lib/checklist";
 import {
 	buildAssigneeEvents,
 	buildEstimateEvent,
@@ -88,6 +93,11 @@ export type MilestoneSummary = {
 	dueDate: string | null;
 	estimateMinutes: number | null;
 	assignees: MilestoneAssigneeRow[];
+	/** Null while unlocked. Both fields move together. */
+	lockedAt: string | null;
+	lockedByName: string | null;
+	/** How many change requests on this milestone are still open. */
+	openChangeRequestCount: number;
 	completedAt: string | null;
 	createdBy: string | null;
 	createdByName: string | null;
@@ -109,14 +119,23 @@ export type MilestoneViewer = {
 	/** True when the caller may create, edit, assign and delete. */
 	canWrite: boolean;
 	/**
+	 * True when the caller may tick a scope checklist item.
+	 *
+	 * Deliberately separate from `canWrite`: a tick is progress, and progress
+	 * survives the lock, so this stays true for staff on a locked milestone.
+	 */
+	canTickChecklist: boolean;
+	/**
 	 * True when the caller may post in the discussion.
 	 *
 	 * Deliberately separate from `canWrite`: a client cannot author milestones
 	 * but is a full participant in the conversation about them.
 	 */
 	canComment: boolean;
+	/** True when the caller may lock or unlock this milestone. */
+	canLock: boolean;
 	/** True when the project is archived and every write is refused. */
-	locked: boolean;
+	archived: boolean;
 };
 
 /** Per status totals for the filter chips. */
@@ -124,7 +143,9 @@ export type MilestoneCounts = {
 	all: number;
 	active: number;
 	todo: number;
-	inProgress: number;
+	inDevelopment: number;
+	inTesting: number;
+	inReview: number;
 	blocked: number;
 	done: number;
 	cancelled: number;
@@ -133,7 +154,9 @@ export type MilestoneCounts = {
 /** Which counts key each status maps to. */
 const STATUS_COUNT_KEYS: Record<MilestoneStatus, keyof MilestoneCounts> = {
 	todo: "todo",
-	in_progress: "inProgress",
+	in_development: "inDevelopment",
+	in_testing: "inTesting",
+	in_review: "inReview",
 	blocked: "blocked",
 	done: "done",
 	cancelled: "cancelled",
@@ -168,6 +191,7 @@ export type MilestoneTimelineComment = {
 		type: MilestoneEventDraft["type"];
 		from: string | null;
 		to: string | null;
+		note: string | null;
 	};
 	body: unknown[];
 	author: { id: string; name: string; image: string | null };
@@ -204,6 +228,8 @@ export type CreateMilestoneInput = {
 	title: string;
 	description?: unknown;
 	status?: string;
+	/** Required when the milestone is created already blocked. */
+	statusNote?: string | null;
 	startDate?: string | null;
 	dueDate?: string | null;
 	estimateMinutes?: number | null;
@@ -215,17 +241,25 @@ export type UpdateMilestoneInput = {
 	title?: string;
 	description?: unknown;
 	status?: string;
+	/** Required when the status becomes blocked. */
+	statusNote?: string | null;
 	startDate?: string | null;
 	dueDate?: string | null;
 	estimateMinutes?: number | null;
 	assigneeUserIds?: string[];
 };
 
+/** One scope checklist tick. */
+export type ToggleMilestoneChecklistInput = {
+	itemId: string;
+	checked: boolean;
+};
+
 /** A database row, before it is mapped to the wire shape. */
 export type MilestoneRecord = typeof milestone.$inferSelect;
 
 /** A database row from the comment table, used for the activity timeline. */
-type CommentRecord = typeof comment.$inferSelect;
+export type CommentRecord = typeof comment.$inferSelect;
 
 /**
  * Read a `date` column as the ISO day the client expects.
@@ -254,7 +288,7 @@ function toIsoDay(value: string | Date | null): string | null {
  * Returns the inserted rows so the caller can broadcast them. `returning` is
  * what gives the broadcast the same ids and timestamps the database stored.
  */
-async function recordMilestoneEvents(
+export async function recordMilestoneEvents(
 	tx: TenantTx,
 	tenant: TenantContext,
 	milestoneId: string,
@@ -274,6 +308,7 @@ async function recordMilestoneEvents(
 				eventType: event.type,
 				eventFrom: event.from,
 				eventTo: event.to,
+				eventNote: event.note ?? null,
 				body: [],
 				bodyText: "",
 			})),
@@ -287,7 +322,7 @@ async function recordMilestoneEvents(
  * A caller's own name is looked up once, not per row, because one update can
  * write two rows (a start date and a due date moved together).
  */
-async function toMilestoneTimeline(
+export async function toMilestoneTimeline(
 	rows: CommentRecord[],
 	tenant: TenantContext,
 ): Promise<MilestoneTimelineComment[]> {
@@ -315,6 +350,7 @@ async function toMilestoneTimeline(
 					type: row.eventType,
 					from: row.eventFrom,
 					to: row.eventTo,
+					note: row.eventNote,
 				},
 				body: [],
 				author,
@@ -332,13 +368,18 @@ function toViewer(
 	tenant: TenantContext,
 	access: ProjectAccess,
 ): MilestoneViewer {
-	const locked = access.row.archivedAt !== null;
+	const archived = access.row.archivedAt !== null;
+	const staff = canWriteMilestones(tenant.role, access.role);
 
 	return {
 		userId: tenant.userId,
-		canWrite: !locked && canWriteMilestones(tenant.role, access.role),
-		canComment: !locked && canCommentOnProject(tenant.role, access.role),
-		locked,
+		canWrite: !archived && staff,
+		// Ticking a checklist item is progress, so it is allowed on a locked
+		// milestone. It still stops when the whole project is archived.
+		canTickChecklist: !archived && staff,
+		canComment: !archived && canCommentOnProject(tenant.role, access.role),
+		canLock: !archived && canLockMilestones(tenant.role, access.role),
+		archived,
 	};
 }
 
@@ -379,6 +420,49 @@ function assertWritable(tenant: TenantContext, access: ProjectAccess): void {
 			message: "You can review milestones but not change them.",
 		});
 	}
+}
+
+/**
+ * Reject a write while the milestone is locked.
+ *
+ * The lock freezes the agreed document and its fields: title, scope, dates,
+ * estimate and the delete action. Status, assignees and checklist ticks are
+ * progress against that document, so they stay available to staff and do not
+ * call this guard.
+ */
+function assertUnlocked(record: MilestoneRecord): void {
+	if (record.lockedAt !== null) {
+		throw new APIError("BAD_REQUEST", { message: MILESTONE_LOCKED_MESSAGE });
+	}
+}
+
+/** Load one milestone inside a project and lock its row for a write. */
+async function requireMilestoneRecordForUpdate(
+	tx: TenantTx,
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+): Promise<MilestoneRecord> {
+	const [record] = await tx
+		.select()
+		.from(milestone)
+		.where(
+			and(
+				eq(milestone.organizationId, tenant.organizationId),
+				eq(milestone.projectId, projectId),
+				eq(milestone.id, milestoneId),
+			),
+		)
+		.limit(1)
+		.for("update");
+
+	if (!record) {
+		throw new APIError("NOT_FOUND", {
+			message: "That milestone no longer exists.",
+		});
+	}
+
+	return record;
 }
 
 /** Load one milestone inside a project, or fail with 404. */
@@ -522,9 +606,8 @@ async function loadAssignees(
 }
 
 /**
- * Resolve the display names for the people who created and last edited rows.
- *
- * One lookup for the whole page, never one per row.
+ * Resolve the display names for the people who created, last edited or locked
+ * rows. One lookup for the whole page, never one per row.
  */
 async function loadEditorNames(
 	records: MilestoneRecord[],
@@ -532,7 +615,11 @@ async function loadEditorNames(
 	const userIds = [
 		...new Set(
 			records
-				.flatMap((record) => [record.createdBy, record.updatedBy])
+				.flatMap((record) => [
+					record.createdBy,
+					record.updatedBy,
+					record.lockedBy,
+				])
 				.filter((id): id is string => Boolean(id)),
 		),
 	];
@@ -554,6 +641,7 @@ function toSummary(
 	record: MilestoneRecord,
 	assignees: MilestoneAssigneeRow[],
 	names: Map<string, string>,
+	openChangeRequestCount: number,
 ): MilestoneSummary {
 	const excerpt = record.descriptionText.replace(/\s+/g, " ").trim();
 
@@ -570,6 +658,9 @@ function toSummary(
 		dueDate: toIsoDay(record.dueDate),
 		estimateMinutes: record.estimateMinutes,
 		assignees,
+		lockedAt: record.lockedAt ? record.lockedAt.toISOString() : null,
+		lockedByName: record.lockedBy ? (names.get(record.lockedBy) ?? null) : null,
+		openChangeRequestCount,
 		completedAt: record.completedAt ? record.completedAt.toISOString() : null,
 		createdBy: record.createdBy,
 		createdByName: record.createdBy
@@ -584,23 +675,58 @@ function toSummary(
 	};
 }
 
+/**
+ * Count the open change requests for a set of milestones in one query.
+ *
+ * Why grouped: the list needs the count per row for the Overview summary and
+ * the Changes tab badge. One query for the whole page avoids the N+1 that a
+ * per row count would create.
+ */
+async function loadOpenChangeRequestCounts(
+	tx: TenantTx,
+	tenant: TenantContext,
+	milestoneIds: string[],
+): Promise<Map<string, number>> {
+	if (milestoneIds.length === 0) return new Map();
+
+	const rows = await tx
+		.select({
+			milestoneId: changeRequest.milestoneId,
+			count: sql<number>`count(*)`.mapWith(Number),
+		})
+		.from(changeRequest)
+		.where(
+			and(
+				eq(changeRequest.organizationId, tenant.organizationId),
+				inArray(changeRequest.milestoneId, milestoneIds),
+				eq(changeRequest.status, "open"),
+			),
+		)
+		.groupBy(changeRequest.milestoneId);
+
+	return new Map(rows.map((row) => [row.milestoneId, row.count]));
+}
+
 /** Map a set of records into summaries with assignees attached. */
 async function toSummaries(
 	tx: TenantTx,
 	tenant: TenantContext,
 	records: MilestoneRecord[],
 ): Promise<MilestoneSummary[]> {
-	const [assignees, names] = await Promise.all([
-		loadAssignees(
-			tx,
-			tenant,
-			records.map((record) => record.id),
-		),
+	const milestoneIds = records.map((record) => record.id);
+	const [assignees, names, openCounts] = await Promise.all([
+		loadAssignees(tx, tenant, milestoneIds),
 		loadEditorNames(records),
+		loadOpenChangeRequestCounts(tx, tenant, milestoneIds),
 	]);
 
 	return records.map((record) =>
-		toSummary(record, assignees.get(record.id) ?? [], names),
+		toSummary(
+			record,
+			assignees.get(record.id) ?? [],
+			names,
+			openCounts.get(record.id) ?? 0,
+		),
 	);
 }
 
@@ -805,14 +931,22 @@ export async function listMilestones(
 				.select({
 					all: sql<number>`count(*)`.mapWith(Number),
 					active:
-						sql<number>`count(*) filter (where ${milestone.status} in ('todo', 'in_progress', 'blocked'))`.mapWith(
+						sql<number>`count(*) filter (where ${milestone.status} in ('todo', 'in_development', 'in_testing', 'in_review', 'blocked'))`.mapWith(
 							Number,
 						),
 					todo: sql<number>`count(*) filter (where ${milestone.status} = 'todo')`.mapWith(
 						Number,
 					),
-					inProgress:
-						sql<number>`count(*) filter (where ${milestone.status} = 'in_progress')`.mapWith(
+					inDevelopment:
+						sql<number>`count(*) filter (where ${milestone.status} = 'in_development')`.mapWith(
+							Number,
+						),
+					inTesting:
+						sql<number>`count(*) filter (where ${milestone.status} = 'in_testing')`.mapWith(
+							Number,
+						),
+					inReview:
+						sql<number>`count(*) filter (where ${milestone.status} = 'in_review')`.mapWith(
 							Number,
 						),
 					blocked:
@@ -834,7 +968,9 @@ export async function listMilestones(
 				all: 0,
 				active: 0,
 				todo: 0,
-				inProgress: 0,
+				inDevelopment: 0,
+				inTesting: 0,
+				inReview: 0,
 				blocked: 0,
 				done: 0,
 				cancelled: 0,
@@ -928,11 +1064,26 @@ export async function getMilestone(
 	);
 }
 
-/** Create a milestone, optionally with its first assignees. */
-export async function createMilestone(
+/**
+ * Insert one milestone inside an existing transaction.
+ *
+ * Why exported and separate from `createMilestone`: turning a change request
+ * into a milestone has to create the milestone and mark the request moved in
+ * the same transaction, otherwise a failure between the two leaves a milestone
+ * nobody asked for. Sharing this helper means both paths validate and write a
+ * milestone the same way.
+ *
+ * `trustedBody` skips the mention access check for a body that was already
+ * validated when it was stored, which is what the move flow passes. A mention
+ * of someone who left the project must not block an otherwise valid move.
+ */
+export async function insertMilestone(
+	tx: TenantTx,
 	tenant: TenantContext,
+	access: ProjectAccess,
 	projectId: string,
 	input: CreateMilestoneInput,
+	options: { trustedBody?: boolean } = {},
 ): Promise<MilestoneDetailResult> {
 	const title = validateMilestoneTitle(input.title);
 	const status = input.status ? validateMilestoneStatus(input.status) : "todo";
@@ -943,51 +1094,83 @@ export async function createMilestone(
 
 	const estimateMinutes = validateMilestoneEstimate(input.estimateMinutes);
 	const description = sanitizeRichText(input.description);
+	const statusNote = validateMilestoneNote(
+		input.statusNote,
+		"The blocked reason",
+	);
 	const milestoneId = randomUUID();
 
+	// A milestone created already blocked still needs a reason. The rule is
+	// about the status, not about which endpoint set it.
+	if (status === "blocked" && !statusNote) {
+		throw new APIError("BAD_REQUEST", {
+			message: "Say why this milestone is blocked.",
+		});
+	}
+
+	if (!options.trustedBody) {
+		await assertCommentMentions(tx, tenant, projectId, description.value);
+	}
+
+	// Resolve assignees before the insert, so a bad assignee fails the whole
+	// request instead of leaving a milestone behind.
+	const memberIds = input.assigneeUserIds
+		? await resolveAssigneeMemberIds(
+				tx,
+				tenant,
+				projectId,
+				input.assigneeUserIds,
+			)
+		: [];
+
+	await tx.insert(milestone).values({
+		id: milestoneId,
+		organizationId: tenant.organizationId,
+		projectId,
+		title,
+		status,
+		description: description.value,
+		descriptionText: description.text,
+		startDate,
+		dueDate,
+		estimateMinutes,
+		completedAt: status === "done" ? new Date() : null,
+		createdBy: tenant.userId,
+		updatedBy: tenant.userId,
+	});
+
+	await replaceAssignees(tx, tenant, milestoneId, memberIds);
+
+	// A blocked milestone starts with its reason on the timeline, so a reader
+	// is not left asking why work stopped on day one.
+	if (status === "blocked" && statusNote) {
+		await recordMilestoneEvents(tx, tenant, milestoneId, [
+			{ type: "status", from: null, to: status, note: statusNote },
+		]);
+	}
+
+	return loadDetail(
+		tx,
+		tenant,
+		projectId,
+		milestoneId,
+		toViewer(tenant, access),
+	);
+}
+
+/** Create a milestone, optionally with its first assignees. */
+export async function createMilestone(
+	tenant: TenantContext,
+	projectId: string,
+	input: CreateMilestoneInput,
+): Promise<MilestoneDetailResult> {
 	const result = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
 			assertWritable(tenant, access);
-			await assertCommentMentions(tx, tenant, projectId, description.value);
 
-			// Resolve assignees before the insert, so a bad assignee fails the
-			// whole request instead of leaving a milestone behind.
-			const memberIds = input.assigneeUserIds
-				? await resolveAssigneeMemberIds(
-						tx,
-						tenant,
-						projectId,
-						input.assigneeUserIds,
-					)
-				: [];
-
-			await tx.insert(milestone).values({
-				id: milestoneId,
-				organizationId: tenant.organizationId,
-				projectId,
-				title,
-				status,
-				description: description.value,
-				descriptionText: description.text,
-				startDate,
-				dueDate,
-				estimateMinutes,
-				completedAt: status === "done" ? new Date() : null,
-				createdBy: tenant.userId,
-				updatedBy: tenant.userId,
-			});
-
-			await replaceAssignees(tx, tenant, milestoneId, memberIds);
-
-			return loadDetail(
-				tx,
-				tenant,
-				projectId,
-				milestoneId,
-				toViewer(tenant, access),
-			);
+			return insertMilestone(tx, tenant, access, projectId, input);
 		},
 	);
 
@@ -1019,6 +1202,23 @@ export async function updateMilestone(
 				projectId,
 				milestoneId,
 			);
+
+			// The lock freezes the document, the title, the dates and the
+			// estimate. Status and assignees stay available to staff, because
+			// moving work and handing it over is progress rather than a change
+			// to the agreed scope.
+			const touchesLockedField =
+				input.title !== undefined ||
+				input.description !== undefined ||
+				input.startDate !== undefined ||
+				input.dueDate !== undefined ||
+				input.estimateMinutes !== undefined;
+
+			if (record.lockedAt !== null && touchesLockedField) {
+				throw new APIError("BAD_REQUEST", {
+					message: MILESTONE_LOCKED_MESSAGE,
+				});
+			}
 
 			// Autosave can fire with an empty body, for example when a field
 			// was focused and blurred without a change. Writing here would move
@@ -1063,7 +1263,26 @@ export async function updateMilestone(
 				patch.status = status;
 
 				if (status !== record.status) {
-					events.push({ type: "status", from: record.status, to: status });
+					// Moving into blocked is the one transition that needs a
+					// sentence, because "cannot proceed" with no reason is not
+					// actionable for anybody reading the timeline.
+					const note = validateMilestoneNote(
+						input.statusNote,
+						"The blocked reason",
+					);
+
+					if (status === "blocked" && !note) {
+						throw new APIError("BAD_REQUEST", {
+							message: "Say why this milestone is blocked.",
+						});
+					}
+
+					events.push({
+						type: "status",
+						from: record.status,
+						to: status,
+						note,
+					});
 					changed.push("status");
 				}
 
@@ -1266,6 +1485,9 @@ export async function setMilestoneAssignees(
 			const access = await requireProject(tx, tenant, projectId);
 			assertWritable(tenant, access);
 
+			// The record must exist and belong to this project. Assignees stay
+			// editable while the milestone is locked: handing work over is
+			// progress, not a change to the agreed scope.
 			await requireMilestoneRecord(tx, tenant, projectId, milestoneId);
 
 			const previous =
@@ -1315,12 +1537,216 @@ export async function setMilestoneAssignees(
 }
 
 /**
- * Permanently delete a milestone. Assignments and comments cascade with it.
+ * Lock or unlock one milestone.
+ *
+ * Why one internal helper with a boolean: lock and unlock share every rule
+ * (owner or admin, active project, one timeline row, one broadcast), so the two
+ * public functions are just named entry points. The lock is not tied to a
+ * status; it is an explicit decision about the agreed baseline.
+ */
+async function setMilestoneLock(
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+	locked: boolean,
+	reason: string | null | undefined,
+): Promise<MilestoneUpdateResult> {
+	const note = validateMilestoneNote(
+		reason,
+		locked ? "The lock reason" : "The unlock reason",
+	);
+
+	const write = await withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await requireProject(tx, tenant, projectId);
+			assertProjectActive(access.row.archivedAt);
+
+			if (!canLockMilestones(tenant.role, access.role)) {
+				throw new APIError("FORBIDDEN", {
+					message:
+						"Only a project owner or admin can lock or unlock a milestone.",
+				});
+			}
+
+			const record = await requireMilestoneRecordForUpdate(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+			);
+
+			// Repeating the action is a mistake, not a no-op. Saying so is
+			// clearer than silently moving the timestamp and the timeline.
+			if (locked && record.lockedAt !== null) {
+				throw new APIError("BAD_REQUEST", {
+					message: "This milestone is already locked.",
+				});
+			}
+
+			if (!locked && record.lockedAt === null) {
+				throw new APIError("BAD_REQUEST", {
+					message: "This milestone is not locked.",
+				});
+			}
+
+			await tx
+				.update(milestone)
+				.set({
+					lockedAt: locked ? new Date() : null,
+					lockedBy: locked ? tenant.userId : null,
+					updatedBy: tenant.userId,
+				})
+				.where(
+					and(
+						eq(milestone.organizationId, tenant.organizationId),
+						eq(milestone.projectId, projectId),
+						eq(milestone.id, milestoneId),
+					),
+				);
+
+			const eventRows = await recordMilestoneEvents(tx, tenant, milestoneId, [
+				{
+					type: locked ? "milestone_locked" : "milestone_unlocked",
+					from: null,
+					to: null,
+					note,
+				},
+			]);
+
+			const detail = await loadDetail(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+				toViewer(tenant, access),
+			);
+
+			return { detail, eventRows };
+		},
+	);
+
+	const timeline = await toMilestoneTimeline(write.eventRows, tenant);
+
+	return {
+		...write.detail,
+		changed: ["lock"],
+		timeline,
+	};
+}
+
+/** Lock a milestone. Owner or admin only. */
+export async function lockMilestone(
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+	reason?: string | null,
+): Promise<MilestoneUpdateResult> {
+	return setMilestoneLock(tenant, projectId, milestoneId, true, reason);
+}
+
+/** Unlock a milestone. Owner or admin only. The reason is optional. */
+export async function unlockMilestone(
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+	reason?: string | null,
+): Promise<MilestoneUpdateResult> {
+	return setMilestoneLock(tenant, projectId, milestoneId, false, reason);
+}
+
+/**
+ * Flip one scope checklist item.
+ *
+ * Why its own endpoint: the lock freezes the document, but ticking an item is
+ * progress against the document rather than a change to the agreed text. This
+ * is the one write that survives the lock.
+ *
+ * The row is locked before the read-modify-write, so two people ticking two
+ * different items at the same moment cannot drop each other's change. No
+ * timeline row is written: a checklist produces many ticks and the discussion
+ * is for decisions, not progress noise.
+ */
+export async function toggleMilestoneChecklist(
+	tenant: TenantContext,
+	projectId: string,
+	milestoneId: string,
+	input: ToggleMilestoneChecklistInput,
+): Promise<MilestoneDetailResult> {
+	return withTenant(
+		{ organizationId: tenant.organizationId, userId: tenant.userId },
+		async (tx) => {
+			const access = await requireProject(tx, tenant, projectId);
+			assertProjectActive(access.row.archivedAt);
+
+			// A tick is progress on the agency's plan, so it follows the same
+			// role rule as editing and not the client review rule.
+			if (!canWriteMilestones(tenant.role, access.role)) {
+				throw new APIError("FORBIDDEN", {
+					message: "You can review milestones but not change them.",
+				});
+			}
+
+			const record = await requireMilestoneRecordForUpdate(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+			);
+			const body = structuredClone(record.description);
+			const item = findChecklistItem(body, input.itemId);
+
+			if (!item) {
+				throw new APIError("NOT_FOUND", {
+					message: "That checklist item no longer exists.",
+				});
+			}
+
+			// A tap that matches the stored state is a no-op, so `updatedAt`
+			// and every open editor stay still.
+			if (item.checked !== input.checked) {
+				item.checked = input.checked;
+
+				await tx
+					.update(milestone)
+					.set({
+						description: body,
+						// The text mirror does not change: a tick is not text.
+						updatedBy: tenant.userId,
+					})
+					.where(
+						and(
+							eq(milestone.organizationId, tenant.organizationId),
+							eq(milestone.projectId, projectId),
+							eq(milestone.id, milestoneId),
+						),
+					);
+			}
+
+			return loadDetail(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+				toViewer(tenant, access),
+			);
+		},
+	);
+}
+
+/**
+ * Permanently delete a milestone. Assignments, comments and change requests
+ * cascade with it.
  *
  * Attachments are removed after the commit. Nothing links an object to the
- * row that owns it, so the description and every comment body are walked
- * before the delete. The row delete is the source of truth; a storage failure
- * only leaves an orphan for the reconciliation script.
+ * row that owns it, so the description, every comment body and every change
+ * request body are walked before the delete. The row delete is the source of
+ * truth; a storage failure only leaves an orphan for the reconciliation script.
+ *
+ * One deliberate exception: when a change request was moved into this milestone
+ * or into another one, the same attachment key can appear in two living bodies.
+ * Keys still referenced by a change request outside this milestone are kept, so
+ * deleting the target milestone cannot break the request that asked for it.
  */
 export async function deleteMilestone(
 	tenant: TenantContext,
@@ -1340,21 +1766,70 @@ export async function deleteMilestone(
 				milestoneId,
 			);
 
+			// A locked milestone cannot be deleted. Unlock first.
+			assertUnlocked(record);
+
 			// One query for every comment in the milestone, rather than one per
 			// comment. Event rows carry an empty body and contribute nothing.
-			const bodies = await tx
-				.select({ body: comment.body })
-				.from(comment)
-				.where(
-					and(
-						eq(comment.organizationId, tenant.organizationId),
-						eq(comment.milestoneId, milestoneId),
+			const [
+				bodies,
+				requestBodies,
+				survivingRequestBodies,
+				survivingMilestones,
+			] = await Promise.all([
+				tx
+					.select({ body: comment.body })
+					.from(comment)
+					.where(
+						and(
+							eq(comment.organizationId, tenant.organizationId),
+							eq(comment.milestoneId, milestoneId),
+						),
 					),
-				);
+				// Requests on this milestone cascade with it, so their objects go
+				// too.
+				tx
+					.select({ body: changeRequest.body })
+					.from(changeRequest)
+					.where(
+						and(
+							eq(changeRequest.organizationId, tenant.organizationId),
+							eq(changeRequest.milestoneId, milestoneId),
+						),
+					),
+				// Requests on other milestones survive, so their objects must.
+				tx
+					.select({ body: changeRequest.body })
+					.from(changeRequest)
+					.where(
+						and(
+							eq(changeRequest.organizationId, tenant.organizationId),
+							ne(changeRequest.milestoneId, milestoneId),
+						),
+					),
+				// A moved request shares its attachment keys with the milestone
+				// it became. Deleting the source must not pull those bytes out
+				// from under the surviving milestone.
+				tx
+					.select({ description: milestone.description })
+					.from(milestone)
+					.where(
+						and(
+							eq(milestone.organizationId, tenant.organizationId),
+							eq(milestone.projectId, projectId),
+							ne(milestone.id, milestoneId),
+						),
+					),
+			]);
 
 			const keys = keyFromRichText([
 				record.description,
 				...bodies.map((row) => row.body),
+				...requestBodies.map((row) => row.body),
+			]);
+			const survivingKeys = new Set([
+				...keyFromRichText(survivingRequestBodies.map((row) => row.body)),
+				...keyFromRichText(survivingMilestones.map((row) => row.description)),
 			]);
 
 			await tx
@@ -1367,7 +1842,7 @@ export async function deleteMilestone(
 					),
 				);
 
-			return keys;
+			return keys.filter((key) => !survivingKeys.has(key));
 		},
 	);
 

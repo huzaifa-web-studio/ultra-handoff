@@ -25,9 +25,11 @@ import {
 import { cn } from "cn";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import type { MilestoneCounts, MilestoneDetail, MilestoneSummary } from "./api";
-import { useSetMilestoneStatus } from "./hooks";
+import { useSetMilestoneStatus, useUpdateMilestone } from "./hooks";
 import type { AssignableMember } from "./milestone-assignee-field";
+import { MilestoneBlockedReasonDialog } from "./milestone-blocked-reason-dialog";
 import { MilestoneCreateDialog } from "./milestone-create-dialog";
 import { MilestoneListItem } from "./milestone-list-item";
 import {
@@ -48,7 +50,9 @@ const STATUS_FILTER_OPTIONS: {
 	{ id: "active", label: "Active" },
 	{ id: "all", label: "All" },
 	{ id: "todo", label: "To do" },
-	{ id: "in_progress", label: "In progress" },
+	{ id: "in_development", label: "In development" },
+	{ id: "in_testing", label: "In testing" },
+	{ id: "in_review", label: "In review" },
 	{ id: "blocked", label: "Blocked" },
 	{ id: "done", label: "Done" },
 	{ id: "cancelled", label: "Cancelled" },
@@ -72,8 +76,12 @@ function countForFilter(
 			return counts.all;
 		case "todo":
 			return counts.todo;
-		case "in_progress":
-			return counts.inProgress;
+		case "in_development":
+			return counts.inDevelopment;
+		case "in_testing":
+			return counts.inTesting;
+		case "in_review":
+			return counts.inReview;
 		case "blocked":
 			return counts.blocked;
 		case "done":
@@ -130,6 +138,13 @@ export function MilestoneListPanel({
 }) {
 	const [createOpen, setCreateOpen] = useState(false);
 	const statusMutation = useSetMilestoneStatus(orgSlug, projectId);
+	const update = useUpdateMilestone(orgSlug, projectId);
+	// A blocked status needs a reason, and the list row has no room for a
+	// field, so the picker opens this prompt instead.
+	const [blockedTarget, setBlockedTarget] = useState<{
+		id: string;
+		title: string;
+	} | null>(null);
 
 	const filtered = filters.search.length > 0 || filters.status !== "active";
 	const noMilestonesAtAll = counts !== null && counts.all === 0;
@@ -331,12 +346,20 @@ export function MilestoneListPanel({
 										selected={milestone.id === selectedId}
 										onSelect={() => onSelect(milestone.id)}
 										canWrite={canWrite}
-										onChangeStatus={(status) =>
+										onChangeStatus={(status) => {
+											if (status === "blocked") {
+												setBlockedTarget({
+													id: milestone.id,
+													title: milestone.title,
+												});
+												return;
+											}
+
 											statusMutation.mutate({
 												milestoneId: milestone.id,
 												status,
-											})
-										}
+											});
+										}}
 										isStatusPending={
 											statusMutation.isPending &&
 											statusMutation.variables?.milestoneId === milestone.id
@@ -385,6 +408,34 @@ export function MilestoneListPanel({
 					onCreated={onCreated}
 				/>
 			)}
+
+			<MilestoneBlockedReasonDialog
+				isOpen={blockedTarget !== null}
+				title={blockedTarget?.title ?? ""}
+				onOpenChange={(open) => {
+					if (!open) setBlockedTarget(null);
+				}}
+				onConfirm={(reason) => {
+					if (!blockedTarget) return;
+
+					update.mutate(
+						{
+							milestoneId: blockedTarget.id,
+							patch: { status: "blocked", statusNote: reason },
+						},
+						{
+							onError: (error) => {
+								toast.error(
+									error instanceof Error
+										? error.message
+										: "Could not block the milestone.",
+								);
+							},
+						},
+					);
+					setBlockedTarget(null);
+				}}
+			/>
 		</section>
 	);
 }

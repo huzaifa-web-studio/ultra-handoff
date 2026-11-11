@@ -37,7 +37,7 @@ export function CommentThreadTab({
 	viewerId,
 	commentId,
 	canComment,
-	locked,
+	archived,
 	active,
 	onClose,
 }: {
@@ -49,7 +49,7 @@ export function CommentThreadTab({
 	/** The root comment this tab is focused on. */
 	commentId: string;
 	canComment: boolean;
-	locked: boolean;
+	archived: boolean;
 	/** True while this tab is the selected one. */
 	active: boolean;
 	onClose: () => void;
@@ -136,7 +136,7 @@ export function CommentThreadTab({
 	const { thread } = query.data;
 	const authorName = thread.comment.author?.name ?? "Former member";
 	const deleted = thread.comment.deletedAt !== null;
-	const canWrite = canComment && !locked;
+	const canWrite = canComment && !archived;
 
 	/*
 	 * The root's own day heading.
@@ -198,7 +198,7 @@ export function CommentThreadTab({
 					</div>
 				) : (
 					<p className="border-t border-app-border p-4 text-xs text-app-text-muted">
-						{locked
+						{archived
 							? "This project is archived, so the discussion is read only."
 							: "You can read this discussion but not take part in it."}
 					</p>

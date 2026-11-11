@@ -24,5 +24,6 @@ export const TENANT_TABLES: readonly string[] = [
 	"milestone",
 	"milestone_assignee",
 	"comment",
+	"change_request",
 	"link_preview",
 ];
