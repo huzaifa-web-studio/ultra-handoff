@@ -203,7 +203,12 @@ function EndRow({
 					{(segment) => (
 						<DateSegment
 							segment={segment}
-							className="px-0.5 py-0.5 outline-none data-[focused]:bg-app-focus data-[focused]:text-app-action-text data-[placeholder]:text-app-text-muted data-[type=literal]:px-0"
+							// The focused fill is gold in both themes, so the text on it must
+							// be the dark ink token. The placeholder colour is scoped to an
+							// unfocused segment: a placeholder keeps `data-placeholder`, and
+							// that rule is emitted after the focused one, so without the
+							// `not` the empty `dd` stays muted grey on a gold fill.
+							className="px-0.5 py-0.5 outline-none data-[focused]:bg-app-focus data-[focused]:text-app-attention-text data-[placeholder]:not-data-[focused]:text-app-text-muted data-[type=literal]:px-0"
 						/>
 					)}
 				</DateInput>
