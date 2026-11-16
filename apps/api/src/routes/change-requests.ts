@@ -23,6 +23,7 @@ import {
 	MILESTONE_ASSIGNEE_MAX,
 	MILESTONE_ESTIMATE_MAX,
 	MILESTONE_NOTE_MAX,
+	MILESTONE_SCOPE_TITLE_MAX,
 	MILESTONE_STATUSES,
 	MILESTONE_TITLE_MAX,
 } from "../auth/milestone-permissions";
@@ -33,6 +34,7 @@ import {
 	type ChangeRequestRealtimePayload,
 	type CommentRealtimePayload,
 	type MilestoneCreatedPayload,
+	type MilestoneScopeChangedPayload,
 	toRealtimeChangeRequest,
 	toRealtimeMilestone,
 } from "../realtime/events";
@@ -224,7 +226,7 @@ export const changeRequestRoutes = new Elysia({ name: "change-requests" })
 					body,
 				);
 
-				const { timeline, openCount, changeRequest } = result;
+				const { timeline, openCount, changeRequest, scopeEntry } = result;
 
 				publishChangeRequest(
 					params.projectId,
@@ -235,7 +237,23 @@ export const changeRequestRoutes = new Elysia({ name: "change-requests" })
 				);
 				publishTimeline(params.projectId, params.milestoneId, timeline);
 
-				return { changeRequest, openCount };
+				// An acceptance appends a scope section, so open panes refetch
+				// that one section rather than the whole milestone detail.
+				if (scopeEntry) {
+					const payload: MilestoneScopeChangedPayload = {
+						milestoneId: params.milestoneId,
+						entryId: scopeEntry.id,
+						updatedBy: tenant.userId,
+					};
+
+					void publishRealtimeEvent(
+						params.projectId,
+						"milestone.scope.changed",
+						payload,
+					).catch(() => undefined);
+				}
+
+				return { changeRequest, openCount, scopeEntry };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(
@@ -257,6 +275,15 @@ export const changeRequestRoutes = new Elysia({ name: "change-requests" })
 				note: t.Optional(
 					t.Union([t.String({ maxLength: MILESTONE_NOTE_MAX }), t.Null()]),
 				),
+				// Only meaningful with status "accepted". The dialog sends the
+				// final text so a partial acceptance is possible.
+				scopeTitle: t.Optional(
+					t.String({
+						minLength: 1,
+						maxLength: MILESTONE_SCOPE_TITLE_MAX,
+					}),
+				),
+				scopeBody: bodyField,
 			}),
 		},
 	)

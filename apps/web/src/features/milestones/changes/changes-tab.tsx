@@ -13,8 +13,9 @@
  *   - the default filter is Open, because that is the work waiting on the team
  *   - creating and editing use the comment editor, so attachments and mentions
  *     work without a second rich text stack
- *   - accept is disabled while the milestone is locked, because accepting
- *     implies a scope edit. Decline, withdraw and move stay available.
+ *   - accepting appends a named scope section and works while the milestone is
+ *     locked, because it never rewrites the locked initial scope. Decline,
+ *     withdraw and move stay available too.
  *
  * Used by: milestone-detail-panel.tsx.
  */
@@ -33,6 +34,7 @@ import { useState } from "react";
 import type { AssignableMember } from "../milestone-assignee-field";
 import { MilestoneCreateDialog } from "../milestone-create-dialog";
 import type { ChangeRequest, ChangeRequestStatus } from "./api";
+import { ChangeRequestAcceptDialog } from "./change-request-accept-dialog";
 import { ChangeRequestDeclineDialog } from "./change-request-decline-dialog";
 import { ChangeRequestDialog } from "./change-request-dialog";
 import { ChangeRequestItem } from "./change-request-item";
@@ -80,20 +82,18 @@ export function ChangesTab({
 	projectSlug,
 	projectId,
 	milestoneId,
-	milestoneLocked,
 	archived,
 	canCreate,
 	canDecide,
 	members,
 	active,
+	onOpenScope,
 }: {
 	orgSlug: string;
 	organizationId: string;
 	projectSlug: string;
 	projectId: string;
 	milestoneId: string;
-	/** True when the milestone lock blocks accepting a request. */
-	milestoneLocked: boolean;
 	/** True when the project is archived and every write is refused. */
 	archived: boolean;
 	/** True when this viewer may raise a request. */
@@ -104,6 +104,8 @@ export function ChangesTab({
 	members: AssignableMember[];
 	/** True while this tab is selected, which is when the list is worth loading. */
 	active: boolean;
+	/** Jump to the Scope tab after an acceptance adds a section. */
+	onOpenScope?: (scopeEntryId: string | null) => void;
 }) {
 	const query = useChangeRequests(orgSlug, projectId, milestoneId, {
 		enabled: active,
@@ -115,6 +117,7 @@ export function ChangesTab({
 	const [search, setSearch] = useState("");
 	const [createOpen, setCreateOpen] = useState(false);
 	const [editing, setEditing] = useState<ChangeRequest | null>(null);
+	const [accepting, setAccepting] = useState<ChangeRequest | null>(null);
 	const [declining, setDeclining] = useState<ChangeRequest | null>(null);
 	const [moving, setMoving] = useState<ChangeRequest | null>(null);
 
@@ -286,26 +289,21 @@ export function ChangesTab({
 								orgSlug={orgSlug}
 								projectSlug={projectSlug}
 								canDecide={serverCanDecide}
-								milestoneLocked={milestoneLocked}
 								archived={archived}
 								pending={
 									decide.isPending && decide.variables?.changeId === request.id
 								}
 								onEdit={setEditing}
+								onAccept={setAccepting}
 								onDecline={setDeclining}
 								onMove={setMoving}
-								onAccept={(target) => {
-									decide.mutate({
-										changeId: target.id,
-										status: "accepted",
-									});
-								}}
 								onWithdraw={(target) => {
 									decide.mutate({
 										changeId: target.id,
 										status: "withdrawn",
 									});
 								}}
+								onOpenScope={onOpenScope}
 							/>
 						))}
 					</ul>
@@ -334,6 +332,21 @@ export function ChangesTab({
 					isOpen={editing !== null}
 					onOpenChange={(open) => {
 						if (!open) setEditing(null);
+					}}
+				/>
+			)}
+
+			{accepting && (
+				<ChangeRequestAcceptDialog
+					key={accepting.id}
+					orgSlug={orgSlug}
+					organizationId={organizationId}
+					projectId={projectId}
+					milestoneId={milestoneId}
+					request={accepting}
+					isOpen={accepting !== null}
+					onOpenChange={(open) => {
+						if (!open) setAccepting(null);
 					}}
 				/>
 			)}

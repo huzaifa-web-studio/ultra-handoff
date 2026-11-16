@@ -35,10 +35,7 @@ import { useDebouncedValue } from "#/hooks/use-debounced-value";
 import { useMediaQuery } from "#/hooks/use-media-query";
 import type { MilestoneDetail } from "./api";
 import { milestonesKey, useMilestones } from "./hooks";
-import {
-	MilestoneDetailPanel,
-	type MilestoneTabKey,
-} from "./milestone-detail-panel";
+import { MilestoneDetailPanel } from "./milestone-detail-panel";
 import { MilestoneListPanel } from "./milestone-list-panel";
 import { useRealtimeMilestones } from "./realtime";
 import {
@@ -47,6 +44,7 @@ import {
 	type MilestoneSort,
 	type MilestoneStatusFilter,
 } from "./schema";
+import type { MilestoneTabKey } from "./tabs";
 
 /** Selection setters supplied by the route, which owns the URL. */
 export type MilestoneSelectionHandler = (

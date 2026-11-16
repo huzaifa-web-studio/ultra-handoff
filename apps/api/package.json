@@ -15,6 +15,7 @@
     "db:setup": "bun run db:bootstrap && bun run db:migrate && bun run db:bootstrap",
     "db:verify-rls": "bun run scripts/verify-rls.ts",
     "db:reconcile-objects": "bun run scripts/reconcile-orphan-objects.ts",
+    "db:backfill-milestone-data": "bun run scripts/backfill-milestone-data.ts",
     "check:redis": "bun run scripts/check-redis-deadline.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

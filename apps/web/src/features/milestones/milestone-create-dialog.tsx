@@ -158,7 +158,11 @@ export function MilestoneCreateDialog({
 		const input = {
 			title: trimmed,
 			status,
-			...(status === "blocked" ? { statusNote: statusNote.trim() } : {}),
+			...(status === "blocked" || status === "cancelled"
+				? statusNote.trim()
+					? { statusNote: statusNote.trim() }
+					: {}
+				: {}),
 			startDate: normalizeDay(dates.startDate),
 			dueDate: normalizeDay(dates.dueDate),
 			estimateMinutes: parsedEstimate.minutes,
@@ -269,23 +273,29 @@ export function MilestoneCreateDialog({
 					</div>
 
 					{/*
-					 * Blocked is the one status that needs a sentence. The field is
-					 * only rendered when it applies, so the dialog stays quiet
-					 * otherwise.
+					 * Blocked and cancelled are the two statuses that accept a
+					 * reason. Blocked requires one; cancelled is optional, so
+					 * the same field serves both without forcing a sentence.
 					 */}
-					{status === "blocked" && (
+					{(status === "blocked" || status === "cancelled") && (
 						<div className="flex flex-col gap-1">
 							<label
 								htmlFor="new-milestone-status-note"
 								className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase"
 							>
-								Why is it blocked?
+								{status === "blocked"
+									? "Why is it blocked?"
+									: "Why is it cancelled? (optional)"}
 							</label>
 							<Input
 								id="new-milestone-status-note"
 								value={statusNote}
 								maxLength={MILESTONE_NOTE_MAX}
-								placeholder="For example: waiting on the client's copy."
+								placeholder={
+									status === "blocked"
+										? "For example: waiting on the client's copy."
+										: "For example: the client paused the project."
+								}
 								onChange={(event) => setStatusNote(event.target.value)}
 								aria-invalid={blockedNeedsNote}
 							/>

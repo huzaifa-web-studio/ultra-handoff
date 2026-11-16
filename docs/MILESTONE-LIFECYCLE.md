@@ -10,6 +10,27 @@ It is a handoff for the next implementation session. The current branch contains
 
 ---
 
+## Revision 2 (13 November 2026)
+
+The lifecycle is now implemented with the following changes to the original direction:
+
+- **`ready` status added** between testing and review. Testing passes, the work waits to be released, then `in_review` starts after the deploy. The full list is `todo`, `in_development`, `in_testing`, `ready`, `in_review`, `blocked`, `done`, `cancelled`.
+- **The client cannot move status.** Only staff (`owner`, `admin`, `member`) may change it. The original "any project member" decision is superseded.
+- **Scope becomes the initial scope plus named sections.** `milestone.description` is the initial scope. Accepted change requests, test rounds and review rounds are stored in `milestone_scope_entry` and shown beneath it, each with its own title, kind, author and date. This removes the manual copy step.
+- **Accepting a change request works while locked.** It appends a new section and never rewrites the locked initial scope. The accepted text can be trimmed in the accept dialog, so partial acceptance is supported.
+- **Test and review notes are phase gated.** Entering `in_testing` creates `Test round N`; entering `in_review` creates `Review round N`. A round is writable only during the exact status period that created it. Test rounds are staff only. Review rounds are writable by any project member, including the client.
+- **Phase timing is recorded.** `milestone_status_period` stores one row per status visit with `entered_at`, `exited_at`, the actor and the optional note. The Overview shows a Time in phases card, and the index on `(project_id, status, entered_at)` is ready for project analytics.
+- **Cancelling accepts an optional reason.** Blocked still requires one. Both are stored on the status event and the phase period.
+- **The lock no longer blocks checklist ticks or phase notes.** It freezes the initial scope, title, dates, estimate and accepted sections. Checklist items stay tickable by staff in the Initial scope tab, and test and review rounds are progress records, so they stay writable in their phase.
+- **The Overview is a summary only.** It shows the initial scope as one card and the latest three additions as cards, each with a kind chip, title, author and excerpt. No rich text and no editor live in the Overview. Every card opens that section in a focused tab.
+- **Each scope opens in its own tab.** The initial scope and every accepted change, test round and review round can be opened as a focused tab, the same way a discussion thread can. The Scope tab is an index of rows rather than a stack of documents, so a milestone with many rounds no longer has to be scrolled through to reach the newest one. Focused tabs persist per milestone and are carried in the URL as `?milestoneTab=scope:<id>`.
+- **Change request body padding fixed**, so the rich text is no longer flush against the card border.
+- **One-time backfill.** Run `bun run db:backfill-milestone-data` in `apps/api` after migrating to seed phase periods and the sections for already accepted requests. `--skip-accepted` skips the second pass.
+
+Section 2 and section 3 below describe the original direction. Where they disagree with this revision, this revision wins.
+
+---
+
 ## 1. The problem with the current scope review feature
 
 The current feature treats the scope as a formal document with a submit, approve or request changes state machine and frozen revisions.
@@ -41,28 +62,28 @@ Replace `in_progress` with three working statuses.
 | `todo` | To do | Not started |
 | `in_development` | In development | Replaces `in_progress` |
 | `in_testing` | In testing | Built and being checked |
-| `in_review` | In review | Ready for the client or team review |
+| `ready` | Ready | Testing passed, waiting to be released |
+| `in_review` | In review | Deployed and ready for the client or team review |
 | `done` | Done | Accepted and finished |
 | `blocked` | Blocked | Cannot proceed, reason required |
-| `cancelled` | Cancelled | Dropped |
+| `cancelled` | Cancelled | Dropped, reason optional |
 
 Decisions:
 
 - `in_progress` is removed.
-- `in_development`, `in_testing` and `in_review` are new.
+- `in_development`, `in_testing`, `ready` and `in_review` are new.
 - `blocked` and `cancelled` stay for exceptions.
 - Existing `in_progress` rows migrate to `in_development`.
-- Any project member can change the status, including the client, unless the milestone is locked.
+- Only staff may change the status. The client reads and reviews it. This supersedes the original "any project member" decision in Revision 2.
 - The status is free to move in any direction. No hard transition graph is enforced.
 
 Suggested flow:
 
 ```
-todo -> in_development -> in_testing -> in_review -> done
-          ^                  |              |
-          |                  v              |
-          +------ issues ----+              |
-          +------ review changes -----------+
+todo -> in_development -> in_testing -> ready -> in_review -> done
+          ^                    |            (deployed)      |
+          |                    v                           v
+          +---- issues ----- todo (test round)          todo (review round)
 ```
 
 `blocked` and `cancelled` are reachable from any state.
@@ -84,12 +105,25 @@ Any project member can test and review. There is no separate tester or reviewer 
 
 ### Adding scope during testing
 
-New work discovered during testing follows one of two paths:
+Each visit to `in_testing` creates a `Test round N` section. The tester writes
+the issues there. Leaving testing freezes the round, so a return to `todo` keeps
+the findings as a named, auditable scope section rather than silently growing
+the initial scope. The next visit creates round N+1.
 
-- **Small work:** create a change request. If the milestone is unlocked, the agency can add it to the current scope directly. If it is locked, the owner or admin unlocks first.
-- **Large work:** create a change request and turn it into a new milestone. The current milestone can still finish.
+The same pattern applies to `in_review`: each visit creates a `Review round N`
+section that any project member, including the client, can write during the
+review. Leaving review freezes it.
 
-This answers the "new scope after testing" case without silently growing the current milestone.
+A change request remains the path for work that was not discovered by testing:
+
+- **Small work:** accept it into the current milestone. Acceptance appends a
+  named `change` section with the final accepted text, even while the milestone
+  is locked.
+- **Large work:** create a change request and turn it into a new milestone. The
+  current milestone can still finish.
+
+This answers the "new scope after testing" case without silently growing the
+current milestone.
 
 ---
 
@@ -102,15 +136,19 @@ A lock is an explicit owner or admin action. It is not tied to a status.
 - Project owner or admin can lock and unlock.
 - While locked, no one can edit:
   - title
-  - scope document
+  - the initial scope document
+  - accepted change sections
   - dates
   - estimate
-- Status, assignees and checklist progress stay available to staff (owner,
-  admin, member). The client still cannot change them.
+- Status, assignees, checklist progress and the active test or review round stay
+  available to staff. Review rounds also stay available to the client. The
+  client still cannot change status.
 - Comments and change requests stay open while locked.
+- Accepting a change request stays open while locked, because it appends a new
+  named section instead of editing the locked initial scope.
 - Deleting a locked milestone is refused. Unlock first.
 - Every lock and unlock is recorded in the activity timeline with the actor and the time.
-- The lock is the baseline. If the scope needs to change, the owner or admin unlocks, edits, then locks again.
+- The lock is the baseline. If the initial scope needs to change, the owner or admin unlocks, edits, then locks again.
 
 ### Open question: checklist progress
 
@@ -163,10 +201,10 @@ Statuses:
 
 ### Agency actions
 
-- **Accept:** the request is marked accepted. If the milestone is unlocked, the agency can apply the text to the scope. If it is locked, the UI asks the owner or admin to unlock first.
+- **Accept:** the request is marked accepted and a named section is appended under the initial scope. The dialog prefills the request title and body so they can be trimmed before confirming. Unlocking is not required, because the initial scope is never rewritten.
 - **Decline:** requires a reason.
 - **Move to a new milestone:** opens the create milestone dialog prefilled with the request title and body. The request is marked moved and linked to the new milestone.
-- **Accept part:** the agency accepts the request and edits the scope as needed. The request record stays intact, so the client can see what was asked and what was applied.
+- **Accept part:** trim the body in the accept dialog before confirming. The request record stays intact, so the client can see what was asked and what was applied.
 
 ### Rules
 
@@ -365,13 +403,14 @@ This creates the milestone, copies the request title and body into it, and marks
 ### Tabs
 
 ```
-Overview | Scope | Changes | Comments
+Overview | Scope | Changes | Comments | Initial scope | Test round 1 | Review round 1 | ...
 ```
 
-- **Overview:** status, estimate, dates, assignees, an editable scope preview that expands to the full document, and every change request title as a card with the open count.
-- **Scope:** the document and checklist progress. Editable unless locked. No submit, approve or revision history.
+- **Overview:** status, estimate, dates, assignees, a scope summary of compact cards, and every change request title as a card with the open count. The scope cards show the initial scope and the latest three additions. No document is rendered here.
+- **Scope:** an index of the initial scope, the current phase round and every earlier addition. Each row shows a kind chip, title, author, date and a short excerpt. Rows open the section in its own tab. No document is rendered here either.
+- **Focused scope tabs:** one tab for the initial scope and one per section, opened from the Overview or the Scope index. This is the only place a scope document is read or edited. A tab keeps its draft and save state, closes independently, is restored after a reload, and can be linked directly with `?milestoneTab=scope:<id>`.
 - **Changes:** the client request list and detail. New request action for the client. Decision actions for staff.
-- **Comments:** the existing discussion timeline.
+- **Comments:** the existing discussion timeline, with focused discussion tabs beside the scope tabs.
 
 ### Changes tab
 
@@ -435,7 +474,7 @@ Never edit `drizzle/` by hand.
 - Locked milestone plus checklist tick: allowed for staff.
 - Client creates a request in any status: allowed.
 - Client withdraws an open request: allowed.
-- Agency accepts a request while locked: blocked until unlock, with a clear prompt.
+- Agency accepts a request while locked: allowed, and it appends a new scope section.
 - Change request moved to a new milestone: the new milestone is created, the request is linked and marked moved.
 - Change request declined: a reason is required.
 - A request accepted in part: the request is accepted and the scope is edited manually. The request record is never rewritten.

@@ -18,14 +18,20 @@ import { canEditProject, effectiveProjectRole } from "./project-permissions";
 /**
  * The states a milestone can be in.
  *
- * `in_development`, `in_testing` and `in_review` are the working lifecycle.
- * Status is free to move in any direction, because testing and review both send
- * work back to development. `blocked` and `cancelled` are the exception states.
+ * `in_development`, `in_testing`, `ready` and `in_review` are the working
+ * lifecycle. Status is free to move in any direction, because testing and
+ * review both send work back to todo. `blocked` and `cancelled` are the
+ * exception states.
+ *
+ * `ready` means testing passed and the work is waiting to be released. It sits
+ * between testing and review because the deploy happens outside the product,
+ * and review starts once the work is live.
  */
 export const MILESTONE_STATUSES = [
 	"todo",
 	"in_development",
 	"in_testing",
+	"ready",
 	"in_review",
 	"blocked",
 	"done",
@@ -39,6 +45,7 @@ export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
 	todo: "To do",
 	in_development: "In development",
 	in_testing: "In testing",
+	ready: "Ready",
 	in_review: "In review",
 	blocked: "Blocked",
 	done: "Done",
@@ -56,6 +63,7 @@ export const ACTIVE_MILESTONE_STATUSES: readonly MilestoneStatus[] = [
 	"todo",
 	"in_development",
 	"in_testing",
+	"ready",
 	"in_review",
 	"blocked",
 ];
@@ -245,6 +253,91 @@ export function canLockMilestones(
 	projectRole: string | null | undefined,
 ): boolean {
 	return canEditProject(organizationRole, projectRole);
+}
+
+/**
+ * Longest accepted scope section title.
+ *
+ * Matches the milestone and change request limit so an accepted request title
+ * never has to be truncated when it becomes a scope section.
+ */
+export const MILESTONE_SCOPE_TITLE_MAX = MILESTONE_TITLE_MAX;
+
+/**
+ * True when this caller may write the current testing round.
+ *
+ * The phase check is part of the rule, not a UI hint: a test round is only a
+ * working document while the milestone is in testing. Staff write it, exactly
+ * like the checklist, because testing is agency side work.
+ */
+export function canWriteTestScope(
+	organizationRole: string,
+	projectRole: string | null | undefined,
+	status: string,
+): boolean {
+	return (
+		status === "in_testing" && canWriteMilestones(organizationRole, projectRole)
+	);
+}
+
+/**
+ * True when this caller may write the current review round.
+ *
+ * Deliberately wider than `canWriteMilestones`: the client and every project
+ * member are the reviewers, so the review notes are the one document a client
+ * may author. It is still limited to the review phase.
+ */
+export function canWriteReviewScope(
+	organizationRole: string,
+	projectRole: string | null | undefined,
+	status: string,
+): boolean {
+	if (status !== "in_review") return false;
+
+	return effectiveProjectRole(organizationRole, projectRole) !== null;
+}
+
+/**
+ * True when this caller may correct an accepted change section.
+ *
+ * An accepted section is agreed scope, so it follows the milestone write rule
+ * and stops while the milestone is locked. Test and review rounds do not use
+ * this: they are progress records and follow their phase rule instead.
+ */
+export function canEditChangeScopeEntry(
+	organizationRole: string,
+	projectRole: string | null | undefined,
+): boolean {
+	return canWriteMilestones(organizationRole, projectRole);
+}
+
+/**
+ * Validate and trim a scope section title.
+ *
+ * Auto generated titles ("Test round 2") and accepted request titles both pass
+ * through here, so the list layout never has to handle an empty or oversized
+ * heading.
+ */
+export function validateMilestoneScopeTitle(title: string): string {
+	const value = title.trim();
+
+	if (value.length < 1 || value.length > MILESTONE_SCOPE_TITLE_MAX) {
+		throw new APIError("BAD_REQUEST", {
+			message: `The scope title must be between 1 and ${MILESTONE_SCOPE_TITLE_MAX} characters.`,
+		});
+	}
+
+	return value;
+}
+
+/** True when a status transition needs a reason. Only blocked does. */
+export function milestoneStatusNeedsNote(status: MilestoneStatus): boolean {
+	return status === "blocked";
+}
+
+/** True when a status transition accepts an optional reason. */
+export function milestoneStatusAcceptsNote(status: MilestoneStatus): boolean {
+	return status === "blocked" || status === "cancelled";
 }
 
 /**

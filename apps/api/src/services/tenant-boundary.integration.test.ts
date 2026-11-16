@@ -53,6 +53,7 @@ import {
 	unlockMilestone,
 	updateMilestone,
 } from "./milestone.service";
+import { updateMilestoneScopeEntry } from "./milestone-scope.service";
 import {
 	addProjectMember,
 	bulkAddProjectMembers,
@@ -1031,7 +1032,7 @@ suite("tenant and project boundary", () => {
 			}
 		});
 
-		test("accept needs staff and an unlocked milestone", async () => {
+		test("accept needs staff and works while locked", async () => {
 			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
 				title: "Accept target",
 			});
@@ -1056,31 +1057,39 @@ suite("tenant and project boundary", () => {
 					),
 				).rejects.toThrow(/Only staff/);
 
-				await expect(
-					updateChangeRequest(
-						tenantMemberA(),
-						ids.pVisibleA,
-						milestoneId,
-						request.changeRequest.id,
-						{ status: "accepted" },
-					),
-				).rejects.toThrow(/locked/);
-
-				await unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
-
+				// Accepting appends a named section and never rewrites the locked
+				// initial scope, so the lock no longer blocks it.
 				const accepted = await updateChangeRequest(
 					tenantMemberA(),
 					ids.pVisibleA,
 					milestoneId,
 					request.changeRequest.id,
-					{ status: "accepted", note: "In scope" },
+					{
+						status: "accepted",
+						note: "In scope",
+						scopeTitle: "Contact page",
+					},
 				);
 
 				expect(accepted.changeRequest.status).toBe("accepted");
 				expect(accepted.changeRequest.decidedBy?.id).toBe(ids.memberA);
 				expect(accepted.changeRequest.decisionNote).toBe("In scope");
 				expect(accepted.openCount).toBe(0);
+				expect(accepted.scopeEntry?.title).toBe("Contact page");
+				expect(accepted.changeRequest.scopeEntryId).toBe(
+					accepted.scopeEntry?.id ?? null,
+				);
+
+				const detail = await getMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+				);
+
+				expect(detail.milestone.scopeEntries).toHaveLength(1);
+				expect(detail.milestone.scopeEntries[0]?.kind).toBe("change");
 			} finally {
+				await unlockMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
 				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
 			}
 		});
@@ -1281,6 +1290,197 @@ suite("tenant and project boundary", () => {
 				).rejects.toThrow(/archived/);
 			} finally {
 				await setProjectArchived(tenantOwnerA(), ids.pVisibleA, false);
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+	});
+
+	describe("scope sections", () => {
+		test("a test round is staff only and only while in testing", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Scope test",
+				status: "in_testing",
+			});
+			const milestoneId = created.milestone.id;
+
+			try {
+				const detail = await getMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+				);
+				const round = detail.milestone.scopeEntries.find(
+					(entry) => entry.kind === "test",
+				);
+
+				expect(round).toBeDefined();
+				expect(detail.milestone.phase.currentPeriodId).toBe(
+					round?.statusPeriodId ?? null,
+				);
+
+				await expect(
+					updateMilestoneScopeEntry(
+						tenantClientA(),
+						ids.pVisibleA,
+						milestoneId,
+						round?.id ?? "",
+						{ body: paragraph("Client finding") },
+					),
+				).rejects.toThrow(/staff/);
+
+				const saved = await updateMilestoneScopeEntry(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					round?.id ?? "",
+					{ body: paragraph("Missing alt text") },
+				);
+
+				expect(bodyText(saved.body)).toBe("Missing alt text");
+
+				await updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+					status: "ready",
+				});
+
+				await expect(
+					updateMilestoneScopeEntry(
+						tenantMemberA(),
+						ids.pVisibleA,
+						milestoneId,
+						round?.id ?? "",
+						{ body: paragraph("Late finding") },
+					),
+				).rejects.toThrow(/testing|phase has ended/);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("a review round is open to the client only in review", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Scope review",
+				status: "in_review",
+			});
+			const milestoneId = created.milestone.id;
+
+			try {
+				const detail = await getMilestone(
+					tenantClientA(),
+					ids.pVisibleA,
+					milestoneId,
+				);
+				const round = detail.milestone.scopeEntries.find(
+					(entry) => entry.kind === "review",
+				);
+
+				expect(round).toBeDefined();
+
+				const clientSaved = await updateMilestoneScopeEntry(
+					tenantClientA(),
+					ids.pVisibleA,
+					milestoneId,
+					round?.id ?? "",
+					{ body: paragraph("Please tighten the spacing") },
+				);
+
+				expect(bodyText(clientSaved.body)).toBe("Please tighten the spacing");
+
+				const memberSaved = await updateMilestoneScopeEntry(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					round?.id ?? "",
+					{ body: paragraph("Agency note") },
+				);
+
+				expect(bodyText(memberSaved.body)).toBe("Agency note");
+
+				await updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+					status: "done",
+				});
+
+				await expect(
+					updateMilestoneScopeEntry(
+						tenantClientA(),
+						ids.pVisibleA,
+						milestoneId,
+						round?.id ?? "",
+						{ body: paragraph("Too late") },
+					),
+				).rejects.toThrow(/review/);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("phase periods record every visit with one open row", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Phase history",
+			});
+			const milestoneId = created.milestone.id;
+
+			try {
+				await updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+					status: "in_development",
+				});
+				await updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+					status: "in_testing",
+				});
+				await updateMilestone(tenantMemberA(), ids.pVisibleA, milestoneId, {
+					status: "ready",
+				});
+
+				const detail = await getMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+				);
+				const open = detail.milestone.phase.periods.filter(
+					(period) => period.exitedAt === null,
+				);
+
+				expect(detail.milestone.phase.periods.length).toBeGreaterThanOrEqual(4);
+				expect(open).toHaveLength(1);
+				expect(open[0]?.status).toBe("ready");
+				expect(detail.milestone.phase.periods[0]?.exitedAt).not.toBeNull();
+				expect(detail.milestone.phase.totals.in_testing).toBeGreaterThanOrEqual(
+					0,
+				);
+			} finally {
+				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
+			}
+		});
+
+		test("cancelling keeps an optional reason on the status event", async () => {
+			const created = await createMilestone(tenantMemberA(), ids.pVisibleA, {
+				title: "Cancel reason",
+			});
+			const milestoneId = created.milestone.id;
+
+			try {
+				const result = await updateMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+					{ status: "cancelled", statusNote: "Client paused the project" },
+				);
+
+				expect(result.changed).toContain("status");
+				expect(result.timeline[0]?.event.note).toBe(
+					"Client paused the project",
+				);
+
+				const detail = await getMilestone(
+					tenantMemberA(),
+					ids.pVisibleA,
+					milestoneId,
+				);
+				const last = detail.milestone.phase.periods.at(-1);
+
+				expect(last?.status).toBe("cancelled");
+				expect(last?.exitedAt).toBeNull();
+				expect(last?.note).toBe("Client paused the project");
+			} finally {
 				await deleteMilestone(tenantOwnerA(), ids.pVisibleA, milestoneId);
 			}
 		});

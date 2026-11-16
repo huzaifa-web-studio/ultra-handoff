@@ -19,6 +19,7 @@ import {
 	MILESTONE_ASSIGNEE_MAX,
 	MILESTONE_ESTIMATE_MAX,
 	MILESTONE_NOTE_MAX,
+	MILESTONE_SCOPE_TITLE_MAX,
 	MILESTONE_STATUSES,
 	MILESTONE_TITLE_MAX,
 } from "../auth/milestone-permissions";
@@ -30,6 +31,7 @@ import {
 	type MilestoneChangedField,
 	type MilestoneCreatedPayload,
 	type MilestoneDeletedPayload,
+	type MilestoneScopeChangedPayload,
 	type MilestoneUpdatedPayload,
 	toRealtimeMilestone,
 } from "../realtime/events";
@@ -47,6 +49,10 @@ import {
 	unlockMilestone,
 	updateMilestone,
 } from "../services/milestone.service";
+import {
+	getMilestoneScopeEntry,
+	updateMilestoneScopeEntry,
+} from "../services/milestone-scope.service";
 
 /** Every milestone route lives under one project. */
 const milestoneParams = t.Object({
@@ -59,6 +65,14 @@ const milestoneParams = t.Object({
 const projectParams = t.Object({
 	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
 	projectId: t.String({ minLength: 1, maxLength: 64 }),
+});
+
+/** One scope section inside a milestone. */
+const scopeEntryParams = t.Object({
+	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
+	projectId: t.String({ minLength: 1, maxLength: 64 }),
+	milestoneId: t.String({ minLength: 1, maxLength: 64 }),
+	entryId: t.String({ minLength: 1, maxLength: 64 }),
 });
 
 const milestoneQuery = t.Object({
@@ -213,6 +227,32 @@ function publishMilestoneDeleted(projectId: string, milestoneId: string): void {
 	void publishRealtimeEvent(projectId, "milestone.deleted", payload).catch(
 		() => undefined,
 	);
+}
+
+/**
+ * Tell open panes that one scope section changed.
+ *
+ * Deliberately lighter than a milestone update: the payload carries ids only,
+ * so a reader fetches the one body it is looking at instead of the whole
+ * detail. The section body never travels on the realtime channel.
+ */
+function publishScopeChanged(
+	projectId: string,
+	milestoneId: string,
+	entryId: string,
+	updatedBy: string,
+): void {
+	const payload: MilestoneScopeChangedPayload = {
+		milestoneId,
+		entryId,
+		updatedBy,
+	};
+
+	void publishRealtimeEvent(
+		projectId,
+		"milestone.scope.changed",
+		payload,
+	).catch(() => undefined);
 }
 
 export const milestoneRoutes = new Elysia({ name: "milestones" })
@@ -420,6 +460,76 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 			body: t.Object({
 				itemId: t.String({ minLength: 1, maxLength: 64 }),
 				checked: t.Boolean(),
+			}),
+		},
+	)
+	/**
+	 * Read one scope section including its full rich text body.
+	 *
+	 * The detail response carries only metadata, so a frozen round is fetched
+	 * when it is expanded instead of on every milestone open.
+	 */
+	.get(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/scope/:entryId",
+		async ({ tenant, status, params }) => {
+			try {
+				return await getMilestoneScopeEntry(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					params.entryId,
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not load the scope section."),
+				});
+			}
+		},
+		{ tenant: true, params: scopeEntryParams },
+	)
+	/**
+	 * Save the active test or review round, or correct an accepted section.
+	 *
+	 * The service owns the phase and role rules. This route only parses the
+	 * field group and broadcasts the change.
+	 */
+	.patch(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/scope/:entryId",
+		async ({ tenant, status, params, body }) => {
+			try {
+				const entry = await updateMilestoneScopeEntry(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					params.entryId,
+					body,
+				);
+
+				publishScopeChanged(
+					params.projectId,
+					params.milestoneId,
+					entry.id,
+					tenant.userId,
+				);
+
+				return { scopeEntry: entry };
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not save the scope section."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: scopeEntryParams,
+			body: t.Object({
+				title: t.Optional(
+					t.String({
+						minLength: 1,
+						maxLength: MILESTONE_SCOPE_TITLE_MAX,
+					}),
+				),
+				body: descriptionField,
 			}),
 		},
 	)

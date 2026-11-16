@@ -13,26 +13,34 @@ import { describe, expect, test } from "bun:test";
 
 import {
 	ACTIVE_MILESTONE_STATUSES,
+	canEditChangeScopeEntry,
 	canLockMilestones,
 	canWriteMilestones,
+	canWriteReviewScope,
+	canWriteTestScope,
 	isMilestoneStatus,
 	MILESTONE_ESTIMATE_MAX,
 	MILESTONE_NOTE_MAX,
+	MILESTONE_SCOPE_TITLE_MAX,
 	MILESTONE_TITLE_MAX,
+	milestoneStatusAcceptsNote,
+	milestoneStatusNeedsNote,
 	validateMilestoneDate,
 	validateMilestoneDateRange,
 	validateMilestoneEstimate,
 	validateMilestoneNote,
+	validateMilestoneScopeTitle,
 	validateMilestoneStatus,
 	validateMilestoneTitle,
 } from "./milestone-permissions";
 
 describe("milestone status", () => {
-	test("accepts the seven product statuses", () => {
+	test("accepts the eight product statuses", () => {
 		const statuses = [
 			"todo",
 			"in_development",
 			"in_testing",
+			"ready",
 			"in_review",
 			"blocked",
 			"done",
@@ -214,10 +222,62 @@ describe("active milestone statuses", () => {
 		expect(ACTIVE_MILESTONE_STATUSES).toContain("todo");
 		expect(ACTIVE_MILESTONE_STATUSES).toContain("in_development");
 		expect(ACTIVE_MILESTONE_STATUSES).toContain("in_testing");
+		expect(ACTIVE_MILESTONE_STATUSES).toContain("ready");
 		expect(ACTIVE_MILESTONE_STATUSES).toContain("in_review");
 		expect(ACTIVE_MILESTONE_STATUSES).toContain("blocked");
 		expect(ACTIVE_MILESTONE_STATUSES).not.toContain("done");
 		expect(ACTIVE_MILESTONE_STATUSES).not.toContain("cancelled");
+	});
+});
+
+describe("scope section permissions", () => {
+	test("only staff write testing findings, and only in testing", () => {
+		expect(canWriteTestScope("member", "member", "in_testing")).toBe(true);
+		expect(canWriteTestScope("member", "client", "in_testing")).toBe(false);
+		expect(canWriteTestScope("member", "member", "ready")).toBe(false);
+		expect(canWriteTestScope("member", "member", "in_review")).toBe(false);
+	});
+
+	test("every project member writes review notes, and only in review", () => {
+		expect(canWriteReviewScope("member", "client", "in_review")).toBe(true);
+		expect(canWriteReviewScope("member", "member", "in_review")).toBe(true);
+		expect(canWriteReviewScope("member", "client", "in_testing")).toBe(false);
+		expect(canWriteReviewScope("member", null, "in_review")).toBe(false);
+	});
+
+	test("an accepted change follows the normal milestone write rule", () => {
+		expect(canEditChangeScopeEntry("member", "member")).toBe(true);
+		expect(canEditChangeScopeEntry("member", "client")).toBe(false);
+		expect(canEditChangeScopeEntry("owner", "client")).toBe(true);
+	});
+});
+
+describe("milestoneStatusNeedsNote", () => {
+	test("only blocked requires a reason", () => {
+		expect(milestoneStatusNeedsNote("blocked")).toBe(true);
+		expect(milestoneStatusNeedsNote("cancelled")).toBe(false);
+		expect(milestoneStatusNeedsNote("done")).toBe(false);
+	});
+
+	test("blocked and cancelled accept one", () => {
+		expect(milestoneStatusAcceptsNote("blocked")).toBe(true);
+		expect(milestoneStatusAcceptsNote("cancelled")).toBe(true);
+		expect(milestoneStatusAcceptsNote("in_review")).toBe(false);
+	});
+});
+
+describe("validateMilestoneScopeTitle", () => {
+	test("trims and keeps a title", () => {
+		expect(validateMilestoneScopeTitle("  Contact page  ")).toBe(
+			"Contact page",
+		);
+	});
+
+	test("rejects an empty or oversized title", () => {
+		expect(() => validateMilestoneScopeTitle("   ")).toThrow(/between 1 and/);
+		expect(() =>
+			validateMilestoneScopeTitle("a".repeat(MILESTONE_SCOPE_TITLE_MAX + 1)),
+		).toThrow(/between 1 and/);
 	});
 });
 

@@ -15,6 +15,7 @@ export const MILESTONE_STATUSES = [
 	"todo",
 	"in_development",
 	"in_testing",
+	"ready",
 	"in_review",
 	"blocked",
 	"done",
@@ -27,6 +28,7 @@ export const MILESTONE_STATUS_LABELS: Record<MilestoneStatus, string> = {
 	todo: "To do",
 	in_development: "In development",
 	in_testing: "In testing",
+	ready: "Ready",
 	in_review: "In review",
 	blocked: "Blocked",
 	done: "Done",
@@ -38,6 +40,7 @@ export const ACTIVE_MILESTONE_STATUSES: readonly MilestoneStatus[] = [
 	"todo",
 	"in_development",
 	"in_testing",
+	"ready",
 	"in_review",
 	"blocked",
 ];
@@ -283,6 +286,31 @@ export function formatEstimate(minutes: number | null): string {
 	if (rest > 0) parts.push(`${rest}m`);
 
 	return parts.length > 0 ? parts.join(" ") : "0m";
+}
+
+/**
+ * Format a phase duration in seconds as `2d 6h`, `4h 12m` or `38m`.
+ *
+ * Kept separate from `formatEstimate` because the input is a measured duration
+ * rather than a stored estimate, and the phase card must never read "No
+ * estimate" for a period that has a real value.
+ */
+export function formatDuration(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return "0m";
+
+	const totalMinutes = Math.floor(seconds / 60);
+	const days = Math.floor(totalMinutes / 1_440);
+	const hours = Math.floor((totalMinutes % 1_440) / 60);
+	const minutes = totalMinutes % 60;
+	const parts: string[] = [];
+
+	if (days > 0) parts.push(`${days}d`);
+	if (hours > 0) parts.push(`${hours}h`);
+	if (minutes > 0) parts.push(`${minutes}m`);
+
+	// A stay under a minute still happened, so it reads as a positive value
+	// instead of an empty string.
+	return parts.length > 0 ? parts.join(" ") : "<1m";
 }
 
 /** Seconds per accepted unit, used by the estimate parser. */

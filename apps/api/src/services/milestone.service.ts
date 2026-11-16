@@ -30,9 +30,13 @@ import {
 	ACTIVE_MILESTONE_STATUSES,
 	canLockMilestones,
 	canWriteMilestones,
+	canWriteReviewScope,
+	canWriteTestScope,
 	MILESTONE_ASSIGNEE_MAX,
 	MILESTONE_LOCKED_MESSAGE,
 	type MilestoneStatus,
+	milestoneStatusAcceptsNote,
+	milestoneStatusNeedsNote,
 	validateMilestoneDate,
 	validateMilestoneDateRange,
 	validateMilestoneEstimate,
@@ -46,6 +50,7 @@ import {
 	comment,
 	milestone,
 	milestoneAssignee,
+	milestoneScopeEntry,
 	projectMember,
 } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
@@ -63,6 +68,17 @@ import type { TenantContext } from "../middleware/tenant";
 import type { MilestoneChangedField } from "../realtime/events";
 import { queueDocumentPreviews } from "./link-preview.service";
 import { assertCommentMentions } from "./mention.service";
+import {
+	closeOpenStatusPeriod,
+	loadPhaseSummary,
+	type MilestonePhaseSummary,
+	openStatusPeriod,
+} from "./milestone-phase.service";
+import {
+	createPhaseRoundEntry,
+	loadScopeEntries,
+	type MilestoneScopeEntrySummary,
+} from "./milestone-scope.service";
 import { listOrganizationOwners } from "./organization.service";
 import {
 	loadProjectAccess,
@@ -110,6 +126,10 @@ export type MilestoneSummary = {
 /** The summary plus the full editor document. */
 export type MilestoneDetail = MilestoneSummary & {
 	description: unknown[];
+	/** Named scope additions under the initial scope, without bodies. */
+	scopeEntries: MilestoneScopeEntrySummary[];
+	/** Every recorded status period and the derived durations. */
+	phase: MilestonePhaseSummary;
 };
 
 /** Capabilities of the caller, so the UI never guesses from a role string. */
@@ -134,6 +154,15 @@ export type MilestoneViewer = {
 	canComment: boolean;
 	/** True when the caller may lock or unlock this milestone. */
 	canLock: boolean;
+	/**
+	 * True when the caller may write the current testing round.
+	 *
+	 * Phase and role are both part of the answer, so the UI never has to
+	 * re-derive "am I staff and is this testing".
+	 */
+	canWriteTestScope: boolean;
+	/** True when the caller may write the current review round. */
+	canWriteReviewScope: boolean;
 	/** True when the project is archived and every write is refused. */
 	archived: boolean;
 };
@@ -145,6 +174,7 @@ export type MilestoneCounts = {
 	todo: number;
 	inDevelopment: number;
 	inTesting: number;
+	ready: number;
 	inReview: number;
 	blocked: number;
 	done: number;
@@ -156,6 +186,7 @@ const STATUS_COUNT_KEYS: Record<MilestoneStatus, keyof MilestoneCounts> = {
 	todo: "todo",
 	in_development: "inDevelopment",
 	in_testing: "inTesting",
+	ready: "ready",
 	in_review: "inReview",
 	blocked: "blocked",
 	done: "done",
@@ -367,6 +398,7 @@ export async function toMilestoneTimeline(
 function toViewer(
 	tenant: TenantContext,
 	access: ProjectAccess,
+	status?: string,
 ): MilestoneViewer {
 	const archived = access.row.archivedAt !== null;
 	const staff = canWriteMilestones(tenant.role, access.role);
@@ -379,6 +411,16 @@ function toViewer(
 		canTickChecklist: !archived && staff,
 		canComment: !archived && canCommentOnProject(tenant.role, access.role),
 		canLock: !archived && canLockMilestones(tenant.role, access.role),
+		// The phase flags matter only on a detail response, where the status
+		// is known. A list response leaves them false on purpose.
+		canWriteTestScope:
+			!archived &&
+			status !== undefined &&
+			canWriteTestScope(tenant.role, access.role, status),
+		canWriteReviewScope:
+			!archived &&
+			status !== undefined &&
+			canWriteReviewScope(tenant.role, access.role, status),
 		archived,
 	};
 }
@@ -879,7 +921,7 @@ async function loadDetail(
 	tenant: TenantContext,
 	projectId: string,
 	milestoneId: string,
-	viewer: MilestoneViewer,
+	access: ProjectAccess,
 ): Promise<MilestoneDetailResult> {
 	const record = await requireMilestoneRecord(
 		tx,
@@ -887,12 +929,27 @@ async function loadDetail(
 		projectId,
 		milestoneId,
 	);
-	const [summary] = await toSummaries(tx, tenant, [record]);
+	const [summary, scopeEntries, phase] = await Promise.all([
+		toSummaries(tx, tenant, [record]).then((rows) => rows[0]),
+		loadScopeEntries(tx, tenant, record.id),
+		loadPhaseSummary(tx, tenant, record.id),
+	]);
+
+	if (!summary) {
+		throw new APIError("NOT_FOUND", {
+			message: "That milestone no longer exists.",
+		});
+	}
 
 	return {
 		projectId,
-		milestone: { ...summary, description: record.description },
-		viewer,
+		milestone: {
+			...summary,
+			description: record.description,
+			scopeEntries,
+			phase,
+		},
+		viewer: toViewer(tenant, access, record.status),
 	};
 }
 
@@ -931,7 +988,7 @@ export async function listMilestones(
 				.select({
 					all: sql<number>`count(*)`.mapWith(Number),
 					active:
-						sql<number>`count(*) filter (where ${milestone.status} in ('todo', 'in_development', 'in_testing', 'in_review', 'blocked'))`.mapWith(
+						sql<number>`count(*) filter (where ${milestone.status} in ('todo', 'in_development', 'in_testing', 'ready', 'in_review', 'blocked'))`.mapWith(
 							Number,
 						),
 					todo: sql<number>`count(*) filter (where ${milestone.status} = 'todo')`.mapWith(
@@ -943,6 +1000,10 @@ export async function listMilestones(
 						),
 					inTesting:
 						sql<number>`count(*) filter (where ${milestone.status} = 'in_testing')`.mapWith(
+							Number,
+						),
+					ready:
+						sql<number>`count(*) filter (where ${milestone.status} = 'ready')`.mapWith(
 							Number,
 						),
 					inReview:
@@ -970,6 +1031,7 @@ export async function listMilestones(
 				todo: 0,
 				inDevelopment: 0,
 				inTesting: 0,
+				ready: 0,
 				inReview: 0,
 				blocked: 0,
 				done: 0,
@@ -1053,13 +1115,7 @@ export async function getMilestone(
 		async (tx) => {
 			const access = await requireProject(tx, tenant, projectId);
 
-			return loadDetail(
-				tx,
-				tenant,
-				projectId,
-				milestoneId,
-				toViewer(tenant, access),
-			);
+			return loadDetail(tx, tenant, projectId, milestoneId, access);
 		},
 	);
 }
@@ -1096,13 +1152,13 @@ export async function insertMilestone(
 	const description = sanitizeRichText(input.description);
 	const statusNote = validateMilestoneNote(
 		input.statusNote,
-		"The blocked reason",
+		status === "cancelled" ? "The cancellation reason" : "The blocked reason",
 	);
 	const milestoneId = randomUUID();
 
 	// A milestone created already blocked still needs a reason. The rule is
 	// about the status, not about which endpoint set it.
-	if (status === "blocked" && !statusNote) {
+	if (milestoneStatusNeedsNote(status) && !statusNote) {
 		throw new APIError("BAD_REQUEST", {
 			message: "Say why this milestone is blocked.",
 		});
@@ -1141,21 +1197,35 @@ export async function insertMilestone(
 
 	await replaceAssignees(tx, tenant, milestoneId, memberIds);
 
-	// A blocked milestone starts with its reason on the timeline, so a reader
-	// is not left asking why work stopped on day one.
-	if (status === "blocked" && statusNote) {
+	// Every milestone starts with an open period, so its first phase can be
+	// measured from the same point the rest of the timeline starts.
+	const period = await openStatusPeriod(tx, tenant, {
+		projectId,
+		milestoneId,
+		status,
+		note: statusNote,
+	});
+
+	// A milestone created directly in testing or review owns the first round
+	// for that visit, exactly as a status change would have created it.
+	if (status === "in_testing" || status === "in_review") {
+		await createPhaseRoundEntry(tx, tenant, {
+			projectId,
+			milestoneId,
+			kind: status === "in_testing" ? "test" : "review",
+			statusPeriodId: period.id,
+		});
+	}
+
+	// A milestone that starts blocked or cancelled keeps its reason on the
+	// timeline, so a reader is not left asking why work stopped on day one.
+	if (statusNote && milestoneStatusAcceptsNote(status)) {
 		await recordMilestoneEvents(tx, tenant, milestoneId, [
 			{ type: "status", from: null, to: status, note: statusNote },
 		]);
 	}
 
-	return loadDetail(
-		tx,
-		tenant,
-		projectId,
-		milestoneId,
-		toViewer(tenant, access),
-	);
+	return loadDetail(tx, tenant, projectId, milestoneId, access);
 }
 
 /** Create a milestone, optionally with its first assignees. */
@@ -1196,12 +1266,19 @@ export async function updateMilestone(
 			const access = await requireProject(tx, tenant, projectId);
 			assertWritable(tenant, access);
 
-			const record = await requireMilestoneRecord(
-				tx,
-				tenant,
-				projectId,
-				milestoneId,
-			);
+			// A status change is the one patch that also writes a period and a
+			// round, so it locks the milestone row to serialize two people
+			// changing it at once. Every other field stays lock free, so two
+			// tabs editing different fields never wait on each other.
+			const record =
+				input.status !== undefined
+					? await requireMilestoneRecordForUpdate(
+							tx,
+							tenant,
+							projectId,
+							milestoneId,
+						)
+					: await requireMilestoneRecord(tx, tenant, projectId, milestoneId);
 
 			// The lock freezes the document, the title, the dates and the
 			// estimate. Status and assignees stay available to staff, because
@@ -1239,7 +1316,7 @@ export async function updateMilestone(
 					tenant,
 					projectId,
 					milestoneId,
-					toViewer(tenant, access),
+					access,
 				);
 
 				return { detail, changed: [], eventRows: [] };
@@ -1263,15 +1340,17 @@ export async function updateMilestone(
 				patch.status = status;
 
 				if (status !== record.status) {
-					// Moving into blocked is the one transition that needs a
-					// sentence, because "cannot proceed" with no reason is not
-					// actionable for anybody reading the timeline.
+					// Blocked is the only transition that must explain itself.
+					// Cancelled accepts an optional reason, and both land on the
+					// status event and the phase period.
 					const note = validateMilestoneNote(
 						input.statusNote,
-						"The blocked reason",
+						status === "cancelled"
+							? "The cancellation reason"
+							: "The blocked reason",
 					);
 
-					if (status === "blocked" && !note) {
+					if (milestoneStatusNeedsNote(status) && !note) {
 						throw new APIError("BAD_REQUEST", {
 							message: "Say why this milestone is blocked.",
 						});
@@ -1284,6 +1363,30 @@ export async function updateMilestone(
 						note,
 					});
 					changed.push("status");
+
+					// Close the old phase and open the new one at the same
+					// instant, so a period never leaves a micro gap between
+					// visits. The partial unique index is the backstop, and the
+					// row lock above is what keeps two writers from racing.
+					const transitionAt = new Date();
+					await closeOpenStatusPeriod(tx, tenant, milestoneId, transitionAt);
+					const period = await openStatusPeriod(tx, tenant, {
+						projectId,
+						milestoneId,
+						status,
+						note,
+						enteredAt: transitionAt,
+					});
+
+					// Testing and review each own a fresh round for this visit.
+					if (status === "in_testing" || status === "in_review") {
+						await createPhaseRoundEntry(tx, tenant, {
+							projectId,
+							milestoneId,
+							kind: status === "in_testing" ? "test" : "review",
+							statusPeriodId: period.id,
+						});
+					}
 				}
 
 				// `completed_at` is derived state. Keep it in sync here so no
@@ -1378,7 +1481,7 @@ export async function updateMilestone(
 					tenant,
 					projectId,
 					milestoneId,
-					toViewer(tenant, access),
+					access,
 				);
 
 				return { detail, changed: [], eventRows: [] };
@@ -1436,7 +1539,7 @@ export async function updateMilestone(
 				tenant,
 				projectId,
 				milestoneId,
-				toViewer(tenant, access),
+				access,
 			);
 
 			return { detail, changed, eventRows };
@@ -1516,7 +1619,7 @@ export async function setMilestoneAssignees(
 				tenant,
 				projectId,
 				milestoneId,
-				toViewer(tenant, access),
+				access,
 			);
 			const changed: MilestoneChangedField[] =
 				events.length > 0 ? ["assignees"] : [];
@@ -1619,7 +1722,7 @@ async function setMilestoneLock(
 				tenant,
 				projectId,
 				milestoneId,
-				toViewer(tenant, access),
+				access,
 			);
 
 			return { detail, eventRows };
@@ -1723,13 +1826,7 @@ export async function toggleMilestoneChecklist(
 					);
 			}
 
-			return loadDetail(
-				tx,
-				tenant,
-				projectId,
-				milestoneId,
-				toViewer(tenant, access),
-			);
+			return loadDetail(tx, tenant, projectId, milestoneId, access);
 		},
 	);
 }
@@ -1774,7 +1871,9 @@ export async function deleteMilestone(
 			const [
 				bodies,
 				requestBodies,
+				scopeBodies,
 				survivingRequestBodies,
+				survivingScopeBodies,
 				survivingMilestones,
 			] = await Promise.all([
 				tx
@@ -1807,6 +1906,29 @@ export async function deleteMilestone(
 							ne(changeRequest.milestoneId, milestoneId),
 						),
 					),
+				// Scope sections belong to this milestone, so they cascade and
+				// their attachments go with it.
+				tx
+					.select({ body: milestoneScopeEntry.body })
+					.from(milestoneScopeEntry)
+					.where(
+						and(
+							eq(milestoneScopeEntry.organizationId, tenant.organizationId),
+							eq(milestoneScopeEntry.milestoneId, milestoneId),
+						),
+					),
+				// Sections on other milestones survive, including those of a
+				// milestone a request was moved into.
+				tx
+					.select({ body: milestoneScopeEntry.body })
+					.from(milestoneScopeEntry)
+					.where(
+						and(
+							eq(milestoneScopeEntry.organizationId, tenant.organizationId),
+							eq(milestoneScopeEntry.projectId, projectId),
+							ne(milestoneScopeEntry.milestoneId, milestoneId),
+						),
+					),
 				// A moved request shares its attachment keys with the milestone
 				// it became. Deleting the source must not pull those bytes out
 				// from under the surviving milestone.
@@ -1826,9 +1948,11 @@ export async function deleteMilestone(
 				record.description,
 				...bodies.map((row) => row.body),
 				...requestBodies.map((row) => row.body),
+				...scopeBodies.map((row) => row.body),
 			]);
 			const survivingKeys = new Set([
 				...keyFromRichText(survivingRequestBodies.map((row) => row.body)),
+				...keyFromRichText(survivingScopeBodies.map((row) => row.body)),
 				...keyFromRichText(survivingMilestones.map((row) => row.description)),
 			]);
 

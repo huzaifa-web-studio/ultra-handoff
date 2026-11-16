@@ -2,10 +2,10 @@
  * Remove object storage keys that no business row references.
  *
  * Why this exists: attachments live only as `/files/<key>` URLs inside
- * `milestone.description`, `comment.body` and `change_request.body`. A delete
- * path removes the objects it can see, but a crashed request, an older release
- * or a manual database change can still leave bytes behind. This pass is the
- * safety net.
+ * `milestone.description`, `comment.body`, `change_request.body` and
+ * `milestone_scope_entry.body`. A delete path removes the objects it can see,
+ * but a crashed request, an older release or a manual database change can still
+ * leave bytes behind. This pass is the safety net.
  *
  * Scope is deliberately narrow. Only keys under a project, milestone or
  * comment folder are considered. Avatars and organization logos are skipped,
@@ -26,7 +26,13 @@
  */
 
 import { adminClient, adminDb } from "../src/db";
-import { changeRequest, comment, milestone, project } from "../src/db/schema";
+import {
+	changeRequest,
+	comment,
+	milestone,
+	milestoneScopeEntry,
+	project,
+} from "../src/db/schema";
 import {
 	deleteObject,
 	keyFromRichText,
@@ -85,6 +91,17 @@ async function collectReferencedKeys(): Promise<Set<string>> {
 		.from(changeRequest);
 
 	for (const row of requests) {
+		for (const key of keyFromRichText(row.body)) referenced.add(key);
+	}
+
+	// Scope sections carry attachments too: accepted change text, test rounds
+	// and review rounds. Missing this pass would make every one of them look
+	// orphaned and deleteable.
+	const scopeEntries = await adminDb
+		.select({ body: milestoneScopeEntry.body })
+		.from(milestoneScopeEntry);
+
+	for (const row of scopeEntries) {
 		for (const key of keyFromRichText(row.body)) referenced.add(key);
 	}
 

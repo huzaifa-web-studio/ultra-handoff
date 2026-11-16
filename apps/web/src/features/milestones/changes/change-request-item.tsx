@@ -30,7 +30,6 @@ export function ChangeRequestItem({
 	orgSlug,
 	projectSlug,
 	canDecide,
-	milestoneLocked,
 	archived,
 	pending,
 	onEdit,
@@ -38,14 +37,13 @@ export function ChangeRequestItem({
 	onDecline,
 	onMove,
 	onWithdraw,
+	onOpenScope,
 }: {
 	request: ChangeRequest;
 	orgSlug: string;
 	projectSlug: string;
 	/** True when this viewer may accept, decline or move. */
 	canDecide: boolean;
-	/** True when the milestone is locked, which blocks accepting. */
-	milestoneLocked: boolean;
 	/** True when the project is archived, so no action is offered. */
 	archived: boolean;
 	/** True while a decision for this request is in flight. */
@@ -55,6 +53,8 @@ export function ChangeRequestItem({
 	onDecline: (request: ChangeRequest) => void;
 	onMove: (request: ChangeRequest) => void;
 	onWithdraw: (request: ChangeRequest) => void;
+	/** Open the section an acceptance created, or the Scope index. */
+	onOpenScope?: (scopeEntryId: string | null) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const [confirmWithdraw, setConfirmWithdraw] = useState(false);
@@ -107,7 +107,7 @@ export function ChangeRequestItem({
 			{expanded && (
 				<div className="flex flex-col gap-3 border-t border-app-border p-3">
 					{request.body.length > 0 ? (
-						<div className="border border-app-border bg-app-panel-subtle">
+						<div className="border border-app-border bg-app-panel-subtle p-3">
 							<CommentBody
 								value={request.body}
 								ariaLabel={`Change request: ${request.title}`}
@@ -150,6 +150,21 @@ export function ChangeRequestItem({
 							</p>
 						)}
 
+					{request.scopeEntryId && (
+						<div className="flex flex-wrap items-center gap-2 border border-app-border bg-app-panel-subtle p-2 text-xs text-app-text">
+							<span className="flex-1">Added to the milestone scope.</span>
+							{onOpenScope && (
+								<Button
+									size="xs"
+									variant="outline"
+									onPress={() => onOpenScope(request.scopeEntryId)}
+								>
+									Open scope
+								</Button>
+							)}
+						</div>
+					)}
+
 					{!archived &&
 						(canDecide || request.canEdit || request.canWithdraw) && (
 							<div className="flex flex-wrap items-center gap-2">
@@ -158,7 +173,6 @@ export function ChangeRequestItem({
 										<Button
 											size="sm"
 											loading={pending}
-											isDisabled={milestoneLocked}
 											onPress={() => onAccept(request)}
 										>
 											Accept
@@ -233,12 +247,8 @@ export function ChangeRequestItem({
 						</div>
 					)}
 
-					{canDecide && open && milestoneLocked && (
-						<p className="text-xs text-warning">
-							This milestone is locked. Unlock it before accepting, so the scope
-							can be updated.
-						</p>
-					)}
+					{/* The lock no longer blocks accepting: it appends a new section
+					    and never rewrites the locked initial scope. */}
 				</div>
 			)}
 		</li>

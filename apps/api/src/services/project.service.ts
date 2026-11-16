@@ -62,6 +62,7 @@ import {
 	changeRequest,
 	comment,
 	milestone,
+	milestoneScopeEntry,
 	project,
 	projectMember,
 	projectPin,
@@ -1429,7 +1430,7 @@ export async function deleteProject(
 			// `inArray` with an empty list is not a valid predicate, so a project
 			// with no milestones skips the comment read entirely.
 			const milestoneIds = milestones.map((row) => row.id);
-			const [bodies, requestBodies] = await Promise.all([
+			const [bodies, requestBodies, scopeBodies] = await Promise.all([
 				milestoneIds.length === 0
 					? []
 					: tx
@@ -1452,12 +1453,23 @@ export async function deleteProject(
 							eq(changeRequest.projectId, projectId),
 						),
 					),
+				// Named scope sections cascade with the project as well.
+				tx
+					.select({ body: milestoneScopeEntry.body })
+					.from(milestoneScopeEntry)
+					.where(
+						and(
+							eq(milestoneScopeEntry.organizationId, tenant.organizationId),
+							eq(milestoneScopeEntry.projectId, projectId),
+						),
+					),
 			]);
 
 			const keys = keyFromRichText([
 				...milestones.map((row) => row.description),
 				...bodies.map((row) => row.body),
 				...requestBodies.map((row) => row.body),
+				...scopeBodies.map((row) => row.body),
 			]);
 
 			await tx
@@ -1696,7 +1708,7 @@ export async function bulkDeleteProjects(
 				);
 
 			const milestoneIds = milestones.map((row) => row.id);
-			const [bodies, requestBodies] = await Promise.all([
+			const [bodies, requestBodies, scopeBodies] = await Promise.all([
 				milestoneIds.length === 0
 					? []
 					: tx
@@ -1717,12 +1729,22 @@ export async function bulkDeleteProjects(
 							inArray(changeRequest.projectId, toDelete),
 						),
 					),
+				tx
+					.select({ body: milestoneScopeEntry.body })
+					.from(milestoneScopeEntry)
+					.where(
+						and(
+							eq(milestoneScopeEntry.organizationId, tenant.organizationId),
+							inArray(milestoneScopeEntry.projectId, toDelete),
+						),
+					),
 			]);
 
 			const removedKeys = keyFromRichText([
 				...milestones.map((row) => row.description),
 				...bodies.map((row) => row.body),
 				...requestBodies.map((row) => row.body),
+				...scopeBodies.map((row) => row.body),
 			]);
 
 			// Deduplicate logos: a duplicated id in the request must not delete

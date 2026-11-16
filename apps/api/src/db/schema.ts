@@ -272,8 +272,8 @@ export const milestone = pgTable(
 		/** Plain text mirror of `description`, used by search and previews. */
 		descriptionText: text("description_text").notNull().default(""),
 		/**
-		 * todo | in_development | in_testing | in_review | blocked | done |
-		 * cancelled, checked below.
+		 * todo | in_development | in_testing | ready | in_review | blocked |
+		 * done | cancelled, checked below.
 		 */
 		status: text("status").notNull().default("todo"),
 		/** Both nullable: a milestone can exist before it is scheduled. */
@@ -320,7 +320,7 @@ export const milestone = pgTable(
 		),
 		check(
 			"milestone_status_check",
-			sql`${table.status} in ('todo', 'in_development', 'in_testing', 'in_review', 'blocked', 'done', 'cancelled')`,
+			sql`${table.status} in ('todo', 'in_development', 'in_testing', 'ready', 'in_review', 'blocked', 'done', 'cancelled')`,
 		),
 		check(
 			"milestone_estimate_check",
@@ -331,6 +331,79 @@ export const milestone = pgTable(
 		check(
 			"milestone_dates_check",
 			sql`${table.startDate} is null or ${table.dueDate} is null or ${table.startDate} <= ${table.dueDate}`,
+		),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();
+
+/**
+ * One continuous stay in a milestone status.
+ *
+ * Why a dedicated table instead of deriving durations from the activity
+ * timeline: the timeline is a discussion surface and a row can be blanked or
+ * hidden by future features. A period row is the durable record the product
+ * needs to answer "how long did this spend in testing", including across DST
+ * and repeated visits to the same status.
+ *
+ * `timestamptz` is deliberate. The one thing this table exists for is a
+ * duration, and a wall clock column would shift the duration when the database
+ * timezone or DST changes. The rest of the schema can stay as it is.
+ *
+ * `exited_at` is null exactly while the milestone is in that status. The
+ * partial unique index makes "one open period per milestone" a database
+ * invariant, not a convention the service could forget.
+ *
+ * `entered_by` uses `set null` so deleting an account keeps the timing record.
+ */
+export const milestoneStatusPeriod = pgTable(
+	"milestone_status_period",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => project.id, { onDelete: "cascade" }),
+		milestoneId: text("milestone_id")
+			.notNull()
+			.references(() => milestone.id, { onDelete: "cascade" }),
+		status: text("status").notNull(),
+		enteredAt: timestamp("entered_at", { withTimezone: true })
+			.defaultNow()
+			.notNull(),
+		exitedAt: timestamp("exited_at", { withTimezone: true }),
+		enteredBy: text("entered_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		/** The status note, such as a blocked or cancellation reason. */
+		note: text("note"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(table) => [
+		// The detail read: every period of one milestone in order.
+		index("milestone_status_period_milestone_idx").on(
+			table.milestoneId,
+			table.enteredAt,
+		),
+		// Makes "where does this project spend its time" a cheap aggregate later.
+		index("milestone_status_period_project_status_idx").on(
+			table.projectId,
+			table.status,
+			table.enteredAt,
+		),
+		index("milestone_status_period_organization_idx").on(table.organizationId),
+		// Exactly one open period per milestone, enforced for every writer.
+		uniqueIndex("milestone_status_period_open_idx")
+			.on(table.milestoneId)
+			.where(sql`${table.exitedAt} is null`),
+		check(
+			"milestone_status_period_status_check",
+			sql`${table.status} in ('todo', 'in_development', 'in_testing', 'ready', 'in_review', 'blocked', 'done', 'cancelled')`,
+		),
+		check(
+			"milestone_status_period_range_check",
+			sql`${table.exitedAt} is null or ${table.exitedAt} >= ${table.enteredAt}`,
 		),
 		tenantIsolation(table.organizationId),
 	],
@@ -593,6 +666,108 @@ export const changeRequest = pgTable(
 		check(
 			"change_request_status_check",
 			sql`${table.status} in ('open', 'accepted', 'declined', 'moved', 'withdrawn')`,
+		),
+		tenantIsolation(table.organizationId),
+	],
+).enableRLS();
+
+/**
+ * One named addition to a milestone scope.
+ *
+ * Why a table instead of appending rich text into `milestone.description`: the
+ * initial scope is the agreed baseline and stays exactly as written. An
+ * addition has its own author, date, kind and source, so a reader can always
+ * tell what was originally agreed from what was accepted, tested or reviewed
+ * later. It also keeps the accepted text immutable even when the underlying
+ * change request is history.
+ *
+ * Kinds:
+ *   - `change` is created when a change request is accepted, and carries the
+ *     final accepted text (which may be trimmed, so partial acceptance works).
+ *   - `test` is created when a milestone enters `in_testing`, and is writable
+ *     only during that exact status period.
+ *   - `review` is created when a milestone enters `in_review`, and is writable
+ *     by any project member during that exact status period.
+ *
+ * `round` numbers the test and review visits ("Test round 2"). It is null for
+ * change entries, which are named by the accepted request instead.
+ *
+ * `status_period_id` ties a phase round to the exact visit that created it, so
+ * an old round cannot become writable again just because the status name came
+ * back. A partial unique index allows one round per period.
+ *
+ * `change_request_id` is kept for the link back to the request. It uses
+ * `set null` so deleting the request record never deletes the scope the project
+ * agreed to.
+ */
+export const milestoneScopeEntry = pgTable(
+	"milestone_scope_entry",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => project.id, { onDelete: "cascade" }),
+		milestoneId: text("milestone_id")
+			.notNull()
+			.references(() => milestone.id, { onDelete: "cascade" }),
+		/** change | test | review, checked below. */
+		kind: text("kind").notNull(),
+		/** Null for change entries, which are named by the request title. */
+		round: integer("round"),
+		title: text("title").notNull(),
+		body: jsonb("body").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+		bodyText: text("body_text").notNull().default(""),
+		changeRequestId: text("change_request_id").references(
+			() => changeRequest.id,
+			{ onDelete: "set null" },
+		),
+		statusPeriodId: text("status_period_id").references(
+			() => milestoneStatusPeriod.id,
+			{ onDelete: "set null" },
+		),
+		createdBy: text("created_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		updatedBy: text("updated_by").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// The Scope tab read: every section of one milestone in order.
+		index("milestone_scope_entry_milestone_idx").on(
+			table.milestoneId,
+			table.createdAt,
+			table.id,
+		),
+		index("milestone_scope_entry_organization_idx").on(table.organizationId),
+		// Supports the "this request became that scope section" link.
+		index("milestone_scope_entry_change_request_idx").on(table.changeRequestId),
+		// One round per phase visit, and no two rounds with the same number.
+		uniqueIndex("milestone_scope_entry_period_idx")
+			.on(table.statusPeriodId)
+			.where(sql`${table.statusPeriodId} is not null`),
+		uniqueIndex("milestone_scope_entry_round_idx")
+			.on(table.milestoneId, table.kind, table.round)
+			.where(sql`${table.round} is not null`),
+		check(
+			"milestone_scope_entry_kind_check",
+			sql`${table.kind} in ('change', 'test', 'review')`,
+		),
+		check(
+			"milestone_scope_entry_round_check",
+			sql`(${table.kind} = 'change' and ${table.round} is null) or (${table.kind} in ('test', 'review') and ${table.round} is not null and ${table.round} > 0)`,
+		),
+		check(
+			"milestone_scope_entry_period_check",
+			sql`(${table.kind} = 'change' and ${table.statusPeriodId} is null) or (${table.kind} in ('test', 'review') and ${table.statusPeriodId} is not null)`,
 		),
 		tenantIsolation(table.organizationId),
 	],

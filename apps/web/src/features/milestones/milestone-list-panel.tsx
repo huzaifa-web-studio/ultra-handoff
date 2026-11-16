@@ -29,9 +29,9 @@ import { toast } from "sonner";
 import type { MilestoneCounts, MilestoneDetail, MilestoneSummary } from "./api";
 import { useSetMilestoneStatus, useUpdateMilestone } from "./hooks";
 import type { AssignableMember } from "./milestone-assignee-field";
-import { MilestoneBlockedReasonDialog } from "./milestone-blocked-reason-dialog";
 import { MilestoneCreateDialog } from "./milestone-create-dialog";
 import { MilestoneListItem } from "./milestone-list-item";
+import { MilestoneStatusReasonDialog } from "./milestone-status-reason-dialog";
 import {
 	MILESTONE_STATUS_FILTER_ICONS,
 	milestoneStatusTextClass,
@@ -52,6 +52,7 @@ const STATUS_FILTER_OPTIONS: {
 	{ id: "todo", label: "To do" },
 	{ id: "in_development", label: "In development" },
 	{ id: "in_testing", label: "In testing" },
+	{ id: "ready", label: "Ready" },
 	{ id: "in_review", label: "In review" },
 	{ id: "blocked", label: "Blocked" },
 	{ id: "done", label: "Done" },
@@ -80,6 +81,8 @@ function countForFilter(
 			return counts.inDevelopment;
 		case "in_testing":
 			return counts.inTesting;
+		case "ready":
+			return counts.ready;
 		case "in_review":
 			return counts.inReview;
 		case "blocked":
@@ -139,11 +142,11 @@ export function MilestoneListPanel({
 	const [createOpen, setCreateOpen] = useState(false);
 	const statusMutation = useSetMilestoneStatus(orgSlug, projectId);
 	const update = useUpdateMilestone(orgSlug, projectId);
-	// A blocked status needs a reason, and the list row has no room for a
-	// field, so the picker opens this prompt instead.
-	const [blockedTarget, setBlockedTarget] = useState<{
+	// Statuses that accept a reason open this prompt instead of saving at once.
+	const [reasonTarget, setReasonTarget] = useState<{
 		id: string;
 		title: string;
+		status: "blocked" | "cancelled";
 	} | null>(null);
 
 	const filtered = filters.search.length > 0 || filters.status !== "active";
@@ -347,10 +350,11 @@ export function MilestoneListPanel({
 										onSelect={() => onSelect(milestone.id)}
 										canWrite={canWrite}
 										onChangeStatus={(status) => {
-											if (status === "blocked") {
-												setBlockedTarget({
+											if (status === "blocked" || status === "cancelled") {
+												setReasonTarget({
 													id: milestone.id,
 													title: milestone.title,
+													status,
 												});
 												return;
 											}
@@ -409,31 +413,35 @@ export function MilestoneListPanel({
 				/>
 			)}
 
-			<MilestoneBlockedReasonDialog
-				isOpen={blockedTarget !== null}
-				title={blockedTarget?.title ?? ""}
+			<MilestoneStatusReasonDialog
+				isOpen={reasonTarget !== null}
+				title={reasonTarget?.title ?? ""}
+				status={reasonTarget?.status ?? "blocked"}
 				onOpenChange={(open) => {
-					if (!open) setBlockedTarget(null);
+					if (!open) setReasonTarget(null);
 				}}
 				onConfirm={(reason) => {
-					if (!blockedTarget) return;
+					if (!reasonTarget) return;
 
 					update.mutate(
 						{
-							milestoneId: blockedTarget.id,
-							patch: { status: "blocked", statusNote: reason },
+							milestoneId: reasonTarget.id,
+							patch: {
+								status: reasonTarget.status,
+								...(reason.length > 0 ? { statusNote: reason } : {}),
+							},
 						},
 						{
 							onError: (error) => {
 								toast.error(
 									error instanceof Error
 										? error.message
-										: "Could not block the milestone.",
+										: `Could not mark the milestone ${reasonTarget.status}.`,
 								);
 							},
 						},
 					);
-					setBlockedTarget(null);
+					setReasonTarget(null);
 				}}
 			/>
 		</section>

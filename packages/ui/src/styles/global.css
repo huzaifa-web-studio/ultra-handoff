@@ -114,6 +114,8 @@
 	--color-milestone-in-development-bg: var(--milestone-in-development-bg);
 	--color-milestone-in-testing: var(--milestone-in-testing);
 	--color-milestone-in-testing-bg: var(--milestone-in-testing-bg);
+	--color-milestone-ready: var(--milestone-ready);
+	--color-milestone-ready-bg: var(--milestone-ready-bg);
 	--color-milestone-in-review: var(--milestone-in-review);
 	--color-milestone-in-review-bg: var(--milestone-in-review-bg);
 	--color-milestone-blocked: var(--milestone-blocked);
@@ -194,6 +196,8 @@
 	--milestone-in-development-bg: #e4eff4;
 	--milestone-in-testing: #7a5a12;
 	--milestone-in-testing-bg: #f4e9c9;
+	--milestone-ready: #3f6a25;
+	--milestone-ready-bg: #e9f2dd;
 	--milestone-in-review: #2f6b6b;
 	--milestone-in-review-bg: #e0f0ef;
 	--milestone-blocked: #b84242;
@@ -278,6 +282,8 @@
 	--milestone-in-development-bg: #152f3a;
 	--milestone-in-testing: #e8c67d;
 	--milestone-in-testing-bg: #33290f;
+	--milestone-ready: #c3e39a;
+	--milestone-ready-bg: #243318;
 	--milestone-in-review: #8fd3cf;
 	--milestone-in-review-bg: #14312f;
 	--milestone-blocked: #f2a49c;

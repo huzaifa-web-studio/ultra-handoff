@@ -96,6 +96,8 @@ export async function updateChangeRequest(
 		body?: unknown[];
 		status?: ChangeRequestStatus;
 		note?: string | null;
+		scopeTitle?: string;
+		scopeBody?: unknown;
 	},
 ) {
 	const response = await api

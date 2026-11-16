@@ -31,16 +31,21 @@ import {
 	createMilestone,
 	deleteMilestone,
 	fetchMilestone,
+	fetchMilestoneScopeEntry,
 	fetchMilestones,
 	lockMilestone,
 	type MilestoneDetail,
 	type MilestoneDetailResponse,
 	type MilestonePatch,
+	type MilestoneScopeEntry,
+	type MilestoneScopeEntrySummary,
 	type MilestoneSummary,
+	type MilestoneViewer,
 	setMilestoneAssignees,
 	toggleMilestoneChecklist,
 	unlockMilestone,
 	updateMilestone,
+	updateMilestoneScopeEntry,
 } from "./api";
 import {
 	type MilestonePages,
@@ -140,6 +145,7 @@ function syncMilestone(
 	orgSlug: string,
 	projectId: string,
 	detail: MilestoneDetail,
+	viewer?: MilestoneViewer,
 ): void {
 	// The cache invariant is "dates are day-only". Normalising at this boundary
 	// means a response that ever carries a timestamp cannot poison the list row
@@ -155,14 +161,17 @@ function syncMilestone(
 		milestoneDetailKey(orgSlug, projectId, milestoneId),
 		(current) => ({
 			projectId,
-			viewer: current?.viewer ?? {
-				userId: "",
-				canWrite: true,
-				canTickChecklist: true,
-				canComment: true,
-				canLock: true,
-				archived: false,
-			},
+			viewer: viewer ??
+				current?.viewer ?? {
+					userId: "",
+					canWrite: true,
+					canTickChecklist: true,
+					canComment: true,
+					canLock: true,
+					canWriteTestScope: false,
+					canWriteReviewScope: false,
+					archived: false,
+				},
 			milestone: normalized,
 		}),
 	);
@@ -271,7 +280,13 @@ export function useCreateMilestone(orgSlug: string, projectId: string) {
 		mutationFn: (input: { title: string } & MilestonePatch) =>
 			createMilestone(orgSlug, projectId, input),
 		onSuccess: (data) => {
-			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+			syncMilestone(
+				queryClient,
+				orgSlug,
+				projectId,
+				data.milestone,
+				data.viewer,
+			);
 			void invalidate();
 		},
 	});
@@ -297,7 +312,13 @@ export function useUpdateMilestone(orgSlug: string, projectId: string) {
 			patch: MilestonePatch;
 		}) => updateMilestone(orgSlug, projectId, milestoneId, patch),
 		onSuccess: (data, variables) => {
-			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+			syncMilestone(
+				queryClient,
+				orgSlug,
+				projectId,
+				data.milestone,
+				data.viewer,
+			);
 
 			if (variables.patch.status !== undefined) {
 				void invalidateList();
@@ -349,7 +370,13 @@ export function useSetMilestoneStatus(orgSlug: string, projectId: string) {
 			);
 		},
 		onSuccess: (data) => {
-			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+			syncMilestone(
+				queryClient,
+				orgSlug,
+				projectId,
+				data.milestone,
+				data.viewer,
+			);
 			void queryClient.invalidateQueries(listQuery);
 		},
 	});
@@ -368,7 +395,13 @@ export function useSetMilestoneAssignees(orgSlug: string, projectId: string) {
 			userIds: string[];
 		}) => setMilestoneAssignees(orgSlug, projectId, milestoneId, userIds),
 		onSuccess: (data) => {
-			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+			syncMilestone(
+				queryClient,
+				orgSlug,
+				projectId,
+				data.milestone,
+				data.viewer,
+			);
 		},
 	});
 }
@@ -413,7 +446,13 @@ export function useSetMilestoneLock(orgSlug: string, projectId: string) {
 				? lockMilestone(orgSlug, projectId, milestoneId, reason)
 				: unlockMilestone(orgSlug, projectId, milestoneId, reason),
 		onSuccess: (data) => {
-			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+			syncMilestone(
+				queryClient,
+				orgSlug,
+				projectId,
+				data.milestone,
+				data.viewer,
+			);
 		},
 		onError: (error) => {
 			toast.error(
@@ -456,13 +495,146 @@ export function useToggleMilestoneChecklist(
 				checked,
 			),
 		onSuccess: (data) => {
-			syncMilestone(queryClient, orgSlug, projectId, data.milestone);
+			syncMilestone(
+				queryClient,
+				orgSlug,
+				projectId,
+				data.milestone,
+				data.viewer,
+			);
 		},
 		onError: (error) => {
 			toast.error(
 				error instanceof Error
 					? error.message
 					: "Could not update the checklist.",
+			);
+		},
+	});
+}
+
+/** One scope section body, fetched only when a reader opens it. */
+export function milestoneScopeEntryKey(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	entryId: string,
+) {
+	return [
+		...milestonesKey(orgSlug, projectId),
+		"scope",
+		milestoneId,
+		entryId,
+	] as const;
+}
+
+/**
+ * Load one scope section.
+ *
+ * The detail response carries metadata only, so a frozen round costs nothing
+ * until it is expanded. `enabled` is how the caller keeps a collapsed card from
+ * making a request.
+ */
+export function useMilestoneScopeEntry(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	entryId: string,
+	options?: { enabled?: boolean },
+) {
+	return useQuery({
+		queryKey: milestoneScopeEntryKey(orgSlug, projectId, milestoneId, entryId),
+		queryFn: () =>
+			fetchMilestoneScopeEntry(orgSlug, projectId, milestoneId, entryId),
+		enabled:
+			Boolean(orgSlug) &&
+			Boolean(projectId) &&
+			Boolean(milestoneId) &&
+			Boolean(entryId) &&
+			(options?.enabled ?? true),
+		// A frozen round never changes, so the body is safe to keep.
+		staleTime: 60_000,
+		retry: retryMilestoneQuery,
+	});
+}
+
+/** Merge one saved section back into the detail metadata and the body cache. */
+function syncScopeEntry(
+	queryClient: QueryClient,
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	entry: MilestoneScopeEntry,
+): void {
+	const { body: _body, ...summary } = entry;
+	const metadata: MilestoneScopeEntrySummary = summary;
+
+	queryClient.setQueryData<MilestoneScopeEntry>(
+		milestoneScopeEntryKey(orgSlug, projectId, milestoneId, entry.id),
+		entry,
+	);
+
+	queryClient.setQueryData<MilestoneDetailResponse>(
+		milestoneDetailKey(orgSlug, projectId, milestoneId),
+		(current) =>
+			current
+				? {
+						...current,
+						milestone: {
+							...current.milestone,
+							scopeEntries: current.milestone.scopeEntries.map((row) =>
+								row.id === metadata.id ? metadata : row,
+							),
+						},
+					}
+				: current,
+	);
+}
+
+/**
+ * Save one scope section.
+ *
+ * The server returns only the section, so the milestone detail cache is patched
+ * rather than replaced. That is what keeps autosave in a long test round from
+ * refetching the whole milestone on every debounce.
+ */
+export function useUpdateMilestoneScopeEntry(
+	orgSlug: string,
+	projectId: string,
+) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			milestoneId,
+			entryId,
+			patch,
+		}: {
+			milestoneId: string;
+			entryId: string;
+			patch: { title?: string; body?: unknown };
+		}) =>
+			updateMilestoneScopeEntry(
+				orgSlug,
+				projectId,
+				milestoneId,
+				entryId,
+				patch,
+			),
+		onSuccess: (entry, variables) => {
+			syncScopeEntry(
+				queryClient,
+				orgSlug,
+				projectId,
+				variables.milestoneId,
+				entry,
+			);
+		},
+		onError: (error) => {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Could not save the scope section.",
 			);
 		},
 	});

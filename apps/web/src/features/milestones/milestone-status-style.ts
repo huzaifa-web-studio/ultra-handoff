@@ -23,6 +23,7 @@ import {
 	FlaskConicalIcon,
 	LayersIcon,
 	type LucideIcon,
+	PackageCheckIcon,
 } from "lucide-react";
 
 import type { MilestoneStatus, MilestoneStatusFilter } from "./schema";
@@ -32,6 +33,7 @@ export const MILESTONE_STATUS_TEXT_CLASSES: Record<MilestoneStatus, string> = {
 	todo: "text-milestone-todo",
 	in_development: "text-milestone-in-development",
 	in_testing: "text-milestone-in-testing",
+	ready: "text-milestone-ready",
 	in_review: "text-milestone-in-review",
 	blocked: "text-milestone-blocked",
 	done: "text-milestone-done",
@@ -44,6 +46,7 @@ export const MILESTONE_STATUS_BADGE_CLASSES: Record<MilestoneStatus, string> = {
 	in_development:
 		"bg-milestone-in-development-bg text-milestone-in-development",
 	in_testing: "bg-milestone-in-testing-bg text-milestone-in-testing",
+	ready: "bg-milestone-ready-bg text-milestone-ready",
 	in_review: "bg-milestone-in-review-bg text-milestone-in-review",
 	blocked: "bg-milestone-blocked-bg text-milestone-blocked",
 	done: "bg-milestone-done-bg text-milestone-done",
@@ -63,6 +66,7 @@ export const MILESTONE_STATUS_ICONS: Record<MilestoneStatus, LucideIcon> = {
 	todo: CircleDashedIcon,
 	in_development: CircleDotIcon,
 	in_testing: FlaskConicalIcon,
+	ready: PackageCheckIcon,
 	in_review: EyeIcon,
 	blocked: BanIcon,
 	done: CircleCheckIcon,

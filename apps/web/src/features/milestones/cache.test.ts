@@ -56,6 +56,8 @@ function makePage(ids: string[], page = 1) {
 			canTickChecklist: true,
 			canComment: true,
 			canLock: true,
+			canWriteTestScope: false,
+			canWriteReviewScope: false,
 			archived: false,
 		},
 		counts: {
@@ -64,6 +66,7 @@ function makePage(ids: string[], page = 1) {
 			todo: ids.length,
 			inDevelopment: 0,
 			inTesting: 0,
+			ready: 0,
 			inReview: 0,
 			blocked: 0,
 			done: 0,

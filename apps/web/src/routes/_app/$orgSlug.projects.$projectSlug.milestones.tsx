@@ -13,42 +13,27 @@
 
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
-
-import type { MilestoneTabKey } from "#/features/milestones/milestone-detail-panel";
 import {
 	MilestonePage,
 	type MilestoneSelectionHandler,
 } from "#/features/milestones/milestone-page";
-
-/** Characters a focused comment tab id may contain. */
-const COMMENT_TAB_PATTERN = /^comment:[A-Za-z0-9_-]{1,64}$/;
-
-/** The tab values the URL contract accepts. */
-type MilestoneTabSearch = Extract<
-	MilestoneTabKey,
-	"scope" | "changes" | "comments" | `comment:${string}`
->;
+import {
+	type MilestoneTabKey,
+	type MilestoneTabSearch,
+	parseMilestoneTabSearch,
+	toMilestoneTabSearchValue,
+} from "#/features/milestones/tabs";
 
 /** The tab values the URL contract accepts. Anything else is dropped. */
 type MilestoneSearch = {
 	milestone?: string;
 	/**
 	 * The detail tab. Only the non default value is stored, so an ordinary
-	 * milestone link stays short. A focused comment tab uses the `comment:` id
-	 * prefix.
+	 * milestone link stays short. A focused tab uses the `scope:` or `comment:`
+	 * id prefix, and the shared parser is the allowlist.
 	 */
 	milestoneTab?: MilestoneTabSearch;
 };
-
-/** Map a tab key to the value stored in the URL. */
-function toTabSearchValue(
-	tab: MilestoneTabKey,
-): MilestoneTabSearch | undefined {
-	if (tab === "scope" || tab === "changes" || tab === "comments") return tab;
-	if (COMMENT_TAB_PATTERN.test(tab)) return tab as `comment:${string}`;
-
-	return undefined;
-}
 
 export const Route = createFileRoute(
 	"/_app/$orgSlug/projects/$projectSlug/milestones",
@@ -56,21 +41,12 @@ export const Route = createFileRoute(
 	// Validate instead of trusting the URL: a hand edited or stale link can
 	// carry anything, and the detail fetch should only receive a plausible id.
 	validateSearch: (search: Record<string, unknown>): MilestoneSearch => {
-		const tab = search.milestoneTab;
-		const milestoneTab =
-			tab === "scope" ||
-			tab === "changes" ||
-			tab === "comments" ||
-			(typeof tab === "string" && COMMENT_TAB_PATTERN.test(tab))
-				? (tab as MilestoneTabSearch)
-				: undefined;
-
 		return {
 			milestone:
 				typeof search.milestone === "string" && search.milestone.length > 0
 					? search.milestone
 					: undefined,
-			milestoneTab,
+			milestoneTab: parseMilestoneTabSearch(search.milestoneTab) ?? undefined,
 		};
 	},
 	component: MilestonesRoute,
@@ -119,7 +95,7 @@ function MilestonesRoute() {
 				params: { orgSlug, projectSlug },
 				search: (previous) => ({
 					...previous,
-					milestoneTab: toTabSearchValue(tab),
+					milestoneTab: toMilestoneTabSearchValue(tab) ?? undefined,
 				}),
 				replace: true,
 			});

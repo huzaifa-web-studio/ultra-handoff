@@ -46,6 +46,8 @@ const milestoneA = `rls-milestone-a-${suffix}`;
 const milestoneB = `rls-milestone-b-${suffix}`;
 const commentA = `rls-comment-a-${suffix}`;
 const changeRequestA = `rls-change-request-a-${suffix}`;
+const statusPeriodA = `rls-status-period-a-${suffix}`;
+const scopeEntryA = `rls-scope-entry-a-${suffix}`;
 const linkPreviewA = `rls-link-preview-a-${suffix}`;
 
 const scopeA = { organizationId: orgA, userId: userA };
@@ -192,6 +194,18 @@ async function seed(): Promise<void> {
 			(id, organization_id, project_id, milestone_id, title, status)
 		values
 			(${changeRequestA}, ${orgA}, ${projectA}, ${milestoneA}, ${"RLS Change Request"}, 'open')
+	`);
+	await adminDb.execute(sql`
+		insert into "milestone_status_period"
+			(id, organization_id, project_id, milestone_id, status)
+		values
+			(${statusPeriodA}, ${orgA}, ${projectA}, ${milestoneA}, 'in_testing')
+	`);
+	await adminDb.execute(sql`
+		insert into "milestone_scope_entry"
+			(id, organization_id, project_id, milestone_id, kind, round, title, status_period_id)
+		values
+			(${scopeEntryA}, ${orgA}, ${projectA}, ${milestoneA}, 'test', 1, ${"Test round 1"}, ${statusPeriodA})
 	`);
 	await adminDb.execute(sql`
 		insert into "link_preview" (id, organization_id, url, url_hash)
@@ -467,7 +481,64 @@ async function main(): Promise<void> {
 				),
 		);
 
-		// 4f. Link previews follow the same boundary.
+		// 4f. Phase periods and scope sections follow the same boundary.
+		await check("milestone status periods are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "milestone_status_period"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a period from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await check("milestone scope entries are scoped to the tenant", async () => {
+			const rows = await withTenant(scopeA, async (tx) =>
+				tx.execute<{ organization_id: string }>(
+					sql`select organization_id from "milestone_scope_entry"`,
+				),
+			);
+			if (rows.length !== 1) {
+				throw new Error(`expected 1 row, got ${rows.length}`);
+			}
+			if (rows[0]?.organization_id !== orgA) {
+				throw new Error("returned a scope entry from another tenant");
+			}
+			return "1 row, own tenant only";
+		});
+
+		await expectFailure(
+			"status period insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "milestone_status_period"
+							(id, organization_id, project_id, milestone_id, status)
+							values (${`rls-period-intruder-${suffix}`}, ${orgB}, ${projectB}, ${milestoneB}, 'todo')`,
+					),
+				),
+		);
+
+		await expectFailure(
+			"scope entry insert into another tenant is rejected",
+			INSUFFICIENT_PRIVILEGE,
+			async () =>
+				withTenant(scopeA, async (tx) =>
+					tx.execute(
+						sql`insert into "milestone_scope_entry"
+							(id, organization_id, project_id, milestone_id, kind, title)
+							values (${`rls-scope-intruder-${suffix}`}, ${orgB}, ${projectB}, ${milestoneB}, 'change', ${"Intruder"})`,
+					),
+				),
+		);
+
+		// 4g. Link previews follow the same boundary.
 		await check("link previews are scoped to the tenant", async () => {
 			const rows = await withTenant(scopeA, async (tx) =>
 				tx.execute<{ organization_id: string }>(
@@ -578,6 +649,12 @@ async function main(): Promise<void> {
 			const changeRequests = await adminDb.execute<{ id: string }>(
 				sql`select id from "change_request" where organization_id = ${orgA}`,
 			);
+			const statusPeriods = await adminDb.execute<{ id: string }>(
+				sql`select id from "milestone_status_period" where organization_id = ${orgA}`,
+			);
+			const scopeEntries = await adminDb.execute<{ id: string }>(
+				sql`select id from "milestone_scope_entry" where organization_id = ${orgA}`,
+			);
 			const linkPreviews = await adminDb.execute<{ id: string }>(
 				sql`select id from "link_preview" where organization_id = ${orgA}`,
 			);
@@ -590,14 +667,16 @@ async function main(): Promise<void> {
 				assignments.length !== 0 ||
 				comments.length !== 0 ||
 				changeRequests.length !== 0 ||
+				statusPeriods.length !== 0 ||
+				scopeEntries.length !== 0 ||
 				linkPreviews.length !== 0
 			) {
 				throw new Error(
-					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships, ${pins.length} pins, ${milestones.length} milestones, ${assignments.length} assignments, ${comments.length} comments, ${changeRequests.length} change requests and ${linkPreviews.length} link previews`,
+					`expected 0 rows, got ${projects.length} projects, ${memberships.length} memberships, ${pins.length} pins, ${milestones.length} milestones, ${assignments.length} assignments, ${comments.length} comments, ${changeRequests.length} change requests, ${statusPeriods.length} status periods, ${scopeEntries.length} scope entries and ${linkPreviews.length} link previews`,
 				);
 			}
 
-			return "projects, memberships, pins, milestones, assignments, comments, change requests and link previews removed";
+			return "projects, memberships, pins, milestones, assignments, comments, change requests, status periods, scope entries and link previews removed";
 		});
 	} finally {
 		await cleanup();

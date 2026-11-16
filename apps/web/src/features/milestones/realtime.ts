@@ -20,7 +20,12 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import type { MilestoneSummary } from "./api";
-import { applyMilestoneEvent, type MilestoneRealtimeEvent } from "./hooks";
+import {
+	applyMilestoneEvent,
+	type MilestoneRealtimeEvent,
+	milestoneDetailKey,
+	milestoneScopeEntryKey,
+} from "./hooks";
 
 /** Every field name the server may report as changed. */
 const CHANGED_FIELDS: readonly MilestoneChangedField[] = [
@@ -125,5 +130,51 @@ export function useRealtimeMilestones({
 		applyMilestoneEvent(queryClient, orgSlug, projectId, payload);
 
 		if (payload.kind === "deleted") onDeleted(payload.milestoneId);
+	});
+}
+
+/**
+ * Keep one open milestone's scope sections current.
+ *
+ * Why mounted on the detail pane rather than the page: the pane knows the
+ * viewer id, so the writer's own echo can be ignored. Without that check every
+ * debounced save would refetch the section the writer is still typing in.
+ */
+export function useRealtimeScopeEntries({
+	orgSlug,
+	projectId,
+	milestoneId,
+	viewerId,
+}: {
+	orgSlug: string;
+	projectId: string;
+	milestoneId: string;
+	viewerId: string;
+}): void {
+	const queryClient = useQueryClient();
+
+	useRealtimeEvent((event) => {
+		if (event.type !== "milestone.scope.changed") return;
+
+		const data = asRecord(event.data);
+
+		if (data.milestoneId !== milestoneId) return;
+		if (typeof data.entryId !== "string") return;
+		if (data.updatedBy === viewerId) return;
+
+		// Both reads are small: one section body and the detail metadata. The
+		// detail refetch is what makes a newly accepted section or a new round
+		// appear without a page reload.
+		void queryClient.invalidateQueries({
+			queryKey: milestoneScopeEntryKey(
+				orgSlug,
+				projectId,
+				milestoneId,
+				data.entryId,
+			),
+		});
+		void queryClient.invalidateQueries({
+			queryKey: milestoneDetailKey(orgSlug, projectId, milestoneId),
+		});
 	});
 }

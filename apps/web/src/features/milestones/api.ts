@@ -101,6 +101,14 @@ export type MilestoneDetailResponse = Awaited<
 >;
 export type MilestoneDetail = MilestoneDetailResponse["milestone"];
 
+/** One named addition under the initial scope, without its body. */
+export type MilestoneScopeEntrySummary =
+	MilestoneDetail["scopeEntries"][number];
+export type MilestoneScopeKind = MilestoneScopeEntrySummary["kind"];
+
+/** Every recorded phase period and the derived durations. */
+export type MilestonePhase = MilestoneDetail["phase"];
+
 /** Create a milestone. The list invalidates, this call returns the detail. */
 export async function createMilestone(
 	orgSlug: string,
@@ -296,4 +304,65 @@ export async function toggleMilestoneChecklist(
 	}
 
 	return response.data;
+}
+
+/** One scope section, including its full editor document. */
+export async function fetchMilestoneScopeEntry(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	entryId: string,
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.scope({ entryId })
+		.get();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load the scope section."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load the scope section.", 0);
+	}
+
+	return response.data;
+}
+
+export type MilestoneScopeEntry = Awaited<
+	ReturnType<typeof fetchMilestoneScopeEntry>
+>;
+
+/** Save the active test or review round, or correct an accepted section. */
+export async function updateMilestoneScopeEntry(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	entryId: string,
+	input: { title?: string; body?: unknown },
+): Promise<MilestoneScopeEntry> {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.scope({ entryId })
+		.patch(input);
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not save the scope section."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not save the scope section.", 0);
+	}
+
+	return response.data.scopeEntry;
 }

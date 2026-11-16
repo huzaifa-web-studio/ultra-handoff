@@ -32,8 +32,6 @@ import {
 import { cn } from "cn";
 import {
 	AlertTriangleIcon,
-	ChevronDownIcon,
-	ChevronUpIcon,
 	LockIcon,
 	LockOpenIcon,
 	RefreshCwIcon,
@@ -41,15 +39,15 @@ import {
 	XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import {
-	MilestoneEditor,
-	MilestoneEditorStatic,
-} from "#/components/rich-text/milestone-editor";
 import { UserAvatar } from "#/components/user-avatar";
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
 import { formatDate, formatRelativeTime } from "#/lib/date";
-import type { MilestoneDetail, MilestoneViewer } from "./api";
+import type {
+	MilestoneDetail,
+	MilestoneScopeEntrySummary,
+	MilestoneViewer,
+} from "./api";
 import { ChangesTab } from "./changes/changes-tab";
 import { OverviewChanges } from "./changes/overview-changes";
 import { useRealtimeChangeRequests } from "./changes/realtime";
@@ -75,34 +73,49 @@ import {
 	type AssignableMember,
 	MilestoneAssigneeField,
 } from "./milestone-assignee-field";
-import { MilestoneBlockedReasonDialog } from "./milestone-blocked-reason-dialog";
 import { MilestoneDateRangeField } from "./milestone-date-range-field";
 import { MilestoneDeleteDialog } from "./milestone-delete-dialog";
 import { MilestoneEstimateField } from "./milestone-estimate-field";
+import { MilestonePhaseCard } from "./milestone-phase-card";
 import { MilestoneStatusBadge } from "./milestone-status-badge";
+import {
+	type MilestoneReasonStatus,
+	MilestoneStatusReasonDialog,
+} from "./milestone-status-reason-dialog";
 import { MilestoneStatusSelect } from "./milestone-status-select";
-import { readMilestonePayload } from "./realtime";
+import { readMilestonePayload, useRealtimeScopeEntries } from "./realtime";
 import {
 	MILESTONE_TITLE_MAX,
 	type MilestoneStatus,
 	normalizeDay,
 } from "./schema";
+import { BaselineScopeTab } from "./scope/baseline-scope-tab";
+import { canWriteScopeEntry, isCurrentScopeEntry } from "./scope/permissions";
+import { ScopeEntryTab } from "./scope/scope-entry-tab";
+import { ScopeIndexRow } from "./scope/scope-index-row";
+import { ScopeTab } from "./scope/scope-tab";
+import {
+	baselineScopeTab,
+	type OpenScopeTab,
+	pruneScopeTabs,
+	readScopeTabs,
+	scopeTabsEqual,
+	scopeTabsStorageKey,
+	toOpenScopeTab,
+	writeScopeTabs,
+} from "./scope/tabs-storage";
+import {
+	BASELINE_SCOPE_TAB_ID,
+	commentTabKey,
+	isScopeTabKey,
+	type MilestoneTabKey,
+	resolveMilestoneTab,
+	scopeTabId,
+	scopeTabKey,
+} from "./tabs";
 
 /** Save indicator states. */
 type SaveState = "idle" | "saving" | "saved" | "error";
-
-/**
- * The sections of the milestone detail pane.
- *
- * The first two are fixed. Every additional key is a focused comment tab whose
- * id follows the `comment:` prefix.
- */
-export type MilestoneTabKey =
-	| "overview"
-	| "scope"
-	| "changes"
-	| "comments"
-	| `comment:${string}`;
 
 /** A small labelled cell in the metadata grid. */
 function MetaField({
@@ -177,6 +190,63 @@ function SaveStatus({
 				</Button>
 			)}
 		</div>
+	);
+}
+
+/**
+ * One reader opened tab in the strip.
+ *
+ * Why its own component: scope tabs and comment tabs share one strip, and two
+ * copies of the close button is how the keyboard behaviour drifts. The first
+ * reader tab carries the vertical rule that separates the fixed sections from
+ * the reader's own tabs.
+ */
+function ReaderTabTrigger({
+	tabKey,
+	label,
+	ariaLabel,
+	first,
+	onClose,
+	registerRef,
+}: {
+	tabKey: string;
+	label: string;
+	ariaLabel?: string;
+	first: boolean;
+	onClose: () => void;
+	registerRef: (element: HTMLDivElement | null) => void;
+}) {
+	return (
+		<TabsTrigger
+			id={tabKey}
+			aria-label={ariaLabel}
+			ref={registerRef}
+			className={cn(
+				"max-w-48 flex-none cursor-pointer gap-1.5 pr-1.5 normal-case tracking-normal",
+				first &&
+					"ml-2 pl-3 before:absolute before:inset-y-1.5 before:left-0 before:w-px before:bg-app-border before:content-['']",
+			)}
+		>
+			<span className="min-w-0 truncate">{label}</span>
+
+			{/*
+			 * A quick close on the tab itself. It stops the press from selecting
+			 * the tab and stays a real focus stop so keyboard users can close a
+			 * tab without leaving the strip.
+			 */}
+			<button
+				type="button"
+				aria-label={`Close ${label}`}
+				className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-app-text-muted transition-colors hover:bg-app-panel-subtle hover:text-app-text"
+				onPointerDown={(event) => event.stopPropagation()}
+				onClick={(event) => {
+					event.stopPropagation();
+					onClose();
+				}}
+			>
+				<XIcon className="size-3.5" aria-hidden />
+			</button>
+		</TabsTrigger>
 	);
 }
 
@@ -281,6 +351,7 @@ export function MilestoneDetailPanel({
 			onTabChange={onTabChange}
 			onClose={onClose}
 			onReload={onReload}
+			onRefetch={() => void query.refetch()}
 			onDeleted={onDeleted}
 		/>
 	);
@@ -299,6 +370,7 @@ function MilestoneDetailContent({
 	onTabChange,
 	onClose,
 	onReload,
+	onRefetch,
 	onDeleted,
 }: {
 	orgSlug: string;
@@ -312,6 +384,8 @@ function MilestoneDetailContent({
 	onTabChange: (tab: MilestoneTabKey) => void;
 	onClose?: () => void;
 	onReload: () => void;
+	/** Refetch in place, without remounting the editors. */
+	onRefetch: () => void;
 	onDeleted: () => void;
 }) {
 	const update = useUpdateMilestone(orgSlug, projectId);
@@ -329,6 +403,12 @@ function MilestoneDetailContent({
 	// Status and assignees stay available to staff while the document is
 	// locked. A client still cannot touch either.
 	const canEditLifecycle = viewer.canWrite;
+	// Defensive fallbacks: a tab that stayed open across a deploy can still hold
+	// a detail cached before scope sections existed.
+	const scopeEntries = milestone.scopeEntries ?? [];
+	// The Overview shows the newest additions only. The full list is the Scope
+	// tab's job, and every card opens its own focused tab.
+	const latestScopeEntries = [...scopeEntries].slice(-3).reverse();
 
 	/*
 	 * One subscription covers every comment surface of this milestone: the main
@@ -352,6 +432,15 @@ function MilestoneDetailContent({
 		milestoneId: milestone.id,
 	});
 
+	// Scope sections are fetched lazily and by other people too, so this keeps
+	// an open round current without refetching the whole milestone.
+	useRealtimeScopeEntries({
+		orgSlug,
+		projectId,
+		milestoneId: milestone.id,
+		viewerId: viewer.userId,
+	});
+
 	const [title, setTitle] = useState(milestone.title);
 	const [status, setStatus] = useState<MilestoneStatus>(milestone.status);
 	const [dates, setDates] = useState(() => ({
@@ -362,19 +451,18 @@ function MilestoneDetailContent({
 		milestone.assignees.map((assignee) => assignee.userId),
 	);
 	/*
-	 * The scope draft lives here, not inside the editor, so the Overview and
-	 * the Scope tab can hand the same text to one editor at a time. It is a
-	 * ref on purpose: typing updates the editor and the save without
-	 * re-rendering the whole detail pane on every keystroke.
+	 * The initial scope draft lives here, not inside the editor, so closing the
+	 * baseline tab keeps the text and its pending save alive. It is a ref on
+	 * purpose: typing updates the editor and the save without re-rendering the
+	 * whole detail pane on every keystroke.
 	 */
 	const scopeDraftRef = useRef<unknown[]>(milestone.description);
 	const [saveState, setSaveState] = useState<SaveState>("idle");
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
-	const [blockedOpen, setBlockedOpen] = useState(false);
-	// The Overview starts with a short formatted preview and can expand to the
-	// whole document without leaving the tab.
-	const [scopeExpanded, setScopeExpanded] = useState(false);
+	// The status reason prompt: blocked requires a note, cancelled does not.
+	const [reasonStatus, setReasonStatus] =
+		useState<MilestoneReasonStatus | null>(null);
 	const [externalUpdate, setExternalUpdate] = useState(false);
 	// The Comments panel is only mounted after its first visit. Once open it
 	// stays mounted, so a draft and the list position survive a tab switch
@@ -389,13 +477,94 @@ function MilestoneDetailContent({
 	const [openCommentTabs, setOpenCommentTabs] = useState<OpenCommentTab[]>(() =>
 		readCommentTabs(commentTabsKey),
 	);
+
+	// Focused scope tabs follow the same contract: persisted per milestone,
+	// identified by section id, and closed from the tab strip.
+	const scopeTabsKey = scopeTabsStorageKey(orgSlug, milestone.id);
+	const [openScopeTabs, setOpenScopeTabs] = useState<OpenScopeTab[]>(() =>
+		readScopeTabs(scopeTabsKey),
+	);
+
 	// Trigger elements, so the selected tab can be revealed in the horizontal
-	// tab strip when many focused tabs are open.
-	const commentTabRefs = useRef(new Map<string, HTMLDivElement>());
+	// tab strip when many focused tabs are open. Scope and comment tabs share
+	// one map because they share one strip.
+	const tabRefs = useRef(new Map<string, HTMLDivElement>());
+	// A closed tab can still be named by the URL for one render while the
+	// navigation lands, and the deep link effect would otherwise reopen it.
+	const closedScopeTabIds = useRef(new Set<string>());
 
 	useEffect(() => {
 		writeCommentTabs(commentTabsKey, openCommentTabs);
 	}, [commentTabsKey, openCommentTabs]);
+
+	useEffect(() => {
+		writeScopeTabs(scopeTabsKey, openScopeTabs);
+	}, [scopeTabsKey, openScopeTabs]);
+
+	/*
+	 * Drop a stored tab whose section no longer exists and refresh the label
+	 * and kind of the rest. The equality guard keeps a refetch from writing
+	 * state on every render.
+	 */
+	useEffect(() => {
+		setOpenScopeTabs((current) => {
+			const next = pruneScopeTabs(current, scopeEntries);
+
+			return scopeTabsEqual(current, next) ? current : next;
+		});
+	}, [scopeEntries]);
+
+	/*
+	 * A URL can name a scope this device has never opened, such as a link from
+	 * another machine. The tab is derived below so the first paint is correct,
+	 * and this effect adds it to the stored list once.
+	 */
+	const requestedScopeTabId = scopeTabId(selectedTab);
+	const requestedScopeTab: OpenScopeTab | null = (() => {
+		if (requestedScopeTabId === null) return null;
+		if (requestedScopeTabId === BASELINE_SCOPE_TAB_ID) {
+			return baselineScopeTab();
+		}
+
+		const entry = scopeEntries.find((item) => item.id === requestedScopeTabId);
+
+		return entry ? toOpenScopeTab(entry) : null;
+	})();
+	const requestedScopeTabLabel = requestedScopeTab?.label ?? null;
+	const requestedScopeTabKind = requestedScopeTab?.kind ?? null;
+
+	useEffect(() => {
+		if (
+			requestedScopeTabId === null ||
+			requestedScopeTabLabel === null ||
+			requestedScopeTabKind === null
+		) {
+			return;
+		}
+
+		// A tab the reader just closed stays closed, even though the URL may
+		// still name it until the navigation lands.
+		if (closedScopeTabIds.current.has(requestedScopeTabId)) return;
+
+		const tab: OpenScopeTab = {
+			id: requestedScopeTabId,
+			label: requestedScopeTabLabel,
+			kind: requestedScopeTabKind,
+		};
+
+		setOpenScopeTabs((current) =>
+			current.some((item) => item.id === tab.id) ? current : [...current, tab],
+		);
+	}, [requestedScopeTabId, requestedScopeTabLabel, requestedScopeTabKind]);
+
+	// Everything the strip and the tab content render. A deep linked tab joins
+	// the list before the effect above has stored it, so the first paint is not
+	// an empty pane.
+	const scopeTabs =
+		requestedScopeTab &&
+		!openScopeTabs.some((tab) => tab.id === requestedScopeTab.id)
+			? [...openScopeTabs, requestedScopeTab]
+			: openScopeTabs;
 
 	const retryRef = useRef<(() => Promise<unknown>) | null>(null);
 	const lastSavedTitle = useRef(milestone.title);
@@ -418,6 +587,14 @@ function MilestoneDetailContent({
 		if (!payload || payload.kind !== "updated") return;
 		if (payload.milestone.id !== milestone.id) return;
 		if (payload.milestone.updatedBy === viewer.userId) return;
+
+		// A status change can open a new round and close the previous period.
+		// Refetching in place updates the phase card and the scope sections
+		// without remounting the editors.
+		if (payload.changed.includes("status")) {
+			onRefetch();
+			return;
+		}
 
 		// A locked scope is rendered from a static copy of the body. A remote
 		// tick changes that copy, so the pane reloads instead of showing a
@@ -537,9 +714,9 @@ function MilestoneDetailContent({
 	/**
 	 * Keep the shared draft and schedule the autosave.
 	 *
-	 * Both the Overview and the Scope tab call this, so whichever editor is
-	 * mounted writes to the same draft and the same save. The draft is a ref,
-	 * so a keystroke does not re-render the rest of the pane.
+	 * The baseline tab is the only editor for the initial scope, and it calls
+	 * this. The draft is a ref, so a keystroke does not re-render the rest of
+	 * the pane, and closing the tab cannot lose text that has not been sent.
 	 */
 	function changeScope(value: unknown[]) {
 		scopeDraftRef.current = value;
@@ -547,10 +724,10 @@ function MilestoneDetailContent({
 	}
 
 	function changeStatus(next: MilestoneStatus) {
-		// Blocked is the one status that needs a reason, so the select opens a
-		// prompt instead of saving immediately. Every other status saves at once.
-		if (next === "blocked" && status !== "blocked") {
-			setBlockedOpen(true);
+		// Blocked and cancelled are the two transitions that offer a reason.
+		// Blocked requires it, cancelled accepts an empty note.
+		if ((next === "blocked" || next === "cancelled") && status !== next) {
+			setReasonStatus(next);
 			return;
 		}
 
@@ -661,46 +838,79 @@ function MilestoneDetailContent({
 			return [...current, tab];
 		});
 
-		onTabChange(`comment:${tab.id}`);
+		onTabChange(commentTabKey(tab.id));
 	}
 
-	/** Close a focused tab and fall back to the full discussion if it was open. */
+	/** Close a focused comment tab and fall back to the full discussion. */
 	function closeCommentTab(id: string) {
 		setOpenCommentTabs((current) => current.filter((tab) => tab.id !== id));
 
-		if (selectedTab === `comment:${id}`) {
+		if (selectedTab === commentTabKey(id)) {
 			onTabChange("comments");
 		}
 	}
 
-	// A stored tab can disappear if local storage was cleared. In that case the
-	// URL falls back to the full discussion instead of showing an empty pane.
-	const openTabKeys = new Set(
-		openCommentTabs.map((tab) => `comment:${tab.id}`),
-	);
-	const effectiveSelectedTab: MilestoneTabKey =
-		selectedTab === "overview" ||
-		selectedTab === "scope" ||
-		selectedTab === "changes" ||
-		selectedTab === "comments" ||
-		openTabKeys.has(selectedTab)
-			? selectedTab
-			: "comments";
+	/** Open a focused tab for one scope section, or focus the open one. */
+	function openScopeTab(tab: OpenScopeTab) {
+		// A deliberate open overrides an earlier close.
+		closedScopeTabIds.current.delete(tab.id);
+
+		setOpenScopeTabs((current) =>
+			current.some((item) => item.id === tab.id)
+				? current.map((item) => (item.id === tab.id ? tab : item))
+				: [...current, tab],
+		);
+
+		onTabChange(scopeTabKey(tab.id));
+	}
+
+	function openBaselineScopeTab() {
+		openScopeTab(baselineScopeTab());
+	}
+
+	function openEntryScopeTab(entry: MilestoneScopeEntrySummary) {
+		openScopeTab(toOpenScopeTab(entry));
+	}
+
+	/** Close a focused scope tab and fall back to the Scope index. */
+	function closeScopeTab(id: string) {
+		closedScopeTabIds.current.add(id);
+		setOpenScopeTabs((current) => current.filter((tab) => tab.id !== id));
+
+		if (selectedTab === scopeTabKey(id)) {
+			onTabChange("scope");
+		}
+	}
+
+	// A stored tab can disappear if local storage was cleared, and a URL can
+	// name a tab this device never opened. Both resolve to a real parent tab
+	// instead of an empty pane, and a deep linked scope stays selected while
+	// the effect above stores it.
+	const openTabKeys = new Set<MilestoneTabKey>([
+		...scopeTabs.map((tab) => scopeTabKey(tab.id)),
+		...openCommentTabs.map((tab) => commentTabKey(tab.id)),
+	]);
+	const openDeepLinkedScope =
+		isScopeTabKey(selectedTab) && requestedScopeTab !== null;
+	const effectiveSelectedTab: MilestoneTabKey = openDeepLinkedScope
+		? selectedTab
+		: resolveMilestoneTab(selectedTab, openTabKeys);
 
 	/*
-	 * The Overview can edit the scope in place when it is expanded and the
-	 * viewer may write. It shares the draft and the save with the Scope tab, so
-	 * only one editor is mounted at a time.
+	 * Reveal the selected reader tab when the strip is wider than the pane.
+	 * Scope and comment tabs share one strip, so both use the same map.
 	 */
-	const overviewScopeVisible = effectiveSelectedTab === "overview";
-	const overviewScopeEditable =
-		overviewScopeVisible && scopeExpanded && canEditFields;
-
-	// Reveal the active comment tab when the strip is wider than the pane.
 	useEffect(() => {
-		if (!effectiveSelectedTab.startsWith("comment:")) return;
+		if (
+			effectiveSelectedTab === "overview" ||
+			effectiveSelectedTab === "scope" ||
+			effectiveSelectedTab === "changes" ||
+			effectiveSelectedTab === "comments"
+		) {
+			return;
+		}
 
-		commentTabRefs.current
+		tabRefs.current
 			.get(effectiveSelectedTab)
 			?.scrollIntoView({ block: "nearest", inline: "nearest" });
 	}, [effectiveSelectedTab]);
@@ -808,9 +1018,10 @@ function MilestoneDetailContent({
 					<LockIcon className="size-3.5 shrink-0" aria-hidden />
 					<span>
 						Locked by {milestone.lockedByName ?? "an owner"} on{" "}
-						{formatDate(milestone.lockedAt ?? milestone.updatedAt)}. The scope,
-						title, dates and estimate are read-only. Status and assignees can
-						still change.
+						{formatDate(milestone.lockedAt ?? milestone.updatedAt)}. The initial
+						scope, title, dates and estimate are read-only. Status, assignees,
+						checklist progress and active phase notes can still change, and a
+						change request can still be accepted into a new section.
 					</span>
 				</div>
 			)}
@@ -857,52 +1068,55 @@ function MilestoneDetailContent({
 					</TabsTrigger>
 
 					{/*
-					 * Focused comment tabs. The first one carries a vertical rule
-					 * that separates the fixed sections from the reader's own tabs.
-					 * The list scrolls horizontally, so opening many stays usable.
+					 * Reader opened tabs. Scope tabs come first, then focused
+					 * discussions, so the strip groups by what the tab shows. The
+					 * first one carries the vertical rule that separates the fixed
+					 * sections from the reader's own tabs. The list scrolls
+					 * horizontally, so opening many stays usable.
 					 */}
-					{openCommentTabs.map((tab, index) => (
-						<TabsTrigger
-							key={tab.id}
-							id={`comment:${tab.id}`}
-							aria-label={tab.title}
-							ref={(element) => {
-								const key = `comment:${tab.id}`;
+					{scopeTabs.map((tab, index) => {
+						const key = scopeTabKey(tab.id);
 
-								if (element) {
-									commentTabRefs.current.set(key, element);
-								} else {
-									commentTabRefs.current.delete(key);
-								}
-							}}
-							className={cn(
-								"max-w-48 flex-none cursor-pointer gap-1.5 pr-1.5 normal-case tracking-normal",
-								index === 0 &&
-									"ml-2 pl-3 before:absolute before:inset-y-1.5 before:left-0 before:w-px before:bg-app-border before:content-['']",
-							)}
-						>
-							<span className="min-w-0 truncate">{tab.label}</span>
-
-							{/*
-							 * A quick close on the tab itself. It stops the press from
-							 * selecting the tab. It is a real focus stop so keyboard users
-							 * can close a thread now that the pane no longer has its own
-							 * Close tab bar.
-							 */}
-							<button
-								type="button"
-								aria-label={`Close ${tab.label}`}
-								className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-app-text-muted transition-colors hover:bg-app-panel-subtle hover:text-app-text"
-								onPointerDown={(event) => event.stopPropagation()}
-								onClick={(event) => {
-									event.stopPropagation();
-									closeCommentTab(tab.id);
+						return (
+							<ReaderTabTrigger
+								key={key}
+								tabKey={key}
+								label={tab.label}
+								ariaLabel={tab.label}
+								first={index === 0}
+								onClose={() => closeScopeTab(tab.id)}
+								registerRef={(element) => {
+									if (element) {
+										tabRefs.current.set(key, element);
+									} else {
+										tabRefs.current.delete(key);
+									}
 								}}
-							>
-								<XIcon className="size-3.5" aria-hidden />
-							</button>
-						</TabsTrigger>
-					))}
+							/>
+						);
+					})}
+
+					{openCommentTabs.map((tab, index) => {
+						const key = commentTabKey(tab.id);
+
+						return (
+							<ReaderTabTrigger
+								key={key}
+								tabKey={key}
+								label={tab.label}
+								ariaLabel={tab.title}
+								first={scopeTabs.length === 0 && index === 0}
+								onClose={() => closeCommentTab(tab.id)}
+								registerRef={(element) => {
+									if (element) {
+										tabRefs.current.set(key, element);
+									} else {
+										tabRefs.current.delete(key);
+									}
+								}}
+							/>
+						);
+					})}
 				</TabsList>
 
 				<TabsContent
@@ -966,90 +1180,67 @@ function MilestoneDetailContent({
 								</MetaField>
 							</div>
 
-							{/* Scope summary. The document itself lives on the Scope tab. */}
+							{/*
+							 * Scope summary. No document is rendered here: every card
+							 * opens its own tab, where the section gets the full pane.
+							 */}
 							<section className="flex flex-col gap-2">
-								<div className="flex items-center justify-between gap-2">
+								<div className="flex flex-wrap items-center justify-between gap-2">
 									<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
 										Scope
-									</h3>
-									<div className="flex items-center gap-1">
-										{(canEditFields ||
-											milestone.description.length > 0 ||
-											scopeDraftRef.current.length > 0) && (
-											<Button
-												size="xs"
-												variant="ghost"
-												aria-expanded={scopeExpanded}
-												onPress={() => setScopeExpanded((current) => !current)}
-											>
-												{scopeExpanded ? (
-													<ChevronUpIcon aria-hidden />
-												) : (
-													<ChevronDownIcon aria-hidden />
-												)}
-												{scopeExpanded ? "Collapse" : "Expand"}
-											</Button>
+										{scopeEntries.length > 0 && (
+											<span className="ml-2 bg-app-selected px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-app-text">
+												{scopeEntries.length} added
+											</span>
 										)}
-										<Button
-											size="xs"
-											variant="outline"
-											onPress={() => onTabChange("scope")}
-										>
-											Open scope
-										</Button>
-									</div>
+									</h3>
+									<Button
+										size="xs"
+										variant="outline"
+										onPress={() => onTabChange("scope")}
+									>
+										Open scope
+									</Button>
 								</div>
 
-								{overviewScopeEditable ? (
-									/*
-									 * Editing in the Overview uses the same draft and save as the
-									 * Scope tab. The box grows with the text instead of clamping.
-									 */
-									<div className="border border-app-border bg-app-panel-subtle">
-										<MilestoneEditor
-											key={`overview-${milestone.id}`}
-											initialValue={scopeDraftRef.current}
-											onChange={changeScope}
-											ariaLabel="Milestone scope"
-											organizationId={organizationId}
-											organizationSlug={orgSlug}
-											projectId={projectId}
-										/>
-									</div>
-								) : (canEditFields
-										? scopeDraftRef.current.length
-										: milestone.description.length) === 0 ? (
-									<p className="border border-dashed border-app-border p-3 text-sm text-app-text-muted">
-										No scope written yet.
-									</p>
-								) : overviewScopeVisible ? (
-									/*
-									 * The collapsed state still renders the real document, so
-									 * formatting shows instead of a plain excerpt. It is
-									 * clamped to a few lines and the expanded state removes
-									 * the clamp and reveals everything.
-									 */
-									<div
-										className={cn(
-											"border border-app-border bg-app-panel-subtle",
-											scopeExpanded ? "block" : "max-h-28 overflow-hidden",
-										)}
+								<ScopeIndexRow
+									kind="baseline"
+									title="Initial scope"
+									meta={locked ? "Locked baseline" : "The agreed baseline"}
+									excerpt={milestone.excerpt || "No scope written yet."}
+									onOpen={openBaselineScopeTab}
+								/>
+
+								{latestScopeEntries.map((entry) => (
+									<ScopeIndexRow
+										key={entry.id}
+										kind={entry.kind}
+										title={entry.title}
+										meta={`${entry.createdByName ?? "Former member"} · ${formatDate(
+											entry.createdAt,
+										)}`}
+										excerpt={entry.excerpt}
+										badge={
+											isCurrentScopeEntry(
+												entry,
+												milestone.phase?.currentPeriodId ?? null,
+											)
+												? "Current"
+												: undefined
+										}
+										onOpen={() => openEntryScopeTab(entry)}
+									/>
+								))}
+
+								{scopeEntries.length > latestScopeEntries.length && (
+									<Button
+										size="xs"
+										variant="ghost"
+										className="self-start"
+										onPress={() => onTabChange("scope")}
 									>
-										<MilestoneEditorStatic
-											key={`overview-${milestone.id}-${milestone.updatedAt}`}
-											value={
-												canEditFields
-													? scopeDraftRef.current
-													: milestone.description
-											}
-											ariaLabel="Scope summary"
-											organizationSlug={orgSlug}
-										/>
-									</div>
-								) : (
-									<p className="line-clamp-4 border border-app-border bg-app-panel-subtle p-3 text-sm text-app-text">
-										{milestone.excerpt}
-									</p>
+										View all {scopeEntries.length} additions
+									</Button>
 								)}
 							</section>
 
@@ -1082,6 +1273,11 @@ function MilestoneDetailContent({
 								/>
 							</section>
 
+							{/* Phase timing. Hidden until the backfill or a transition gives it data. */}
+							{milestone.phase && (
+								<MilestonePhaseCard phase={milestone.phase} />
+							)}
+
 							{/* Authorship */}
 							<div className="flex flex-wrap items-center gap-2 text-xs text-app-text-muted">
 								{milestone.createdByName && (
@@ -1110,64 +1306,17 @@ function MilestoneDetailContent({
 					shouldForceMount
 					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
 				>
-					<ScrollArea className="min-h-0 flex-1">
-						<div className="flex min-h-full flex-col gap-2 p-4">
-							<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-app-text-muted">
-								<p>
-									{locked
-										? "This milestone is locked. Staff can still tick checklist progress."
-										: canEditFields
-											? "Write the agreed work here. Checklist progress is saved as you tick items."
-											: "The agreed work for this milestone."}
-								</p>
-								<SaveStateText
-									saveState={saveState}
-									saveError={saveError}
-									className="shrink-0"
-								/>
-							</div>
-
-							<div className="flex min-h-0 flex-1 flex-col border-y border-app-border">
-								{effectiveSelectedTab !== "scope" ? null : canEditFields ? (
-									<MilestoneEditor
-										key={`scope-${milestone.id}`}
-										initialValue={scopeDraftRef.current}
-										onChange={changeScope}
-										ariaLabel="Milestone scope"
-										organizationId={organizationId}
-										organizationSlug={orgSlug}
-										projectId={projectId}
-										// Use the pane for writing instead of a short box.
-										contentClassName="min-h-[60svh]"
-									/>
-								) : milestone.description.length > 0 ? (
-									/*
-									 * The key remounts the static render when the stored body
-									 * changes, so a tick lands instead of leaving a checkbox
-									 * that disagrees with the server.
-									 */
-									<MilestoneEditorStatic
-										key={`${milestone.id}-${milestone.updatedAt}`}
-										value={milestone.description}
-										ariaLabel="Milestone scope"
-										organizationSlug={orgSlug}
-										checklist={
-											locked && viewer.canTickChecklist
-												? {
-														disabled: toggleChecklist.isPending,
-														onToggle: toggleScopeChecklistItem,
-													}
-												: undefined
-										}
-									/>
-								) : (
-									<p className="p-3 text-sm text-app-text-muted">
-										No scope written yet.
-									</p>
-								)}
-							</div>
-						</div>
-					</ScrollArea>
+					{effectiveSelectedTab === "scope" && (
+						<ScopeTab
+							milestone={milestone}
+							phase={milestone.phase}
+							viewer={viewer}
+							locked={locked}
+							canEditFields={canEditFields}
+							onOpenBaseline={openBaselineScopeTab}
+							onOpenEntry={openEntryScopeTab}
+						/>
+					)}
 				</TabsContent>
 
 				<TabsContent
@@ -1181,12 +1330,24 @@ function MilestoneDetailContent({
 						projectSlug={projectSlug}
 						projectId={projectId}
 						milestoneId={milestone.id}
-						milestoneLocked={locked}
 						archived={viewer.archived}
 						canCreate={viewer.canComment}
 						canDecide={viewer.canWrite}
 						members={members}
 						active={effectiveSelectedTab === "changes"}
+						onOpenScope={(scopeEntryId) => {
+							if (!scopeEntryId) {
+								onTabChange("scope");
+								return;
+							}
+
+							const entry = scopeEntries.find(
+								(item) => item.id === scopeEntryId,
+							);
+
+							if (entry) openEntryScopeTab(entry);
+							else onTabChange("scope");
+						}}
 					/>
 				</TabsContent>
 
@@ -1210,10 +1371,101 @@ function MilestoneDetailContent({
 					)}
 				</TabsContent>
 
+				{/*
+				 * Focused scope tabs. The baseline is not an entry, so it has its
+				 * own component; every other tab resolves the entry from the
+				 * detail metadata and shows a close action if it has vanished.
+				 */}
+				{scopeTabs.map((tab) => {
+					const key = scopeTabKey(tab.id);
+
+					if (tab.id === BASELINE_SCOPE_TAB_ID) {
+						return (
+							<TabsContent
+								key={key}
+								id={key}
+								shouldForceMount
+								className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
+							>
+								<BaselineScopeTab
+									milestone={milestone}
+									orgSlug={orgSlug}
+									organizationId={organizationId}
+									projectId={projectId}
+									canEdit={canEditFields}
+									locked={locked}
+									canTickChecklist={viewer.canTickChecklist}
+									scopeDraftRef={scopeDraftRef}
+									onScopeChange={changeScope}
+									saveState={saveState}
+									saveError={saveError}
+									toggleChecklist={toggleScopeChecklistItem}
+									togglePending={toggleChecklist.isPending}
+								/>
+							</TabsContent>
+						);
+					}
+
+					const entry = scopeEntries.find((item) => item.id === tab.id);
+
+					if (!entry) {
+						return (
+							<TabsContent
+								key={key}
+								id={key}
+								shouldForceMount
+								className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
+							>
+								<div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+									<p className="text-sm text-app-text-muted">
+										This section no longer exists.
+									</p>
+									<Button
+										size="sm"
+										variant="outline"
+										onPress={() => closeScopeTab(tab.id)}
+									>
+										Close tab
+									</Button>
+								</div>
+							</TabsContent>
+						);
+					}
+
+					const current = isCurrentScopeEntry(
+						entry,
+						milestone.phase?.currentPeriodId ?? null,
+					);
+
+					return (
+						<TabsContent
+							key={key}
+							id={key}
+							shouldForceMount
+							className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
+						>
+							<ScopeEntryTab
+								orgSlug={orgSlug}
+								organizationId={organizationId}
+								projectId={projectId}
+								milestoneId={milestone.id}
+								entry={entry}
+								active={effectiveSelectedTab === key}
+								current={current}
+								canWrite={canWriteScopeEntry(entry, viewer, {
+									locked,
+									current,
+								})}
+								onClose={() => closeScopeTab(tab.id)}
+							/>
+						</TabsContent>
+					);
+				})}
+
 				{openCommentTabs.map((tab) => (
 					<TabsContent
 						key={tab.id}
-						id={`comment:${tab.id}`}
+						id={commentTabKey(tab.id)}
 						shouldForceMount
 						className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
 					>
@@ -1226,7 +1478,7 @@ function MilestoneDetailContent({
 							commentId={tab.id}
 							canComment={viewer.canComment}
 							archived={viewer.archived}
-							active={effectiveSelectedTab === `comment:${tab.id}`}
+							active={effectiveSelectedTab === commentTabKey(tab.id)}
 							onClose={() => closeCommentTab(tab.id)}
 						/>
 					</TabsContent>
@@ -1245,11 +1497,19 @@ function MilestoneDetailContent({
 				/>
 			)}
 
-			<MilestoneBlockedReasonDialog
-				isOpen={blockedOpen}
-				onOpenChange={setBlockedOpen}
+			<MilestoneStatusReasonDialog
+				isOpen={reasonStatus !== null}
+				status={reasonStatus ?? "blocked"}
+				onOpenChange={(open) => {
+					if (!open) setReasonStatus(null);
+				}}
 				title={milestone.title}
-				onConfirm={(reason) => persistStatus("blocked", reason)}
+				onConfirm={(reason) => {
+					if (!reasonStatus) return;
+
+					persistStatus(reasonStatus, reason);
+					setReasonStatus(null);
+				}}
 			/>
 		</section>
 	);

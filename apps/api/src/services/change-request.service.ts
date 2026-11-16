@@ -14,8 +14,9 @@
  *
  * The lock rule is deliberately inverted here: a change request is not part of
  * the locked milestone, so creating, editing, declining, withdrawing or moving
- * one works while the milestone is locked. Accepting a request is the one
- * decision that implies a scope edit, so it asks for an unlock first.
+ * one works while the milestone is locked. Accepting a request also works while
+ * locked, because it appends a new named scope section and never rewrites the
+ * locked initial scope.
  *
  * Used by: src/routes/change-requests.ts.
  */
@@ -33,12 +34,9 @@ import {
 	isChangeRequestStatus,
 	validateChangeRequestTitle,
 } from "../auth/change-request-permissions";
-import {
-	MILESTONE_LOCKED_MESSAGE,
-	validateMilestoneNote,
-} from "../auth/milestone-permissions";
+import { validateMilestoneNote } from "../auth/milestone-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
-import { changeRequest, milestone } from "../db/schema";
+import { changeRequest, milestone, milestoneScopeEntry } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import type { MilestoneEventDraft } from "../lib/milestone-events";
 import { sanitizeOptionalCommentBody } from "../lib/rich-text";
@@ -53,6 +51,10 @@ import {
 	requireMilestoneAccess,
 	toMilestoneTimeline,
 } from "./milestone.service";
+import {
+	createChangeScopeEntry,
+	type MilestoneScopeEntrySummary,
+} from "./milestone-scope.service";
 import { loadUserMap } from "./project.service";
 
 /** A database row, before it is mapped to the wire shape. */
@@ -80,6 +82,8 @@ export type ChangeRequestRow = {
 	decisionNote: string | null;
 	targetMilestoneId: string | null;
 	targetMilestoneTitle: string | null;
+	/** The scope section created when this request was accepted, if any. */
+	scopeEntryId: string | null;
 	createdAt: string;
 	updatedAt: string;
 	/** True when this caller may still change the title or the body. */
@@ -103,6 +107,8 @@ export type ChangeRequestListResult = {
 export type ChangeRequestWriteResult = {
 	changeRequest: ChangeRequestRow;
 	openCount: number;
+	/** The scope section an acceptance added, null for every other write. */
+	scopeEntry: MilestoneScopeEntrySummary | null;
 	timeline: MilestoneTimelineComment[];
 };
 
@@ -123,6 +129,10 @@ export type UpdateChangeRequestInput = {
 	body?: unknown;
 	status?: string;
 	note?: string | null;
+	/** Final accepted section title. Defaults to the request title. */
+	scopeTitle?: string;
+	/** Final accepted section body. Defaults to the request body. */
+	scopeBody?: unknown;
 };
 
 /** Public move input. The dialog may override the prefilled title and body. */
@@ -191,6 +201,7 @@ function toChangeRequestRow(
 	record: ChangeRequestRecord,
 	people: Map<string, { name: string; email: string; image: string | null }>,
 	targetTitles: Map<string, string>,
+	scopeEntryIds: Map<string, string>,
 	viewerId: string,
 ): ChangeRequestRow {
 	const status = record.status as ChangeRequestStatus;
@@ -223,6 +234,7 @@ function toChangeRequestRow(
 		targetMilestoneTitle: record.targetMilestoneId
 			? (targetTitles.get(record.targetMilestoneId) ?? null)
 			: null,
+		scopeEntryId: scopeEntryIds.get(record.id) ?? null,
 		createdAt: record.createdAt.toISOString(),
 		updatedAt: record.updatedAt.toISOString(),
 		canEdit: canEditChangeRequest({
@@ -265,6 +277,45 @@ async function loadTargetTitles(
 		);
 
 	return new Map(rows.map((row) => [row.id, row.title]));
+}
+
+/**
+ * Resolve the scope section each accepted request created.
+ *
+ * One grouped query for the whole list. The link lives on the section rather
+ * than on the request, so there is still a single source of truth for the
+ * accepted text.
+ */
+async function loadScopeEntryIds(
+	tx: TenantTx,
+	tenant: TenantContext,
+	records: ChangeRequestRecord[],
+): Promise<Map<string, string>> {
+	const ids = records.map((record) => record.id);
+
+	if (ids.length === 0) return new Map();
+
+	const rows = await tx
+		.select({
+			changeRequestId: milestoneScopeEntry.changeRequestId,
+			id: milestoneScopeEntry.id,
+		})
+		.from(milestoneScopeEntry)
+		.where(
+			and(
+				eq(milestoneScopeEntry.organizationId, tenant.organizationId),
+				inArray(milestoneScopeEntry.changeRequestId, ids),
+			),
+		);
+
+	return new Map(
+		rows
+			.filter(
+				(row): row is { changeRequestId: string; id: string } =>
+					row.changeRequestId !== null,
+			)
+			.map((row) => [row.changeRequestId, row.id]),
+	);
 }
 
 /** Load the names for every person attached to a set of requests. */
@@ -320,9 +371,10 @@ async function toWriteShape(
 	milestoneId: string,
 	record: ChangeRequestRecord,
 ): Promise<{ changeRequest: ChangeRequestRow; openCount: number }> {
-	const [people, targetTitles, counts] = await Promise.all([
+	const [people, targetTitles, scopeEntryIds, counts] = await Promise.all([
 		loadPeople([record]),
 		loadTargetTitles(tx, tenant, [record]),
+		loadScopeEntryIds(tx, tenant, [record]),
 		loadCounts(tx, tenant, milestoneId),
 	]);
 
@@ -331,6 +383,7 @@ async function toWriteShape(
 			record,
 			people,
 			targetTitles,
+			scopeEntryIds,
 			tenant.userId,
 		),
 		openCount: counts.open,
@@ -381,9 +434,10 @@ export async function listChangeRequests(
 				)
 				.orderBy(desc(changeRequest.createdAt), desc(changeRequest.id));
 
-			const [people, targetTitles, counts] = await Promise.all([
+			const [people, targetTitles, scopeEntryIds, counts] = await Promise.all([
 				loadPeople(records),
 				loadTargetTitles(tx, tenant, records),
+				loadScopeEntryIds(tx, tenant, records),
 				loadCounts(tx, tenant, milestoneId),
 			]);
 
@@ -391,7 +445,13 @@ export async function listChangeRequests(
 				projectId,
 				milestoneId,
 				changeRequests: records.map((record) =>
-					toChangeRequestRow(record, people, targetTitles, tenant.userId),
+					toChangeRequestRow(
+						record,
+						people,
+						targetTitles,
+						scopeEntryIds,
+						tenant.userId,
+					),
 				),
 				counts,
 				openCount: counts.open,
@@ -465,6 +525,7 @@ export async function createChangeRequest(
 
 			return {
 				...(await toWriteShape(tx, tenant, milestoneId, record)),
+				scopeEntry: null,
 				eventRows,
 			};
 		},
@@ -475,6 +536,7 @@ export async function createChangeRequest(
 	return {
 		changeRequest: write.changeRequest,
 		openCount: write.openCount,
+		scopeEntry: null,
 		timeline,
 	};
 }
@@ -511,8 +573,12 @@ export async function updateChangeRequest(
 	const write = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const { access, milestone: milestoneRecord } =
-				await requireMilestoneAccess(tx, tenant, projectId, milestoneId);
+			const { access } = await requireMilestoneAccess(
+				tx,
+				tenant,
+				projectId,
+				milestoneId,
+			);
 
 			assertProjectActive(access.row.archivedAt);
 
@@ -525,6 +591,8 @@ export async function updateChangeRequest(
 			);
 			const status = record.status as ChangeRequestStatus;
 			let event: MilestoneEventDraft | null = null;
+			let acceptedScopeEntry: MilestoneScopeEntrySummary | null = null;
+			let acceptedScopeBody: unknown[] | null = null;
 
 			if (editsContent) {
 				if (
@@ -614,15 +682,19 @@ export async function updateChangeRequest(
 						});
 					}
 
-					// Accepting implies the scope will change, so it is the one
-					// decision the lock asks you to clear first. Declining and
-					// withdrawing change nothing in the milestone.
-					if (next === "accepted" && milestoneRecord.lockedAt !== null) {
+					// The accepted section text belongs to acceptance only.
+					if (
+						next !== "accepted" &&
+						(input.scopeTitle !== undefined || input.scopeBody !== undefined)
+					) {
 						throw new APIError("BAD_REQUEST", {
-							message: MILESTONE_LOCKED_MESSAGE,
+							message: "Scope text can only be sent when accepting a request.",
 						});
 					}
 
+					// Accepting no longer needs an unlock. It appends a named
+					// section and never rewrites the locked initial scope, so the
+					// lock still protects exactly what it was meant to protect.
 					await tx
 						.update(changeRequest)
 						.set({
@@ -632,6 +704,47 @@ export async function updateChangeRequest(
 							decisionNote: note,
 						})
 						.where(changeRequestScope(tenant, milestoneId, changeRequestId));
+
+					if (next === "accepted") {
+						const bodyIsStored =
+							input.scopeBody === undefined ||
+							JSON.stringify(input.scopeBody) === JSON.stringify(record.body);
+						const entry = await createChangeScopeEntry(
+							tx,
+							tenant,
+							{
+								projectId,
+								milestoneId,
+								changeRequestId,
+								title: input.scopeTitle ?? record.title,
+								body: bodyIsStored
+									? record.body
+									: ((input.scopeBody as unknown[]) ?? []),
+								bodyText: record.bodyText,
+							},
+							{ trustedBody: bodyIsStored },
+						);
+
+						const names = await loadUserMap([tenant.userId]);
+						const person = names.get(tenant.userId);
+						acceptedScopeBody = entry.body;
+						acceptedScopeEntry = {
+							id: entry.id,
+							kind: "change",
+							round: null,
+							title: entry.title,
+							excerpt: entry.bodyText.replace(/\s+/g, " ").trim().slice(0, 200),
+							hasBody: entry.body.length > 0,
+							changeRequestId: entry.changeRequestId,
+							statusPeriodId: entry.statusPeriodId,
+							createdBy: entry.createdBy,
+							createdByName: person?.name || person?.email || "Someone",
+							updatedBy: entry.updatedBy,
+							updatedByName: person?.name || person?.email || "Someone",
+							createdAt: entry.createdAt.toISOString(),
+							updatedAt: entry.updatedAt.toISOString(),
+						};
+					}
 
 					event = buildEvent(
 						next === "accepted"
@@ -656,16 +769,27 @@ export async function updateChangeRequest(
 
 			return {
 				...(await toWriteShape(tx, tenant, milestoneId, updated)),
+				scopeEntry: acceptedScopeEntry,
+				acceptedScopeBody,
 				eventRows,
 			};
 		},
 	);
+
+	// Enrichment only: a trimmed accepted body can introduce a new link, and a
+	// queue failure must never turn an accepted decision into an error.
+	if (write.acceptedScopeBody) {
+		void queueDocumentPreviews(tenant, write.acceptedScopeBody).catch(
+			() => undefined,
+		);
+	}
 
 	const timeline = await toMilestoneTimeline(write.eventRows, tenant);
 
 	return {
 		changeRequest: write.changeRequest,
 		openCount: write.openCount,
+		scopeEntry: write.scopeEntry,
 		timeline,
 	};
 }
@@ -764,6 +888,7 @@ export async function moveChangeRequestToMilestone(
 
 			return {
 				...(await toWriteShape(tx, tenant, milestoneId, updated)),
+				scopeEntry: null,
 				eventRows,
 				created,
 			};
@@ -781,6 +906,7 @@ export async function moveChangeRequestToMilestone(
 		changeRequest: write.changeRequest,
 		milestone: write.created.milestone,
 		openCount: write.openCount,
+		scopeEntry: null,
 		timeline,
 	};
 }

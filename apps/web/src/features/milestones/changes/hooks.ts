@@ -191,6 +191,7 @@ export function useDecideChangeRequest(
 	projectId: string,
 	milestoneId: string,
 ) {
+	const queryClient = useQueryClient();
 	const onSuccess = useApplyWrite(orgSlug, projectId, milestoneId);
 
 	return useMutation({
@@ -198,16 +199,29 @@ export function useDecideChangeRequest(
 			changeId,
 			status,
 			note,
+			scopeTitle,
+			scopeBody,
 		}: {
 			changeId: string;
 			status: ChangeRequest["status"];
 			note?: string | null;
+			scopeTitle?: string;
+			scopeBody?: unknown;
 		}) =>
 			updateChangeRequest(orgSlug, projectId, milestoneId, changeId, {
 				status,
 				...(note !== undefined ? { note } : {}),
+				...(scopeTitle !== undefined ? { scopeTitle } : {}),
+				...(scopeBody !== undefined ? { scopeBody } : {}),
 			}),
-		onSuccess: (data) => onSuccess(data),
+		onSuccess: (data) => {
+			onSuccess(data);
+			// An acceptance adds a section to the scope, so the detail metadata
+			// has to be read again for the Scope tab and Overview summary.
+			void queryClient.invalidateQueries({
+				queryKey: milestoneDetailKey(orgSlug, projectId, milestoneId),
+			});
+		},
 		onError: (error) => {
 			toast.error(
 				error instanceof Error ? error.message : "Could not save the decision.",

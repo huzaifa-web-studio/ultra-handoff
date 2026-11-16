@@ -65,6 +65,19 @@ export type MilestoneUpdatedPayload = {
 export type MilestoneDeletedPayload = { milestoneId: string };
 
 /**
+ * A scope section changed.
+ *
+ * Ids only. The body stays on the authenticated read endpoint, so a large test
+ * or review round never travels through Redis and every socket.
+ */
+export type MilestoneScopeChangedPayload = {
+	milestoneId: string;
+	entryId: string;
+	/** The author, so the writer's own tab can ignore its echo. */
+	updatedBy: string;
+};
+
+/**
  * Keep only the summary fields of a milestone.
  *
  * Why explicit: a create returns a `MilestoneDetail`, which is a summary plus
@@ -122,6 +135,7 @@ export function toRealtimeChangeRequest(
 		decisionNote: changeRequest.decisionNote,
 		targetMilestoneId: changeRequest.targetMilestoneId,
 		targetMilestoneTitle: changeRequest.targetMilestoneTitle,
+		scopeEntryId: changeRequest.scopeEntryId,
 		createdAt: changeRequest.createdAt,
 		updatedAt: changeRequest.updatedAt,
 	};
