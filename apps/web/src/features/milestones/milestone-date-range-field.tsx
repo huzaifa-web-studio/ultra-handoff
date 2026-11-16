@@ -14,6 +14,11 @@
  * then add a start date if the milestone needs one. Clicking or tabbing into a
  * row moves the calendar to that row.
  *
+ * The calendar draws the pair, not just the active end: both dates stay marked,
+ * and a complete pair paints the span between them. Without that span the only
+ * highlight moved to whichever end was active, which read as the calendar
+ * jumping instead of showing one range with two editable ends.
+ *
  * Both ends stay day strings (`YYYY-MM-DD`). The picker never produces a time
  * because the columns are `date`, and keeping the value as a calendar day
  * avoids a timezone shift on save.
@@ -294,6 +299,10 @@ export function MilestoneDateRangeField({
 	const selectedValue = active === "start" ? draft.start : draft.due;
 	const activeValue =
 		selectedValue && isInsideWindow(selectedValue) ? selectedValue : null;
+	// The band follows the same rule, so an end that failed validation never
+	// highlights a day the grid has already disabled.
+	const highlightStart = isInsideWindow(draft.start) ? draft.start : null;
+	const highlightDue = isInsideWindow(draft.due) ? draft.due : null;
 	const startInvalid = draft.start !== null && !isInsideWindow(draft.start);
 	const dueInvalid = draft.due !== null && !isInsideWindow(draft.due);
 	const errorId = useId();
@@ -440,6 +449,7 @@ export function MilestoneDateRangeField({
 											: "Due date calendar"
 									}
 									value={activeValue}
+									rangeHighlight={{ start: highlightStart, end: highlightDue }}
 									onChange={(next) => applyDay(active, toCalendarDay(next))}
 									minValue={minDate}
 									maxValue={maxDate}
