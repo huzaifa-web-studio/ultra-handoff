@@ -51,7 +51,6 @@ export function ScopeTab({
 		isCurrentScopeEntry(entry, currentPeriodId),
 	);
 	const others = entries.filter((entry) => entry.id !== currentEntry?.id);
-	const baselineExcerpt = milestone.excerpt;
 
 	/** The action a row offers, which is writing only for the open phase. */
 	function actionLabel(entry: MilestoneScopeEntrySummary): string {
@@ -90,11 +89,12 @@ export function ScopeTab({
 						meta={
 							locked
 								? "Locked baseline"
-								: canEditFields
-									? "The agreed baseline, editable now"
-									: "The agreed baseline"
+								: milestone.description.length === 0
+									? "No scope written yet."
+									: canEditFields
+										? "The agreed baseline, editable now"
+										: "The agreed baseline"
 						}
-						excerpt={baselineExcerpt || "No scope written yet."}
 						actionLabel={canEditFields ? "Write" : "Open"}
 						onOpen={onOpenBaseline}
 					/>
@@ -112,7 +112,6 @@ export function ScopeTab({
 							meta={`${currentEntry.createdByName ?? "Former member"} · ${formatDate(
 								currentEntry.createdAt,
 							)}`}
-							excerpt={currentEntry.excerpt}
 							badge="Current"
 							highlight
 							actionLabel={actionLabel(currentEntry)}
@@ -136,7 +135,6 @@ export function ScopeTab({
 									meta={`${entry.createdByName ?? "Former member"} · ${formatDate(
 										entry.createdAt,
 									)}`}
-									excerpt={entry.excerpt}
 									actionLabel={actionLabel(entry)}
 									onOpen={() => onOpenEntry(entry)}
 								/>

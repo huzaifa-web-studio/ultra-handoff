@@ -14,9 +14,11 @@
  *   - Better Auth tables are read through `loadUserMap`, never joined inside a
  *     tenant query
  *
- * Payload split: the list returns a short `excerpt`, the detail returns the
- * full Plate value. A rich text document can be large, and listing 25 of them
- * would make the pane feel slow for no benefit.
+ * Payload split: the list returns the summary fields, the detail adds the full
+ * Plate value. A rich text document can be large, and listing 25 of them would
+ * make the pane feel slow for no benefit. The summary carries no text mirror of
+ * the document, because the body is rich text and a flattened preview reads as
+ * raw prose in the list.
  *
  * Used by: src/routes/milestones.ts.
  */
@@ -87,9 +89,6 @@ import {
 } from "./project.service";
 import { deleteObjectsBestEffort } from "./upload.service";
 
-/** Longest excerpt shown in the list. */
-const EXCERPT_MAX = 180;
-
 /** One person assigned to a milestone. */
 export type MilestoneAssigneeRow = {
 	userId: string;
@@ -103,7 +102,6 @@ export type MilestoneSummary = {
 	id: string;
 	projectId: string;
 	title: string;
-	excerpt: string;
 	status: MilestoneStatus;
 	startDate: string | null;
 	dueDate: string | null;
@@ -685,16 +683,10 @@ function toSummary(
 	names: Map<string, string>,
 	openChangeRequestCount: number,
 ): MilestoneSummary {
-	const excerpt = record.descriptionText.replace(/\s+/g, " ").trim();
-
 	return {
 		id: record.id,
 		projectId: record.projectId,
 		title: record.title,
-		excerpt:
-			excerpt.length > EXCERPT_MAX
-				? `${excerpt.slice(0, EXCERPT_MAX)}...`
-				: excerpt,
 		status: record.status as MilestoneStatus,
 		startDate: toIsoDay(record.startDate),
 		dueDate: toIsoDay(record.dueDate),

@@ -74,7 +74,6 @@ export type ChangeRequestRow = {
 	milestoneId: string;
 	title: string;
 	body: unknown[];
-	bodyText: string;
 	status: ChangeRequestStatus;
 	requestedBy: ChangeRequestPerson | null;
 	decidedBy: ChangeRequestPerson | null;
@@ -224,7 +223,6 @@ function toChangeRequestRow(
 		milestoneId: record.milestoneId,
 		title: record.title,
 		body: record.body,
-		bodyText: record.bodyText,
 		status,
 		requestedBy: person(record.requestedBy),
 		decidedBy: person(record.decidedBy),
@@ -733,7 +731,6 @@ export async function updateChangeRequest(
 							kind: "change",
 							round: null,
 							title: entry.title,
-							excerpt: entry.bodyText.replace(/\s+/g, " ").trim().slice(0, 200),
 							hasBody: entry.body.length > 0,
 							changeRequestId: entry.changeRequestId,
 							statusPeriodId: entry.statusPeriodId,

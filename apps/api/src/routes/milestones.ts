@@ -437,7 +437,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					body,
 				);
 
-				// A tick changes the body but not the excerpt, so the broadcast
+				// A tick changes the body but no summary field, so the broadcast
 				// carries its own field name. A reader with the locked scope open
 				// refetches instead of showing a stale checkbox.
 				publishMilestoneUpdated(

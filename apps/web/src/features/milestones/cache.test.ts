@@ -24,7 +24,6 @@ function makeMilestone(
 		id: "milestone-1",
 		projectId: "project-1",
 		title: "Design",
-		excerpt: "A first pass",
 		status: "todo",
 		startDate: "2026-01-01",
 		dueDate: "2026-01-10",

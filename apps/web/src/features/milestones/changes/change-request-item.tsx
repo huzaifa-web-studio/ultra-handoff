@@ -95,12 +95,6 @@ export function ChangeRequestItem({
 							<> · decided {formatDate(request.decidedAt)}</>
 						)}
 					</span>
-
-					{!expanded && request.bodyText.length > 0 && (
-						<span className="line-clamp-2 text-xs text-app-text-muted">
-							{request.bodyText}
-						</span>
-					)}
 				</div>
 			</button>
 

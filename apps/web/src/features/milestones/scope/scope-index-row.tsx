@@ -11,6 +11,11 @@
  * The same row is used by the Overview summary and the Scope tab, which keeps
  * the two lists from growing different visual languages.
  *
+ * Deliberately no text preview: the stored body is rich text, and flattening it
+ * to a plain sentence here made the document read as raw prose in the list. The
+ * row is a table of contents entry, so it shows what the section is and who
+ * wrote it, and the document itself only renders in its own tab.
+ *
  * Used by: scope-tab.tsx and milestone-detail-panel.tsx.
  */
 
@@ -23,7 +28,6 @@ export function ScopeIndexRow({
 	kind,
 	title,
 	meta,
-	excerpt,
 	badge,
 	highlight = false,
 	actionLabel = "Open",
@@ -33,8 +37,6 @@ export function ScopeIndexRow({
 	title: string;
 	/** Author and date, or a short status line for the baseline. */
 	meta: string;
-	/** At most a couple of lines. The document itself lives in the tab. */
-	excerpt: string;
 	/** "Current" for the round of the open phase. */
 	badge?: string;
 	/** True to tint the border, used for the current phase round. */
@@ -65,12 +67,6 @@ export function ScopeIndexRow({
 				</div>
 
 				<span className="text-xs text-app-text-muted">{meta}</span>
-
-				{excerpt.length > 0 && (
-					<span className="line-clamp-2 text-xs text-app-text-muted">
-						{excerpt}
-					</span>
-				)}
 			</div>
 
 			<span className="flex shrink-0 items-center gap-1 self-center text-xs font-medium text-app-text-muted">

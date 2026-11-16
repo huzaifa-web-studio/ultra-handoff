@@ -25,7 +25,6 @@ function makeEntry(
 ): MilestoneScopeEntrySummary {
 	return {
 		round: null,
-		excerpt: "",
 		hasBody: false,
 		changeRequestId: null,
 		statusPeriodId: null,

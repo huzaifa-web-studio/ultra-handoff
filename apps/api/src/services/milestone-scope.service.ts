@@ -50,7 +50,6 @@ type ScopeEntrySource = {
 	kind: string;
 	round: number | null;
 	title: string;
-	bodyText: string;
 	changeRequestId: string | null;
 	statusPeriodId: string | null;
 	createdBy: string | null;
@@ -66,8 +65,6 @@ export type MilestoneScopeEntrySummary = {
 	/** Test and review only. Null for an accepted change. */
 	round: number | null;
 	title: string;
-	/** Collapsed preview, at most 200 characters of plain text. */
-	excerpt: string;
 	/** True when the body is more than an empty document. */
 	hasBody: boolean;
 	changeRequestId: string | null;
@@ -94,18 +91,6 @@ export type UpdateMilestoneScopeEntryInput = {
 	body?: unknown;
 };
 
-/** Longest excerpt kept in a summary. */
-const SCOPE_EXCERPT_MAX = 200;
-
-/** Collapse stored plain text into one readable preview line. */
-function toExcerpt(text: string): string {
-	const collapsed = text.replace(/\s+/g, " ").trim();
-
-	return collapsed.length > SCOPE_EXCERPT_MAX
-		? `${collapsed.slice(0, SCOPE_EXCERPT_MAX)}...`
-		: collapsed;
-}
-
 /** Map a record plus a name lookup into the summary shape. */
 function toSummary(
 	record: ScopeEntrySource,
@@ -117,7 +102,6 @@ function toSummary(
 		kind: record.kind as MilestoneScopeKind,
 		round: record.round,
 		title: record.title,
-		excerpt: toExcerpt(record.bodyText),
 		hasBody,
 		changeRequestId: record.changeRequestId,
 		statusPeriodId: record.statusPeriodId,
@@ -337,10 +321,6 @@ export async function loadScopeEntries(
 			kind: milestoneScopeEntry.kind,
 			round: milestoneScopeEntry.round,
 			title: milestoneScopeEntry.title,
-			bodyText:
-				sql<string>`left(${milestoneScopeEntry.bodyText}, ${SCOPE_EXCERPT_MAX})`.as(
-					"scope_excerpt",
-				),
 			changeRequestId: milestoneScopeEntry.changeRequestId,
 			statusPeriodId: milestoneScopeEntry.statusPeriodId,
 			createdBy: milestoneScopeEntry.createdBy,

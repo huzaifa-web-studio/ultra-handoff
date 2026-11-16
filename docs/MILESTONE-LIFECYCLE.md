@@ -22,7 +22,7 @@ The lifecycle is now implemented with the following changes to the original dire
 - **Phase timing is recorded.** `milestone_status_period` stores one row per status visit with `entered_at`, `exited_at`, the actor and the optional note. The Overview shows a Time in phases card, and the index on `(project_id, status, entered_at)` is ready for project analytics.
 - **Cancelling accepts an optional reason.** Blocked still requires one. Both are stored on the status event and the phase period.
 - **The lock no longer blocks checklist ticks or phase notes.** It freezes the initial scope, title, dates, estimate and accepted sections. Checklist items stay tickable by staff in the Initial scope tab, and test and review rounds are progress records, so they stay writable in their phase.
-- **The Overview is a summary only.** It shows the initial scope as one card and the latest three additions as cards, each with a kind chip, title, author and excerpt. No rich text and no editor live in the Overview. Every card opens that section in a focused tab.
+- **The Overview is a summary only.** It shows the initial scope as one card and the latest three additions as cards, each with a kind chip, title, author and date. No rich text, no text preview and no editor live in the Overview. Every card opens that section in a focused tab.
 - **Each scope opens in its own tab.** The initial scope and every accepted change, test round and review round can be opened as a focused tab, the same way a discussion thread can. The Scope tab is an index of rows rather than a stack of documents, so a milestone with many rounds no longer has to be scrolled through to reach the newest one. Focused tabs persist per milestone and are carried in the URL as `?milestoneTab=scope:<id>`.
 - **Change request body padding fixed**, so the rich text is no longer flush against the card border.
 - **One-time backfill.** Run `bun run db:backfill-milestone-data` in `apps/api` after migrating to seed phase periods and the sections for already accepted requests. `--skip-accepted` skips the second pass.
@@ -407,7 +407,7 @@ Overview | Scope | Changes | Comments | Initial scope | Test round 1 | Review ro
 ```
 
 - **Overview:** status, estimate, dates, assignees, a scope summary of compact cards, and every change request title as a card with the open count. The scope cards show the initial scope and the latest three additions. No document is rendered here.
-- **Scope:** an index of the initial scope, the current phase round and every earlier addition. Each row shows a kind chip, title, author, date and a short excerpt. Rows open the section in its own tab. No document is rendered here either.
+- **Scope:** an index of the initial scope, the current phase round and every earlier addition. Each row shows a kind chip, title, author and date. Rows open the section in its own tab. No document and no plain text preview of a document are rendered here either.
 - **Focused scope tabs:** one tab for the initial scope and one per section, opened from the Overview or the Scope index. This is the only place a scope document is read or edited. A tab keeps its draft and save state, closes independently, is restored after a reload, and can be linked directly with `?milestoneTab=scope:<id>`.
 - **Changes:** the client request list and detail. New request action for the client. Decision actions for staff.
 - **Comments:** the existing discussion timeline, with focused discussion tabs beside the scope tabs.

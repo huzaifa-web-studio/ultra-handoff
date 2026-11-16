@@ -1206,8 +1206,13 @@ function MilestoneDetailContent({
 								<ScopeIndexRow
 									kind="baseline"
 									title="Initial scope"
-									meta={locked ? "Locked baseline" : "The agreed baseline"}
-									excerpt={milestone.excerpt || "No scope written yet."}
+									meta={
+										locked
+											? "Locked baseline"
+											: milestone.description.length === 0
+												? "No scope written yet."
+												: "The agreed baseline"
+									}
 									onOpen={openBaselineScopeTab}
 								/>
 
@@ -1219,7 +1224,6 @@ function MilestoneDetailContent({
 										meta={`${entry.createdByName ?? "Former member"} · ${formatDate(
 											entry.createdAt,
 										)}`}
-										excerpt={entry.excerpt}
 										badge={
 											isCurrentScopeEntry(
 												entry,
