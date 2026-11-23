@@ -231,7 +231,13 @@ export function CommentTab({
 			if (fresh.length === 0) return;
 
 			for (const id of fresh) markedRef.current.add(id);
-			markRead.mutate(fresh);
+			markRead.mutate(fresh, {
+				// Roll the ids back on failure so the next render can retry
+				// instead of leaving the message unread for the whole session.
+				onError: () => {
+					for (const id of fresh) markedRef.current.delete(id);
+				},
+			});
 		},
 		[active, markRead],
 	);

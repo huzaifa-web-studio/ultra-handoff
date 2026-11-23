@@ -115,7 +115,13 @@ export function CommentThreadTab({
 		if (ids.length === 0) return;
 
 		for (const id of ids) markedRef.current.add(id);
-		markRead.mutate(ids);
+		markRead.mutate(ids, {
+			// A failed request must not leave these ids marked for the rest of
+			// the session. Removing them lets a later render retry.
+			onError: () => {
+				for (const id of ids) markedRef.current.delete(id);
+			},
+		});
 	}, [active, query.data, markRead]);
 
 	const [pendingDelete, setPendingDelete] = useState<Comment | null>(null);

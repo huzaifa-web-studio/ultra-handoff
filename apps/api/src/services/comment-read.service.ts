@@ -455,10 +455,22 @@ export async function markCommentsRead(
 				)
 				.orderBy(desc(comment.createdAt), desc(comment.id));
 
-			if (rows.length !== uniqueIds.length) {
-				throw new APIError("BAD_REQUEST", {
-					message: "One of those messages is no longer in this discussion.",
-				});
+			/*
+			 * An id can disappear between render and click, for example when a
+			 * cascade removes it or two tabs race. Mark the ids that still exist
+			 * and ignore the rest: one stale id must not fail the whole request
+			 * and leave every other message unread.
+			 */
+			if (rows.length === 0) {
+				return {
+					unreadTotal: await countMilestoneUnread(
+						tx,
+						tenant,
+						milestoneId,
+						await loadUnreadBaseline(tx, tenant, projectId),
+					),
+					threads: [],
+				};
 			}
 
 			const newestByRoot = new Map<string, { id: string; createdAt: Date }>();
