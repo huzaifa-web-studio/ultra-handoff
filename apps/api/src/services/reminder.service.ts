@@ -30,6 +30,7 @@ import type {
 } from "./notification.service";
 import {
 	createNotifications,
+	deleteNotificationsForRecipient,
 	loadProjectManagerUserIds,
 } from "./notification.service";
 import { listOrganizationOwners } from "./organization.service";
@@ -189,6 +190,15 @@ export async function runReminderSweepForOrganization(
 	const timezones = await loadUserTimezones(recipientIds);
 
 	const candidates: NotificationCandidate[] = [];
+	/**
+	 * Unread "due tomorrow" rows that the today phase replaces.
+	 *
+	 * Why this exists: the dedupe key carries the phase, so the sweep would
+	 * otherwise leave two live reminders for one due date. The tomorrow row is
+	 * only removed when it is still unread; a read row stays as history.
+	 */
+	const replacedTomorrowRows: { recipientUserId: string; dedupeKey: string }[] =
+		[];
 	const projectView = new Map(
 		milestones.map((item) => [
 			item.projectId,
@@ -234,6 +244,14 @@ export async function runReminderSweepForOrganization(
 						phase: difference === 1 ? "tomorrow" : "today",
 					},
 				});
+
+				if (difference === 0) {
+					replacedTomorrowRows.push({
+						recipientUserId,
+						dedupeKey: `due_soon:${item.id}:${recipientUserId}:${item.dueDate}:tomorrow`,
+					});
+				}
+
 				continue;
 			}
 
@@ -258,5 +276,31 @@ export async function runReminderSweepForOrganization(
 
 	if (candidates.length === 0) return [];
 
-	return createNotifications(tx, tenant, candidates);
+	const deliveries = await createNotifications(tx, tenant, candidates);
+
+	/**
+	 * Insert first, then drop the replaced row. A crash between the two leaves
+	 * the old unread reminder in place rather than leaving none at all.
+	 */
+	if (replacedTomorrowRows.length > 0) {
+		const byRecipient = new Map<string, string[]>();
+
+		for (const row of replacedTomorrowRows) {
+			const keys = byRecipient.get(row.recipientUserId) ?? [];
+			keys.push(row.dedupeKey);
+			byRecipient.set(row.recipientUserId, keys);
+		}
+
+		for (const [recipientUserId, dedupeKeys] of byRecipient) {
+			await deleteNotificationsForRecipient(
+				tx,
+				tenant,
+				recipientUserId,
+				dedupeKeys,
+				{ onlyUnread: true },
+			);
+		}
+	}
+
+	return deliveries;
 }
