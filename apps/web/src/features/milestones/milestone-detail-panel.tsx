@@ -893,6 +893,11 @@ function MilestoneDetailContent({
 	 * changed keeps a background refetch from writing state.
 	 */
 	const handleCommentLoaded = useCallback((comment: Comment) => {
+		// A deleted thread has no body left, so a generated label would read
+		// "Author: Attachment". The placeholder is more honest, and the panel
+		// already renders the deleted state.
+		if (comment.deletedAt) return;
+
 		const tab = toOpenCommentTab(comment);
 
 		setOpenCommentTabs((current) => {
