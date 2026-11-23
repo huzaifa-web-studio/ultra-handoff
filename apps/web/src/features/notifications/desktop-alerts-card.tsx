@@ -19,6 +19,7 @@ import { Button } from "@org/ui/components/button";
 import { BellOffIcon, BellRingIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { detectedTimezone } from "#/features/auth/timezone";
 import {
 	desktopPermission,
 	hasDesktopOptIn,
@@ -26,15 +27,6 @@ import {
 	setDesktopOptIn,
 } from "./desktop";
 import { disablePush, enablePush, syncExistingPush } from "./push";
-
-/** The detected IANA zone, for the reminder copy. */
-function detectedTimezone(): string {
-	try {
-		return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-	} catch {
-		return "UTC";
-	}
-}
 
 export function DesktopAlertsCard() {
 	const [permission, setPermission] = useState<

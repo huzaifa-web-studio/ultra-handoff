@@ -12,6 +12,7 @@ import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
 import { AppNotFound } from "#/components/app-sidebar/not-found";
 import { authClient } from "#/features/auth/client";
 import { broadcastAuth } from "#/features/auth/sync";
+import { detectedTimezone, reportTimezone } from "#/features/auth/timezone";
 import { useNotificationLink } from "#/features/notifications/link";
 import { disablePush } from "#/features/notifications/push";
 import { NotificationRealtimeProvider } from "#/features/notifications/realtime";
@@ -74,14 +75,7 @@ function AppLayout() {
 		const user = session?.user;
 		if (!user) return;
 
-		let timezone = "UTC";
-
-		try {
-			timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-		} catch {
-			return;
-		}
-
+		const timezone = detectedTimezone();
 		const stored = (user as { timezone?: string | null }).timezone ?? null;
 
 		if (stored === timezone) return;
@@ -89,7 +83,13 @@ function AppLayout() {
 
 		reportedTimezone.current = timezone;
 
-		void authClient.updateUser({ timezone } as never).catch(() => undefined);
+		void reportTimezone(timezone).catch(() => {
+			// Best effort. A failure only leaves reminders on UTC until the next
+			// session, and it is worth seeing in development.
+			if (import.meta.env.DEV) {
+				console.warn("[timezone] could not save the account timezone");
+			}
+		});
 	}, [session?.user]);
 
 	const missingScope =
