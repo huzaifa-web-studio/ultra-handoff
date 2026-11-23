@@ -68,6 +68,7 @@ export function ProjectMembersToolbar({
 			</div>
 
 			<Select
+				name="projectMemberRoleFilter"
 				aria-label="Filter members by role"
 				selectedKey={roleFilter}
 				onSelectionChange={(key) => {

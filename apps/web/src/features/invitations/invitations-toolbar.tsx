@@ -91,6 +91,8 @@ export function InvitationsToolbar({
 						aria-hidden
 					/>
 					<Input
+						id="invitations-search"
+						name="invitationSearch"
 						type="search"
 						value={search}
 						onChange={(event) => onSearchChange(event.target.value)}
@@ -113,6 +115,7 @@ export function InvitationsToolbar({
 				</div>
 
 				<Select
+					name="invitationStatusFilter"
 					aria-label="Filter by status"
 					selectedKey={status}
 					onSelectionChange={(key) => {
@@ -141,6 +144,7 @@ export function InvitationsToolbar({
 				</Select>
 
 				<Select
+					name="invitationRoleFilter"
 					aria-label="Filter by role"
 					selectedKey={roleFilter}
 					onSelectionChange={(key) => {
@@ -161,6 +165,7 @@ export function InvitationsToolbar({
 				</Select>
 
 				<Select
+					name="invitationSort"
 					aria-label="Sort by"
 					selectedKey={sortField}
 					onSelectionChange={(key) => {

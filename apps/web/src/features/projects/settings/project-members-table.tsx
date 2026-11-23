@@ -224,6 +224,7 @@ export function ProjectMembersTable({
 							<TableCell>
 								{changeable ? (
 									<Select
+										name="projectMemberRole"
 										aria-label={`Role for ${member.name}`}
 										selectedKey={member.role}
 										onSelectionChange={(key) => {

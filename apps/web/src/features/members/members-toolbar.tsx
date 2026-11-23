@@ -102,6 +102,7 @@ export function MembersToolbar({
 				</div>
 
 				<Select
+					name="memberRoleFilter"
 					aria-label="Filter by role"
 					selectedKey={roleFilter}
 					onSelectionChange={(key) => {
@@ -127,6 +128,7 @@ export function MembersToolbar({
 				</Select>
 
 				<Select
+					name="memberStatusFilter"
 					aria-label="Filter by status"
 					selectedKey={statusFilter}
 					onSelectionChange={(key) => {
@@ -146,6 +148,7 @@ export function MembersToolbar({
 				</Select>
 
 				<Select
+					name="memberSort"
 					aria-label="Sort by"
 					selectedKey={sortField}
 					onSelectionChange={(key) => {

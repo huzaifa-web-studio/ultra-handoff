@@ -59,6 +59,7 @@ export function TablePagination({
 				<div className="flex items-center gap-2">
 					<span className="text-xs text-app-text-muted">Rows</span>
 					<Select
+						name="rowsPerPage"
 						aria-label="Rows per page"
 						selectedKey={String(pageSize)}
 						onSelectionChange={(key) => {

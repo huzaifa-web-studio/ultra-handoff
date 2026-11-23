@@ -308,6 +308,7 @@ export function InviteMembersDialog({
 				<div className="flex flex-col gap-2">
 					<Label htmlFor="invite-role">Role</Label>
 					<Select
+						name="invitationRole"
 						aria-label="Invitation role"
 						// The shared Select defaults to w-fit, which shrinks the
 						// trigger to its current value. The role field should

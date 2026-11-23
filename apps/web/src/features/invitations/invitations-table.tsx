@@ -326,6 +326,8 @@ export function InvitationsTable({
 			<TableHeader>
 				<TableHead className={`${STICKY_HEADER} w-10`}>
 					<Checkbox
+						id="select-all-invitations"
+						name="selectAllInvitations"
 						slot="selection"
 						aria-label="Select all actionable invitations"
 					/>
@@ -379,6 +381,9 @@ export function InvitationsTable({
 						<TableCell>
 							{isActionableStatus(row.original.status) ? (
 								<Checkbox
+									id={`select-invitation-${row.id}`}
+									name="invitationSelection"
+									value={row.id}
 									slot="selection"
 									aria-label={`Select ${row.original.email}`}
 								/>
