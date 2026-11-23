@@ -947,9 +947,15 @@ export const notification = pgTable(
 			table.createdAt,
 			table.id,
 		),
-		// The unread badge. Partial so the count never walks read history.
+		// The unread badge. Partial so the count never walks read history, and
+		// ordered so the one scan can also answer the unread list.
 		index("notification_recipient_unread_idx")
-			.on(table.recipientUserId, table.createdAt)
+			.on(
+				table.recipientUserId,
+				table.organizationId,
+				table.createdAt,
+				table.id,
+			)
 			.where(sql`${table.readAt} is null`),
 		// Per project counts for the sidebar and the project list.
 		index("notification_recipient_project_unread_idx")

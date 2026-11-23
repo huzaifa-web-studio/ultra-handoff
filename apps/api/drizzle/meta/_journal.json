@@ -218,6 +218,13 @@
       "when": 1795423219715,
       "tag": "0030_quiet_runaways",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795424554181,
+      "tag": "0031_tired_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }
