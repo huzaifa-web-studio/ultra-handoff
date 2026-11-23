@@ -10,6 +10,9 @@ import { describe, expect, it } from "bun:test";
 
 import {
 	COMMENT_TAB_PREFIX,
+	commentTabId,
+	commentTabKey,
+	isCommentTabKey,
 	isMilestoneTabKey,
 	isScopeTabKey,
 	parseMilestoneTabSearch,
@@ -37,6 +40,25 @@ describe("scopeTabKey", () => {
 
 	it("accepts the baseline id", () => {
 		expect(scopeTabId("scope:baseline")).toBe("baseline");
+	});
+});
+
+describe("commentTabKey", () => {
+	it("round trips a thread id", () => {
+		const key = commentTabKey("85165656-0000-4000-8000-000000000000");
+
+		expect(key.startsWith(COMMENT_TAB_PREFIX)).toBe(true);
+		expect(commentTabId(key)).toBe("85165656-0000-4000-8000-000000000000");
+		expect(isCommentTabKey(key)).toBe(true);
+	});
+
+	it("rejects a malformed id and the wrong prefix", () => {
+		expect(commentTabId("comment:")).toBeNull();
+		expect(commentTabId("comment:has space")).toBeNull();
+		expect(commentTabId("comment:../../etc/passwd")).toBeNull();
+		expect(commentTabId("scope:abc")).toBeNull();
+		expect(commentTabId("comments")).toBeNull();
+		expect(isCommentTabKey("comment:")).toBe(false);
 	});
 });
 

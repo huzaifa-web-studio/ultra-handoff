@@ -41,6 +41,7 @@ export function CommentThreadTab({
 	archived,
 	active,
 	onClose,
+	onLoaded,
 }: {
 	orgSlug: string;
 	organizationId: string;
@@ -54,6 +55,13 @@ export function CommentThreadTab({
 	/** True while this tab is the selected one. */
 	active: boolean;
 	onClose: () => void;
+	/**
+	 * Called once per resolved thread with its root comment.
+	 *
+	 * Used by a deep linked tab to replace its placeholder label with the author
+	 * name. Kept in a ref so a new callback identity does not re-fire it.
+	 */
+	onLoaded?: (comment: Comment) => void;
 }) {
 	// The panel is force mounted, but the query and the composer should only
 	// start after the reader has actually visited this tab once.
@@ -66,6 +74,23 @@ export function CommentThreadTab({
 	const query = useCommentThread(orgSlug, projectId, milestoneId, commentId, {
 		enabled: hasBeenActive,
 	});
+
+	/*
+	 * A deep linked tab starts with a placeholder label. The thread is fetched
+	 * by id, so this is the first point where the author is known. The callback
+	 * lives in a ref so a parent re-render cannot re-fire it on the same data.
+	 */
+	const onLoadedRef = useRef(onLoaded);
+
+	useEffect(() => {
+		onLoadedRef.current = onLoaded;
+	}, [onLoaded]);
+
+	useEffect(() => {
+		if (!query.data) return;
+
+		onLoadedRef.current?.(query.data.thread.comment);
+	}, [query.data]);
 
 	/*
 	 * A focused thread is the one place where the whole conversation is on

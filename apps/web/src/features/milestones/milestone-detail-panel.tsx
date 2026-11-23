@@ -38,7 +38,7 @@ import {
 	Trash2Icon,
 	XIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { UserAvatar } from "#/components/user-avatar";
 import { useProjectUnread } from "#/features/notifications/hooks";
 import { useRealtimeEvent } from "#/features/realtime/provider";
@@ -107,7 +107,9 @@ import {
 } from "./scope/tabs-storage";
 import {
 	BASELINE_SCOPE_TAB_ID,
+	commentTabId,
 	commentTabKey,
+	isCommentTabKey,
 	isScopeTabKey,
 	type MilestoneTabKey,
 	resolveMilestoneTab,
@@ -475,7 +477,7 @@ function MilestoneDetailContent({
 	// stays mounted, so a draft and the list position survive a tab switch
 	// without paying for an editor on every milestone that is only read.
 	const [commentsOpened, setCommentsOpened] = useState(
-		selectedTab === "comments",
+		selectedTab === "comments" || isCommentTabKey(selectedTab),
 	);
 
 	// Focused comment tabs, persisted per milestone. The tab bar can grow to as
@@ -572,6 +574,41 @@ function MilestoneDetailContent({
 		!openScopeTabs.some((tab) => tab.id === requestedScopeTab.id)
 			? [...openScopeTabs, requestedScopeTab]
 			: openScopeTabs;
+
+	/*
+	 * A comment notification deep links to `comment:<rootId>`. The thread is
+	 * fetched by id, so the tab does not have to exist before the fetch. A
+	 * placeholder label keeps the strip honest on the first paint, and the
+	 * panel replaces it with the author name once the thread resolves. This
+	 * mirrors the scope tab behaviour rather than inventing a second pattern.
+	 */
+	const requestedCommentTabId = commentTabId(selectedTab);
+	const requestedCommentTab: OpenCommentTab | null =
+		requestedCommentTabId === null ||
+		openCommentTabs.some((tab) => tab.id === requestedCommentTabId)
+			? null
+			: { id: requestedCommentTabId, label: "Thread", title: "" };
+
+	useEffect(() => {
+		if (requestedCommentTabId === null) return;
+
+		setOpenCommentTabs((current) =>
+			current.some((tab) => tab.id === requestedCommentTabId)
+				? current
+				: [
+						...current,
+						{ id: requestedCommentTabId, label: "Thread", title: "" },
+					],
+		);
+	}, [requestedCommentTabId]);
+
+	// The strip and the content render this merged list, so a deep linked thread
+	// is selected and mounted before the effect above has stored it.
+	const commentTabs =
+		requestedCommentTab &&
+		!openCommentTabs.some((tab) => tab.id === requestedCommentTab.id)
+			? [...openCommentTabs, requestedCommentTab]
+			: openCommentTabs;
 
 	const retryRef = useRef<(() => Promise<unknown>) | null>(null);
 	const lastSavedTitle = useRef(milestone.title);
@@ -848,6 +885,28 @@ function MilestoneDetailContent({
 		onTabChange(commentTabKey(tab.id));
 	}
 
+	/**
+	 * Refresh a focused tab from the thread that just loaded.
+	 *
+	 * A deep link only knows the id, so the placeholder label becomes the author
+	 * name as soon as the thread resolves. Returning the same array when nothing
+	 * changed keeps a background refetch from writing state.
+	 */
+	const handleCommentLoaded = useCallback((comment: Comment) => {
+		const tab = toOpenCommentTab(comment);
+
+		setOpenCommentTabs((current) => {
+			const existing = current.find((item) => item.id === tab.id);
+
+			if (!existing) return [...current, tab];
+			if (existing.label === tab.label && existing.title === tab.title) {
+				return current;
+			}
+
+			return current.map((item) => (item.id === tab.id ? tab : item));
+		});
+	}, []);
+
 	/** Close a focused comment tab and fall back to the full discussion. */
 	function closeCommentTab(id: string) {
 		setOpenCommentTabs((current) => current.filter((tab) => tab.id !== id));
@@ -895,7 +954,7 @@ function MilestoneDetailContent({
 	// the effect above stores it.
 	const openTabKeys = new Set<MilestoneTabKey>([
 		...scopeTabs.map((tab) => scopeTabKey(tab.id)),
-		...openCommentTabs.map((tab) => commentTabKey(tab.id)),
+		...commentTabs.map((tab) => commentTabKey(tab.id)),
 	]);
 	const openDeepLinkedScope =
 		isScopeTabKey(selectedTab) && requestedScopeTab !== null;
@@ -1111,7 +1170,7 @@ function MilestoneDetailContent({
 						);
 					})}
 
-					{openCommentTabs.map((tab, index) => {
+					{commentTabs.map((tab, index) => {
 						const key = commentTabKey(tab.id);
 
 						return (
@@ -1481,7 +1540,7 @@ function MilestoneDetailContent({
 					);
 				})}
 
-				{openCommentTabs.map((tab) => (
+				{commentTabs.map((tab) => (
 					<TabsContent
 						key={tab.id}
 						id={commentTabKey(tab.id)}
@@ -1499,6 +1558,7 @@ function MilestoneDetailContent({
 							archived={viewer.archived}
 							active={effectiveSelectedTab === commentTabKey(tab.id)}
 							onClose={() => closeCommentTab(tab.id)}
+							onLoaded={handleCommentLoaded}
 						/>
 					</TabsContent>
 				))}

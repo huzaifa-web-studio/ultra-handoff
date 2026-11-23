@@ -76,11 +76,23 @@ export function commentTabKey(id: string): `comment:${string}` {
 	return `${COMMENT_TAB_PREFIX}${id}`;
 }
 
+/**
+ * Read the thread id out of a comment tab key, or null.
+ *
+ * The id is validated as it is read, so a deep link can never put an arbitrary
+ * string into a thread query.
+ */
+export function commentTabId(key: string): string | null {
+	if (!key.startsWith(COMMENT_TAB_PREFIX)) return null;
+
+	const id = key.slice(COMMENT_TAB_PREFIX.length);
+
+	return TAB_ID_PATTERN.test(id) ? id : null;
+}
+
 /** True when the key selects one discussion thread. */
 export function isCommentTabKey(key: string): key is `comment:${string}` {
-	if (!key.startsWith(COMMENT_TAB_PREFIX)) return false;
-
-	return TAB_ID_PATTERN.test(key.slice(COMMENT_TAB_PREFIX.length));
+	return commentTabId(key) !== null;
 }
 
 /** True when a value is a tab key this product understands. */
