@@ -42,6 +42,7 @@ import { assertCommentMentions } from "./mention.service";
 import { loadOpenPeriodId } from "./milestone-phase.service";
 import {
 	createNotifications,
+	deleteNotificationsForRecipient,
 	type NotificationDelivery,
 } from "./notification.service";
 import { loadProjectAccess, loadUserMap } from "./project.service";
@@ -484,6 +485,7 @@ export async function updateMilestoneScopeEntry(
 			let bodyChanged = false;
 			let nextBody: unknown[] = entry.body;
 			let addedMentionIds: string[] = [];
+			let removedMentionIds: string[] = [];
 
 			if (input.title !== undefined) {
 				patch.title = validateMilestoneScopeTitle(input.title);
@@ -506,11 +508,18 @@ export async function updateMilestoneScopeEntry(
 							.filter((mention) => mention.type === "user")
 							.map((mention) => mention.id),
 					);
+					const afterMentions = new Set(
+						collectMentionKeys(description.value)
+							.filter((mention) => mention.type === "user")
+							.map((mention) => mention.id),
+					);
 
-					addedMentionIds = collectMentionKeys(description.value)
-						.filter((mention) => mention.type === "user")
-						.map((mention) => mention.id)
-						.filter((userId) => !beforeMentions.has(userId));
+					addedMentionIds = [...afterMentions].filter(
+						(userId) => !beforeMentions.has(userId),
+					);
+					removedMentionIds = [...beforeMentions].filter(
+						(userId) => !afterMentions.has(userId),
+					);
 				}
 			}
 
@@ -533,6 +542,16 @@ export async function updateMilestoneScopeEntry(
 			}
 
 			const mapped = await toEntry(updated);
+
+			// A mention removed by an edit must not keep an unread bell. The
+			// dedupe key is stable across edits, so this deletes exactly the row
+			// the add path created for that person.
+			for (const recipientUserId of removedMentionIds) {
+				await deleteNotificationsForRecipient(tx, tenant, recipientUserId, [
+					`mention:scope:${entryId}:${recipientUserId}`,
+				]);
+			}
+
 			const notifications = await createNotifications(
 				tx,
 				tenant,
@@ -542,7 +561,11 @@ export async function updateMilestoneScopeEntry(
 						recipientUserId,
 						actorUserId: tenant.userId,
 						type: "mention" as const,
-						dedupeKey: `mention:scope:${entryId}:${recipientUserId}:${updated.updatedAt.toISOString()}`,
+						// Stable across edits so a re-added mention reuses the one
+						// row instead of creating a new unread row every save. The
+						// unique index on (recipient, dedupe_key) makes the add
+						// idempotent.
+						dedupeKey: `mention:scope:${entryId}:${recipientUserId}`,
 						project: {
 							id: access.row.id,
 							name: access.row.name,
