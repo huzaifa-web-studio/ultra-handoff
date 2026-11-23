@@ -131,6 +131,8 @@ export function ProjectMembersTable({
 				{canManage && (
 					<TableHead className="w-10">
 						<Checkbox
+							id="select-all-project-members"
+							name="selectAllProjectMembers"
 							slot="selection"
 							aria-label="Select every removable member"
 						/>
@@ -179,7 +181,10 @@ export function ProjectMembersTable({
 								<TableCell>
 									{removable.has(member.userId) ? (
 										<Checkbox
+											id={`select-project-member-${member.userId}`}
+											name="projectMemberSelection"
 											slot="selection"
+											value={member.userId}
 											aria-label={`Select ${member.name}`}
 										/>
 									) : (

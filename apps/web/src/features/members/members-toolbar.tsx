@@ -79,6 +79,8 @@ export function MembersToolbar({
 						aria-hidden
 					/>
 					<Input
+						id="members-search"
+						name="memberSearch"
 						type="search"
 						value={search}
 						onChange={(event) => onSearchChange(event.target.value)}

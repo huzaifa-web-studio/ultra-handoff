@@ -56,6 +56,8 @@ export function ProjectMembersToolbar({
 					aria-hidden
 				/>
 				<Input
+					id="project-members-search"
+					name="projectMemberSearch"
 					type="search"
 					value={search}
 					onChange={(event) => onSearchChange(event.target.value)}

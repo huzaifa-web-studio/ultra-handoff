@@ -223,6 +223,7 @@ export function InviteMembersDialog({
 					<Label htmlFor="invite-emails">Email addresses</Label>
 					<Textarea
 						id="invite-emails"
+						name="inviteEmails"
 						value={input}
 						onChange={(event) => {
 							setInput(event.target.value);

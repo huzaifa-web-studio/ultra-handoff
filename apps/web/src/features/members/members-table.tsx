@@ -358,7 +358,12 @@ export function MembersTable({
 			<TableHeader>
 				{canManage && (
 					<TableHead className={`${STICKY_HEADER} w-10`}>
-						<Checkbox slot="selection" aria-label="Select all members" />
+						<Checkbox
+							id="select-all-members"
+							name="selectAllMembers"
+							slot="selection"
+							aria-label="Select all members"
+						/>
 					</TableHead>
 				)}
 				{(table.getHeaderGroups()[0]?.headers ?? []).map((header) => {
@@ -407,7 +412,10 @@ export function MembersTable({
 						{canManage && (
 							<TableCell>
 								<Checkbox
+									id={`select-member-${row.id}`}
+									name="memberSelection"
 									slot="selection"
+									value={row.id}
 									aria-label={`Select ${row.original.name}`}
 								/>
 							</TableCell>
