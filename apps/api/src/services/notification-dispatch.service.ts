@@ -48,6 +48,7 @@ export function dispatchNotificationDeliveries(
 				body: delivery.body,
 				href: delivery.href,
 				tag: delivery.notificationId,
+				organizationSlug: delivery.organizationSlug,
 			},
 		}).catch(() => undefined);
 	}

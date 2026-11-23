@@ -8,6 +8,10 @@
  * Used by: features/notifications/push.ts (registration).
  */
 
+// The suppression rule is a separate classic script so it can be unit tested.
+// See public/push-policy.js.
+importScripts("/push-policy.js");
+
 self.addEventListener("push", (event) => {
   if (!event.data) return;
 
@@ -24,13 +28,19 @@ self.addEventListener("push", (event) => {
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clients) => {
-        // A visible window already showed the in-app toast and badge. Do not
-        // duplicate it in the operating system.
-        const visible = clients.some(
-          (client) => client.visibilityState === "visible",
-        );
+        /*
+         * A visible window already showed the in-app toast and badge, but only
+         * for its own workspace. A window on another workspace has not shown
+         * this event, so it must not swallow the alert.
+         */
+        const slug =
+          typeof payload.organizationSlug === "string"
+            ? payload.organizationSlug
+            : "";
 
-        if (visible) return undefined;
+        if (self.HandoffPushPolicy.shouldSuppressPush(clients, slug)) {
+          return undefined;
+        }
 
         return self.registration.showNotification(payload.title, {
           body: typeof payload.body === "string" ? payload.body : "",

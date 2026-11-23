@@ -44,6 +44,14 @@ export type PushPayload = {
 	body: string;
 	href: string;
 	tag: string;
+	/**
+	 * The workspace that produced the alert.
+	 *
+	 * The service worker uses it to suppress an alert only when a visible window
+	 * is showing that same workspace. A window on another workspace has not
+	 * shown this event, so suppressing there lost the alert entirely.
+	 */
+	organizationSlug: string;
 };
 
 /** Public config, safe to send to the browser. */
