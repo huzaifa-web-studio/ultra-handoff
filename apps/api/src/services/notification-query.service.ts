@@ -16,7 +16,7 @@
  */
 
 import { APIError } from "better-auth/api";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
 	changeRequest,
 	comment,
@@ -440,6 +440,12 @@ export async function markNotificationRead(
 /**
  * Mark everything up to a cutoff read.
  *
+ * Why two statements: read history must match what the person could actually
+ * see. A direct UPDATE cannot express the visibility rule, because it depends
+ * on the joined project and comment rows, so the visible ids are selected with
+ * the exact list predicate first and then updated in chunks. Selecting first
+ * also keeps the UPDATE under the bind parameter limit for a large inbox.
+ *
  * The client sends the newest notification it has actually seen, not `now()`,
  * so a notification created during the click stays unread. A future timestamp
  * is clamped by the route before it reaches here.
@@ -451,24 +457,48 @@ export async function markAllNotificationsRead(
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const updated = await tx
-				.update(notification)
-				.set({ readAt: new Date() })
+			const visible = await tx
+				.select({ id: notification.id })
+				.from(notification)
+				.leftJoin(project, eq(notification.projectId, project.id))
+				.leftJoin(milestone, eq(notification.milestoneId, milestone.id))
+				.leftJoin(comment, eq(notification.commentId, comment.id))
 				.where(
 					and(
-						eq(notification.organizationId, tenant.organizationId),
-						eq(notification.recipientUserId, tenant.userId),
+						...notificationScope(tx, tenant),
 						isNull(notification.readAt),
 						// Compare at millisecond precision. The client cutoff is a
 						// JavaScript Date, while rows keep microseconds, so a row
 						// in the same millisecond must still be included.
 						sql`date_trunc('milliseconds', ${notification.createdAt}) <= ${sql.param(before, notification.createdAt)}`,
 					),
-				)
-				.returning({ id: notification.id });
+				);
+
+			let updated = 0;
+
+			for (let index = 0; index < visible.length; index += 500) {
+				const chunk = visible.slice(index, index + 500).map((row) => row.id);
+
+				if (chunk.length === 0) continue;
+
+				const rows = await tx
+					.update(notification)
+					.set({ readAt: new Date() })
+					.where(
+						and(
+							eq(notification.organizationId, tenant.organizationId),
+							eq(notification.recipientUserId, tenant.userId),
+							isNull(notification.readAt),
+							inArray(notification.id, chunk),
+						),
+					)
+					.returning({ id: notification.id });
+
+				updated += rows.length;
+			}
 
 			return {
-				updated: updated.length,
+				updated,
 				unread: await countUnread(tx, tenant),
 			};
 		},
