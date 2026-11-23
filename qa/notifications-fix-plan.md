@@ -39,7 +39,7 @@ Tick tasks as they land. One batch per branch and commit series.
 | Batch | Theme | Tasks | Status | Depends on |
 |---|---|---|---|---|
 | 1 | Data correctness and lifecycle | 1 to 7 | Done, tasks 1 to 7, plus task 17 moved early | none |
-| 2 | Deep links and push delivery | 8 to 10 | Not started | Batch 1 (helper from task 1) |
+| 2 | Deep links and push delivery | 8 to 10 | Done, tasks 8 to 10, browser retest pending | Batch 1 (helper from task 1) |
 | 3 | Hardening and performance | 11 to 17 | Not started, task 17 already done | none |
 
 Task IDs map to the report as follows: task 1 to 3 are F1, task 4 is F9, task 5 is F10a, task 6 is F10b, task 7 is F10c, task 8 is F2, task 9 is F3, task 10 is F7, task 11 is F4 plus F5, task 12 is F6, task 13 is F8, task 14 is F15, task 15 is F10d, task 16 is F10e, task 17 is D10.
@@ -655,4 +655,42 @@ Notes:
 - The cursor format change in task 11 will invalidate a cursor a browser already
   holds. One 400, then the client refetches. Expected.
 - Verified: `notification` policies are now select, insert, update, delete.
+```
+
+### 23 Nov 2026, batch 2, tasks 8 to 10
+
+Branch: `fix/notifications-links`
+
+Done:
+- Task 8: `commentsOpened` now accepts a `comment:` key, `commentTabId` was added
+  next to `scopeTabId` (and `isCommentTabKey` now uses it), and the panel
+  derives a placeholder `requestedCommentTab`, stores it once, includes it in
+  `openTabKeys`, and renders from a merged `commentTabs` list. `CommentThreadTab`
+  gained `onLoaded`, called once per resolved thread through a ref, and the panel
+  replaces the placeholder label with the author name.
+- Task 9: new `features/notifications/link.ts` with the pure
+  `readNotificationId` and `decideNotificationLink`, plus `useNotificationLink`.
+  It runs in `_app.tsx` before the workspace guard, holds the shell while a
+  switch is needed or in flight, switches through `useSwitchOrganization`, then
+  navigates to the captured deep link and marks the row read with the target
+  slug. A blocked or failed switch abandons the hold, so the guard still returns
+  the person to their active workspace. The provider no longer owns the click,
+  so there is one mark-read action.
+- Task 10: `PushPayload` carries `organizationSlug`, the dispatch sets it from
+  the delivery, and `public/push-policy.js` holds the suppression rule as a
+  classic script loaded with `importScripts`. A visible window only suppresses
+  the alert for its own workspace; a payload without a slug keeps the old rule.
+
+Not done:
+- Browser retest from section 8 (needs Chrome DevTools approval and two seeded
+  workspaces). The automated side is covered: 18 new unit tests.
+
+Blocked:
+- Nothing in code. The browser evidence step is the only remaining batch 2 item.
+
+Notes:
+- `commentTabKey` and `isCommentTabKey` already existed, so task 8 only needed
+  `commentTabId`. Section 5 of the plan implied both had to be added.
+- `apps/web/public` is excluded from the repo Biome config, so `sw.js` and
+  `push-policy.js` are formatted by hand to match the surrounding style.
 ```
