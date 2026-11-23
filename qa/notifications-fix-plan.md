@@ -38,9 +38,9 @@ Tick tasks as they land. One batch per branch and commit series.
 
 | Batch | Theme | Tasks | Status | Depends on |
 |---|---|---|---|---|
-| 1 | Data correctness and lifecycle | 1 to 7 | Not started | none |
+| 1 | Data correctness and lifecycle | 1 to 7 | Done, tasks 1 to 7, plus task 17 moved early | none |
 | 2 | Deep links and push delivery | 8 to 10 | Not started | Batch 1 (helper from task 1) |
-| 3 | Hardening and performance | 11 to 17 | Not started | none |
+| 3 | Hardening and performance | 11 to 17 | Not started, task 17 already done | none |
 
 Task IDs map to the report as follows: task 1 to 3 are F1, task 4 is F9, task 5 is F10a, task 6 is F10b, task 7 is F10c, task 8 is F2, task 9 is F3, task 10 is F7, task 11 is F4 plus F5, task 12 is F6, task 13 is F8, task 14 is F15, task 15 is F10d, task 16 is F10e, task 17 is D10.
 
@@ -606,9 +606,53 @@ Capture screenshots into `qa/evidence/notifications/` with the next number in th
 Append one entry per session. Do not rewrite history.
 
 ```
-### 23 Nov 2026, batch 1, tasks 1 to 3
+### 23 Nov 2026, batch 1, tasks 1 to 7 (and task 17)
+
+Branch: `fix/notifications-lifecycle`
+
 Done:
+- Task 1: `deleteNotificationsForRecipient` added next to `createNotifications`. It
+  reads `app.current_user_id`, scopes the transaction to the recipient for the
+  delete, restores the actor in a `finally` with `.catch(() => undefined)`, and
+  takes `options.onlyUnread`. `updateMilestoneComment` now calls it per removed
+  mention. The stale actor-delete comment is gone.
+- Task 2: `delete_comment_notifications(text)` `SECURITY DEFINER` function in
+  `scripts/bootstrap-db.ts`, guarded on the `notification` table existing, with
+  `revoke all ... from public` then a grant to the tenant role. Wrapper
+  `deleteCommentNotifications` and `deleteMilestoneComment` use it.
+- Task 3: `notification_actor_delete` removed from `notificationPolicies`, the
+  policy comment block rewritten to the real rule. Migration
+  `drizzle/0030_quiet_runaways.sql` drops the policy. `db:verify-rls` prints
+  37/37.
+- Task 4: scope dedupe key is `mention:scope:${entryId}:${recipientUserId}`.
+  `updateMilestoneScopeEntry` computes `removedMentionIds` and deletes those
+  rows through the helper.
+- Task 5: the sweep records the unread tomorrow key when it builds a today
+  candidate, inserts the batch first, then deletes the replaced row with
+  `onlyUnread`.
+- Task 6: truncation logs `organization`, `accepted` and `dropped` through
+  `console.error` in the worker pattern, only when the cap is actually hit.
+- Task 7: `markAllNotificationsRead` selects visible ids with the list predicate
+  then updates in chunks of 500.
+- Task 17: the `/tmp` integration suite is promoted to
+  `apps/api/src/services/notification.integration.test.ts` with relative
+  imports, and the shared client closes are removed from both integration files.
+  The full suite with `TEST_DATABASE=1` runs 597 tests in one process, 0 fail,
+  and exits.
+
 Not done:
+- Batches 2 and 3.
+
 Blocked:
+- Nothing.
+
 Notes:
+- Task 17 was pulled into batch 1 because it is the vehicle for the batch 1
+  tests. Batch 3 keeps no work for it.
+- Task 13's SQL in section 6 has a dead branch: `base` already filters
+  `read_at is null`, so `or b.read_at is not null` inside the reminder subquery
+  can never be true. Batch 3 will drop it and check the CTE is not materialized.
+- The cursor format change in task 11 will invalidate a cursor a browser already
+  holds. One 400, then the client refetches. Expected.
+- Verified: `notification` policies are now select, insert, update, delete.
 ```

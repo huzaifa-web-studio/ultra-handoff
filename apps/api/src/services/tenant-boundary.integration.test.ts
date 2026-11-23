@@ -23,11 +23,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { inArray, sql } from "drizzle-orm";
 
-import { adminClient, adminDb } from "../db";
+import { adminDb } from "../db";
 import { invitation, member, organization, user } from "../db/auth-schema";
 import { milestone, project, projectMember } from "../db/schema";
-import { closeTenantDb, getTenantDb, withTenant } from "../db/tenant";
-import { closeRedis } from "../lib/redis";
+import { getTenantDb, withTenant } from "../db/tenant";
 import type { TenantContext } from "../middleware/tenant";
 import {
 	createChangeRequest,
@@ -431,10 +430,10 @@ suite("tenant and project boundary", () => {
 	});
 
 	afterAll(async () => {
+		// Fixtures only. The shared database and Redis clients belong to the
+		// whole test process. Ending them here broke the next integration file
+		// with CONNECTION_ENDED, so they are left for the process to close.
 		await cleanup();
-		await closeTenantDb();
-		await closeRedis();
-		await adminClient.end({ timeout: 5 });
 	});
 
 	describe("row level security", () => {
