@@ -40,7 +40,7 @@ Tick tasks as they land. One batch per branch and commit series.
 |---|---|---|---|---|
 | 1 | Data correctness and lifecycle | 1 to 7 | Done, tasks 1 to 7, plus task 17 moved early | none |
 | 2 | Deep links and push delivery | 8 to 10 | Done, tasks 8 to 10, browser retest pending | Batch 1 (helper from task 1) |
-| 3 | Hardening and performance | 11 to 17 | Not started, task 17 already done | none |
+| 3 | Hardening and performance | 11 to 17 | Done, tasks 11 to 16, task 17 in batch 1, browser retest pending | none |
 
 Task IDs map to the report as follows: task 1 to 3 are F1, task 4 is F9, task 5 is F10a, task 6 is F10b, task 7 is F10c, task 8 is F2, task 9 is F3, task 10 is F7, task 11 is F4 plus F5, task 12 is F6, task 13 is F8, task 14 is F15, task 15 is F10d, task 16 is F10e, task 17 is D10.
 
@@ -693,4 +693,50 @@ Notes:
   `commentTabId`. Section 5 of the plan implied both had to be added.
 - `apps/web/public` is excluded from the repo Biome config, so `sw.js` and
   `push-policy.js` are formatted by hand to match the surrounding style.
+```
+
+### 23 Nov 2026, batch 3, tasks 11 to 16
+
+Branch: `fix/notifications-hardening`
+
+Done:
+- Task 11: the cursor is now `base64url({ t, i })` with a strict timestamp
+  pattern and a UUID id. Decode validates the decoded JSON, so a decodable
+  garbage value is a 400. The keyset compares `(created_at, id)` against the
+  position with no subquery, and the row's timestamp is read as text so
+  microseconds survive. `decodeNotificationCursor` and
+  `encodeNotificationCursor` are exported for tests.
+- Task 12: `markCommentsRead` marks the ids that still exist and ignores the
+  rest; an all-stale request returns the current state. Both comment surfaces
+  remove ids from `markedRef` on a failed mutation so a later render retries.
+- Task 13: `notificationScope` now expresses the comment and reminder rules as
+  guarded EXISTS predicates, and the count uses `count(*) FILTER` over one scan.
+  The grouped summary uses the same predicate. The unread index became
+  `(recipient, organization, created_at, id)` partial on `read_at is null`.
+- Task 14: ids and names on the project members search, the member search, both
+  selection checkboxes, and the invite textarea.
+- Task 15: `useMarkNotificationRead` patches the cached pages for both filters
+  instead of invalidating the list, drops the row from the unread pages, and
+  keeps the summary patch.
+- Task 16: `features/auth/timezone.ts` owns `detectedTimezone` and the typed
+  `reportTimezone`. The `as never` call site is gone, and a development failure
+  logs once instead of vanishing.
+
+Not done:
+- Browser retest from section 8 for tasks 8, 9, 14 and 15. Automated coverage
+  is in place.
+
+Blocked:
+- Nothing.
+
+Notes:
+- Task 13 measurement on app_test at 20,000 unread rows: summary 29 to 54 ms,
+  bell list 24 ms, count 13.7 ms. The plan shows the comment and milestone
+  subplans as `never executed`, so there are no `loops=20000` probes.
+- The first version of the split put the class guard only in the count FILTER,
+  which left the grouped summary probing `comment` per row and took 176 ms. The
+  guards now live inside `commentVisible` and `reminderVisible`, so every caller
+  benefits from the short circuit.
+- The cursor format changed. A cursor a browser already holds decodes to a
+  non-JSON string and returns one 400, after which the client refetches.
 ```
