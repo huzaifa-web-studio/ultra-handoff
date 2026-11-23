@@ -34,6 +34,7 @@ import {
 	useState,
 } from "react";
 import { MentionProvider } from "#/components/rich-text/mentions/mention-context";
+import { useMarkCommentsRead } from "#/features/notifications/hooks";
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import { useAtBottom } from "#/hooks/use-at-bottom";
 import { useClockTick } from "#/hooks/use-clock-tick";
@@ -208,6 +209,71 @@ export function CommentTab({
 	const threads = [...(query.data?.pages ?? [])]
 		.reverse()
 		.flatMap((page) => page.threads);
+
+	/*
+	 * Read marking.
+	 *
+	 * Only the newest page is marked on open, and only its roots. Replies stay
+	 * unread until their thread is expanded, which is what makes the "N new"
+	 * badge meaningful. A tab that is hidden never marks anything, so an open
+	 * background tab cannot silently consume a notification.
+	 */
+	const markRead = useMarkCommentsRead(orgSlug, projectId, milestoneId);
+	const markedRef = useRef(new Set<string>());
+
+	const markSeen = useCallback(
+		(commentIds: string[]) => {
+			if (!active) return;
+			if (document.visibilityState !== "visible") return;
+
+			const fresh = commentIds.filter((id) => !markedRef.current.has(id));
+
+			if (fresh.length === 0) return;
+
+			for (const id of fresh) markedRef.current.add(id);
+			markRead.mutate(fresh);
+		},
+		[active, markRead],
+	);
+
+	const initialMarkRef = useRef(false);
+
+	useEffect(() => {
+		const firstPage = query.data?.pages[0];
+
+		if (!active || !firstPage) return;
+
+		const roots = firstPage.threads.map((thread) => thread.comment.id);
+
+		// The first load is where the tab auto-scrolls to the newest comment, so
+		// the newest page is genuinely seen. Later, a new root is only read if
+		// the reader is already at the bottom; otherwise it stays unread and the
+		// pill tells them it arrived.
+		if (!initialMarkRef.current) {
+			initialMarkRef.current = true;
+			markSeen(roots);
+			return;
+		}
+
+		if (atBottomRef.current) markSeen(roots);
+	}, [active, query.data, markSeen, atBottomRef]);
+
+	useEffect(() => {
+		if (!active || expandedThreads.size === 0) return;
+
+		const ids: string[] = [];
+
+		for (const thread of threads) {
+			if (!expandedThreads.has(thread.comment.id)) continue;
+
+			ids.push(thread.comment.id);
+
+			const lastReply = thread.replies[thread.replies.length - 1];
+			if (lastReply) ids.push(lastReply.id);
+		}
+
+		markSeen(ids);
+	}, [active, expandedThreads, threads, markSeen]);
 
 	// First open shows the newest comment, which is where a returning reader
 	// expects to land.

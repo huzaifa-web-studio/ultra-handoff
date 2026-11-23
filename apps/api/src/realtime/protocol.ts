@@ -22,6 +22,16 @@ import { randomUUID } from "node:crypto";
 export const REALTIME_PROTOCOL_VERSION = 1;
 
 /**
+ * The two scopes one socket can carry.
+ *
+ * A project socket receives content for one project workspace: comments,
+ * milestones and change requests. A user socket receives personal traffic:
+ * notifications and read state for the signed in person. The discriminator is
+ * additive so an existing project tab keeps working without a version bump.
+ */
+export type RealtimeScope = "project" | "user";
+
+/**
  * Single Redis channel every API instance publishes to.
  *
  * Why one channel and not one per project: a project topic is cheap to derive
@@ -40,6 +50,17 @@ export const REALTIME_CHANNEL = "realtime:events";
  */
 export function projectTopic(projectId: string): string {
 	return `project:${projectId}`;
+}
+
+/**
+ * Bun topic for one person inside one workspace.
+ *
+ * The organization is part of the topic on purpose. Notification rows are
+ * workspace scoped, so the same person in two workspaces must not receive one
+ * workspace's bell on the other workspace's connection.
+ */
+export function userTopic(organizationId: string, userId: string): string {
+	return `user:${organizationId}:${userId}`;
 }
 
 /**
@@ -66,7 +87,11 @@ export type RealtimeEventType =
 	| "presence.joined"
 	| "presence.left"
 	| "typing.started"
-	| "typing.stopped";
+	| "typing.stopped"
+	/** Personal traffic, always published on a user topic. */
+	| "notification.created"
+	| "notification.read"
+	| "comment.read";
 
 /** Every message the browser may send. */
 export type RealtimeInboundType =
@@ -76,7 +101,14 @@ export type RealtimeInboundType =
 	| "typing.start"
 	| "typing.stop";
 
-/** The wire envelope. `data` is narrowed per event type by the consumer. */
+/**
+ * The wire envelope. `data` is narrowed per event type by the consumer.
+ *
+ * `scope` is optional for backwards compatibility. A project envelope without
+ * a scope is treated as `project`, which is what every release before the
+ * personal channel produced. A user envelope always carries `organizationId`
+ * and `userId` and never a `projectId`.
+ */
 export type RealtimeEnvelope<T = unknown> = {
 	v: typeof REALTIME_PROTOCOL_VERSION;
 	/** Unique per message, so a consumer can drop a duplicate after a replay. */
@@ -84,11 +116,14 @@ export type RealtimeEnvelope<T = unknown> = {
 	type: RealtimeEventType;
 	/** ISO timestamp of the moment the write committed. */
 	at: string;
-	projectId: string;
+	scope?: RealtimeScope;
+	projectId?: string;
+	organizationId?: string;
+	userId?: string;
 	data: T;
 };
 
-/** Build an envelope. Always server side: the id and clock are authoritative. */
+/** Build a project envelope. Always server side: id and clock are authoritative. */
 export function createRealtimeEnvelope<T>(
 	projectId: string,
 	type: RealtimeEventType,
@@ -99,7 +134,27 @@ export function createRealtimeEnvelope<T>(
 		id: randomUUID(),
 		type,
 		at: new Date().toISOString(),
+		scope: "project",
 		projectId,
+		data,
+	};
+}
+
+/** Build a personal envelope for one user in one workspace. */
+export function createUserRealtimeEnvelope<T>(
+	organizationId: string,
+	userId: string,
+	type: RealtimeEventType,
+	data: T,
+): RealtimeEnvelope<T> {
+	return {
+		v: REALTIME_PROTOCOL_VERSION,
+		id: randomUUID(),
+		type,
+		at: new Date().toISOString(),
+		scope: "user",
+		organizationId,
+		userId,
 		data,
 	};
 }
@@ -186,8 +241,9 @@ export function parseInboundMessage(
  * Validate an envelope that crossed Redis.
  *
  * Redis is outside TypeScript, and the subscriber must never forward a
- * malformed or foreign payload to a topic. Anything without a usable project
- * id and type is dropped here.
+ * malformed or foreign payload to a topic. A project envelope needs a project
+ * id. A user envelope needs both the organization and the person, because the
+ * topic is derived from both.
  */
 export function parseRealtimeEnvelope(value: unknown): RealtimeEnvelope | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -198,6 +254,27 @@ export function parseRealtimeEnvelope(value: unknown): RealtimeEnvelope | null {
 	if (typeof record.id !== "string") return null;
 	if (typeof record.type !== "string") return null;
 	if (typeof record.at !== "string") return null;
+	if (
+		record.scope !== undefined &&
+		record.scope !== "project" &&
+		record.scope !== "user"
+	) {
+		return null;
+	}
+
+	if (record.scope === "user") {
+		if (
+			typeof record.organizationId !== "string" ||
+			record.organizationId.length === 0 ||
+			typeof record.userId !== "string" ||
+			record.userId.length === 0
+		) {
+			return null;
+		}
+
+		return record as RealtimeEnvelope;
+	}
+
 	if (typeof record.projectId !== "string" || record.projectId.length === 0) {
 		return null;
 	}

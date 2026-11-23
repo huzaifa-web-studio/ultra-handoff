@@ -48,18 +48,36 @@ export type RealtimeStatus =
 type EventListener = (event: RealtimeEnvelope) => void;
 type StatusListener = (status: RealtimeStatus) => void;
 
+/**
+ * The socket's scope.
+ *
+ * A project socket carries one project's discussion and milestones. A personal
+ * socket carries the signed in person's notifications and read state, and is
+ * needed on pages that have no project open.
+ */
+export type RealtimeScope =
+	| { kind: "project"; orgSlug: string; projectId: string }
+	| { kind: "user"; orgSlug: string; userId: string };
+
 /** Build the socket URL from the same origin the HTTP client uses. */
-export function realtimeUrl(orgSlug: string, projectId: string): string {
-	const url = new URL(
-		`/orgs/${encodeURIComponent(orgSlug)}/projects/${encodeURIComponent(
-			projectId,
-		)}/realtime`,
-		API_ORIGIN,
-	);
+export function realtimeUrl(scope: RealtimeScope): string {
+	const base = `/orgs/${encodeURIComponent(scope.orgSlug)}`;
+	const path =
+		scope.kind === "project"
+			? `${base}/projects/${encodeURIComponent(scope.projectId)}/realtime`
+			: `${base}/realtime`;
+	const url = new URL(path, API_ORIGIN);
 
 	url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
 	return url.toString();
+}
+
+/** A stable key for one leased socket. */
+function scopeKey(scope: RealtimeScope): string {
+	return scope.kind === "project"
+		? `${scope.orgSlug}:project:${scope.projectId}`
+		: `${scope.orgSlug}:user:${scope.userId}`;
 }
 
 export class RealtimeSocket {
@@ -83,10 +101,7 @@ export class RealtimeSocket {
 	private readonly eventListeners = new Set<EventListener>();
 	private readonly statusListeners = new Set<StatusListener>();
 
-	constructor(
-		private readonly orgSlug: string,
-		private readonly projectId: string,
-	) {}
+	constructor(private readonly scope: RealtimeScope) {}
 
 	/** Open the socket unless one is already open, opening or waiting to retry. */
 	connect(): void {
@@ -162,7 +177,7 @@ export class RealtimeSocket {
 		let socket: WebSocket;
 
 		try {
-			socket = new WebSocket(realtimeUrl(this.orgSlug, this.projectId));
+			socket = new WebSocket(realtimeUrl(this.scope));
 		} catch {
 			this.scheduleReconnect();
 			return;
@@ -220,8 +235,24 @@ export class RealtimeSocket {
 		const record = value as Record<string, unknown>;
 
 		if (record.v !== PROTOCOL_VERSION) return;
-		if (record.projectId !== this.projectId) return;
 		if (typeof record.type !== "string") return;
+
+		// A frame must match the scope this socket was opened for. A stale or
+		// misrouted personal frame can never be applied to a project cache, and
+		// vice versa.
+		if (this.scope.kind === "project") {
+			if (record.scope === "user") return;
+			if (record.projectId !== this.scope.projectId) return;
+		} else {
+			if (record.scope !== "user") return;
+			if (record.userId !== this.scope.userId) return;
+			if (
+				record.organizationId !== undefined &&
+				typeof record.organizationId !== "string"
+			) {
+				return;
+			}
+		}
 
 		// Control frames keep the liveness clock but are not application
 		// events, so a consumer never sees them.
@@ -365,27 +396,22 @@ export type RealtimeLease = {
 	release: () => void;
 };
 
-function leaseKey(orgSlug: string, projectId: string): string {
-	return `${orgSlug}:${projectId}`;
-}
-
 /**
- * Take a reference on the project's socket, opening it if needed.
+ * Take a reference on a scoped socket, opening it if needed.
  *
  * The grace period absorbs a remount in the same tick, which is what React does
  * in development and what a route transition can do in production. Without it,
  * every remount would close and reopen the connection.
  */
-export function acquireRealtimeSocket(
-	orgSlug: string,
-	projectId: string,
+export function acquireScopedRealtimeSocket(
+	scope: RealtimeScope,
 ): RealtimeLease {
-	const key = leaseKey(orgSlug, projectId);
+	const key = scopeKey(scope);
 	let entry = leases.get(key);
 
 	if (!entry) {
 		entry = {
-			socket: new RealtimeSocket(orgSlug, projectId),
+			socket: new RealtimeSocket(scope),
 			refs: 0,
 			closeTimer: null,
 		};
@@ -422,4 +448,20 @@ export function acquireRealtimeSocket(
 			}, REALTIME_CLOSE_GRACE_MS);
 		},
 	};
+}
+
+/** Project workspace socket. */
+export function acquireRealtimeSocket(
+	orgSlug: string,
+	projectId: string,
+): RealtimeLease {
+	return acquireScopedRealtimeSocket({ kind: "project", orgSlug, projectId });
+}
+
+/** Personal notifications and read state socket. */
+export function acquireUserRealtimeSocket(
+	orgSlug: string,
+	userId: string,
+): RealtimeLease {
+	return acquireScopedRealtimeSocket({ kind: "user", orgSlug, userId });
 }

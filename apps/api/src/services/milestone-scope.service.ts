@@ -34,11 +34,16 @@ import {
 import { assertProjectActive } from "../auth/project-permissions";
 import { milestone, milestoneScopeEntry } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
+import { collectMentionKeys } from "../lib/mentions";
 import { sanitizeRichText } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
 import { queueDocumentPreviews } from "./link-preview.service";
 import { assertCommentMentions } from "./mention.service";
 import { loadOpenPeriodId } from "./milestone-phase.service";
+import {
+	createNotifications,
+	type NotificationDelivery,
+} from "./notification.service";
 import { loadProjectAccess, loadUserMap } from "./project.service";
 
 /** The three kinds of scope addition. */
@@ -84,6 +89,11 @@ export type MilestoneScopeEntry = MilestoneScopeEntrySummary & {
 
 /** A database row, before it is mapped to the wire shape. */
 export type MilestoneScopeEntryRecord = typeof milestoneScopeEntry.$inferSelect;
+
+/** One scope update plus the notifications it produced. */
+export type MilestoneScopeUpdateResult = MilestoneScopeEntry & {
+	notifications: NotificationDelivery[];
+};
 
 /** Public update input for one section. */
 export type UpdateMilestoneScopeEntryInput = {
@@ -391,7 +401,7 @@ export async function updateMilestoneScopeEntry(
 	milestoneId: string,
 	entryId: string,
 	input: UpdateMilestoneScopeEntryInput,
-): Promise<MilestoneScopeEntry> {
+): Promise<MilestoneScopeUpdateResult> {
 	const write = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
@@ -461,7 +471,11 @@ export async function updateMilestoneScopeEntry(
 			}
 
 			if (input.title === undefined && input.body === undefined) {
-				return { entry: await toEntry(entry), bodyChanged: false };
+				return {
+					entry: await toEntry(entry),
+					bodyChanged: false,
+					notifications: [] as NotificationDelivery[],
+				};
 			}
 
 			const patch: Partial<typeof milestoneScopeEntry.$inferInsert> = {
@@ -469,6 +483,7 @@ export async function updateMilestoneScopeEntry(
 			};
 			let bodyChanged = false;
 			let nextBody: unknown[] = entry.body;
+			let addedMentionIds: string[] = [];
 
 			if (input.title !== undefined) {
 				patch.title = validateMilestoneScopeTitle(input.title);
@@ -484,6 +499,19 @@ export async function updateMilestoneScopeEntry(
 				nextBody = description.value;
 				patch.body = description.value;
 				patch.bodyText = description.text;
+
+				if (bodyChanged) {
+					const beforeMentions = new Set(
+						collectMentionKeys(entry.body)
+							.filter((mention) => mention.type === "user")
+							.map((mention) => mention.id),
+					);
+
+					addedMentionIds = collectMentionKeys(description.value)
+						.filter((mention) => mention.type === "user")
+						.map((mention) => mention.id)
+						.filter((userId) => !beforeMentions.has(userId));
+				}
 			}
 
 			const [updated] = await tx
@@ -504,10 +532,38 @@ export async function updateMilestoneScopeEntry(
 				});
 			}
 
+			const mapped = await toEntry(updated);
+			const notifications = await createNotifications(
+				tx,
+				tenant,
+				addedMentionIds
+					.filter((userId) => userId !== tenant.userId)
+					.map((recipientUserId) => ({
+						recipientUserId,
+						actorUserId: tenant.userId,
+						type: "mention" as const,
+						dedupeKey: `mention:scope:${entryId}:${recipientUserId}:${updated.updatedAt.toISOString()}`,
+						project: {
+							id: access.row.id,
+							name: access.row.name,
+							slug: access.row.slug,
+						},
+						milestone: {
+							id: record.id,
+							title: record.title,
+						},
+						scopeEntry: {
+							id: entryId,
+							title: mapped.title,
+						},
+					})),
+			);
+
 			return {
-				entry: await toEntry(updated),
+				entry: mapped,
 				bodyChanged,
 				nextBody,
+				notifications,
 			};
 		},
 	);
@@ -518,7 +574,7 @@ export async function updateMilestoneScopeEntry(
 		void queueDocumentPreviews(tenant, write.nextBody).catch(() => undefined);
 	}
 
-	return write.entry;
+	return { ...write.entry, notifications: write.notifications };
 }
 
 /** Load project access or fail with 404, matching every milestone surface. */

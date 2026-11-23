@@ -57,6 +57,7 @@ import {
 } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { findChecklistItem } from "../lib/checklist";
+import { collectMentionKeys } from "../lib/mentions";
 import {
 	buildAssigneeEvents,
 	buildEstimateEvent,
@@ -81,6 +82,13 @@ import {
 	loadScopeEntries,
 	type MilestoneScopeEntrySummary,
 } from "./milestone-scope.service";
+import {
+	createNotifications,
+	loadMilestoneAssigneeUserIds,
+	loadProjectMemberUserIds,
+	type NotificationCandidate,
+	type NotificationDelivery,
+} from "./notification.service";
 import { listOrganizationOwners } from "./organization.service";
 import {
 	loadProjectAccess,
@@ -211,6 +219,11 @@ export type MilestoneDetailResult = {
 	viewer: MilestoneViewer;
 };
 
+/** A write that also produced notifications, stripped by the route. */
+export type MilestoneWriteResult = MilestoneDetailResult & {
+	notifications: NotificationDelivery[];
+};
+
 /** One timeline row written by a milestone update, in broadcast shape. */
 export type MilestoneTimelineComment = {
 	id: string;
@@ -240,6 +253,7 @@ export type MilestoneTimelineComment = {
 export type MilestoneUpdateResult = MilestoneDetailResult & {
 	changed: MilestoneChangedField[];
 	timeline: MilestoneTimelineComment[];
+	notifications: NotificationDelivery[];
 };
 
 /** Normalised list filters, parsed and clamped by the route. */
@@ -1125,6 +1139,24 @@ export async function getMilestone(
  * validated when it was stored, which is what the move flow passes. A mention
  * of someone who left the project must not block an otherwise valid move.
  */
+/** The user ids mentioned in one rich text body. */
+function mentionedUserIds(body: unknown[]): Set<string> {
+	return new Set(
+		collectMentionKeys(body)
+			.filter((mention) => mention.type === "user")
+			.map((mention) => mention.id),
+	);
+}
+
+/** Statuses a client should hear about without being assigned. */
+const CLIENT_STATUS_ALERTS = new Set([
+	"in_review",
+	"ready",
+	"done",
+	"blocked",
+	"cancelled",
+]);
+
 export async function insertMilestone(
 	tx: TenantTx,
 	tenant: TenantContext,
@@ -1132,7 +1164,7 @@ export async function insertMilestone(
 	projectId: string,
 	input: CreateMilestoneInput,
 	options: { trustedBody?: boolean } = {},
-): Promise<MilestoneDetailResult> {
+): Promise<MilestoneWriteResult> {
 	const title = validateMilestoneTitle(input.title);
 	const status = input.status ? validateMilestoneStatus(input.status) : "todo";
 	const startDate = validateMilestoneDate(input.startDate, "The start date");
@@ -1217,7 +1249,49 @@ export async function insertMilestone(
 		]);
 	}
 
-	return loadDetail(tx, tenant, projectId, milestoneId, access);
+	const detail = await loadDetail(tx, tenant, projectId, milestoneId, access);
+	const assigned =
+		(await loadAssignees(tx, tenant, [milestoneId])).get(milestoneId) ?? [];
+	const noticeByUser = new Map<string, "mention" | "milestone_assigned">();
+
+	for (const userId of mentionedUserIds(description.value)) {
+		noticeByUser.set(userId, "mention");
+	}
+
+	for (const assignee of assigned) {
+		if (!noticeByUser.has(assignee.userId)) {
+			noticeByUser.set(assignee.userId, "milestone_assigned");
+		}
+	}
+
+	const projectView = {
+		id: access.row.id,
+		name: access.row.name,
+		slug: access.row.slug,
+	};
+	const milestoneView = { id: milestoneId, title };
+
+	const notifications = await createNotifications(
+		tx,
+		tenant,
+		[...noticeByUser.entries()]
+			.filter(([userId]) => userId !== tenant.userId)
+			.map(
+				([recipientUserId, type]): NotificationCandidate => ({
+					recipientUserId,
+					actorUserId: tenant.userId,
+					type,
+					dedupeKey:
+						type === "mention"
+							? `mention:milestone:${milestoneId}:${recipientUserId}:initial`
+							: `assign:milestone:${milestoneId}:${recipientUserId}:initial`,
+					project: projectView,
+					milestone: milestoneView,
+				}),
+			),
+	);
+
+	return { ...detail, notifications };
 }
 
 /** Create a milestone, optionally with its first assignees. */
@@ -1225,7 +1299,7 @@ export async function createMilestone(
 	tenant: TenantContext,
 	projectId: string,
 	input: CreateMilestoneInput,
-): Promise<MilestoneDetailResult> {
+): Promise<MilestoneWriteResult> {
 	const result = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
@@ -1311,7 +1385,7 @@ export async function updateMilestone(
 					access,
 				);
 
-				return { detail, changed: [], eventRows: [] };
+				return { detail, changed: [], eventRows: [], notifications: [] };
 			}
 
 			const patch: Partial<typeof milestone.$inferInsert> = {
@@ -1319,6 +1393,9 @@ export async function updateMilestone(
 			};
 			const events: MilestoneEventDraft[] = [];
 			const changed: MilestoneChangedField[] = [];
+			let statusChange: { from: string; to: string } | null = null;
+			let addedDescriptionMentionIds: string[] = [];
+			let addedAssigneeUserIds: string[] = [];
 
 			if (input.title !== undefined) {
 				const title = validateMilestoneTitle(input.title);
@@ -1354,6 +1431,7 @@ export async function updateMilestone(
 						to: status,
 						note,
 					});
+					statusChange = { from: record.status, to: status };
 					changed.push("status");
 
 					// Close the old phase and open the new one at the same
@@ -1405,7 +1483,13 @@ export async function updateMilestone(
 				patch.description = description.value;
 				patch.descriptionText = description.text;
 
-				if (descriptionChanged) changed.push("description");
+				if (descriptionChanged) {
+					changed.push("description");
+					const beforeMentions = mentionedUserIds(record.description);
+					addedDescriptionMentionIds = [
+						...mentionedUserIds(description.value),
+					].filter((userId) => !beforeMentions.has(userId));
+				}
 			}
 
 			// The range check needs both sides, so a one sided patch is compared
@@ -1476,7 +1560,7 @@ export async function updateMilestone(
 					access,
 				);
 
-				return { detail, changed: [], eventRows: [] };
+				return { detail, changed: [], eventRows: [], notifications: [] };
 			}
 
 			await tx
@@ -1510,6 +1594,11 @@ export async function updateMilestone(
 					(await loadAssignees(tx, tenant, [milestoneId])).get(milestoneId) ??
 					[];
 				const assigneeEvents = buildAssigneeEvents(previous, next);
+				const beforeIds = new Set(previous.map((person) => person.userId));
+
+				addedAssigneeUserIds = next
+					.filter((person) => !beforeIds.has(person.userId))
+					.map((person) => person.userId);
 
 				if (assigneeEvents.length > 0) {
 					events.push(...assigneeEvents);
@@ -1534,7 +1623,84 @@ export async function updateMilestone(
 				access,
 			);
 
-			return { detail, changed, eventRows };
+			const noticeByUser = new Map<
+				string,
+				"mention" | "milestone_assigned" | "milestone_status"
+			>();
+
+			for (const userId of addedDescriptionMentionIds) {
+				noticeByUser.set(userId, "mention");
+			}
+
+			for (const userId of addedAssigneeUserIds) {
+				if (!noticeByUser.has(userId)) {
+					noticeByUser.set(userId, "milestone_assigned");
+				}
+			}
+
+			if (statusChange) {
+				const recipients = await loadMilestoneAssigneeUserIds(
+					tx,
+					tenant,
+					milestoneId,
+				);
+
+				if (CLIENT_STATUS_ALERTS.has(statusChange.to)) {
+					recipients.push(
+						...(await loadProjectMemberUserIds(tx, tenant, projectId, [
+							"client",
+						])),
+					);
+				}
+
+				for (const userId of new Set(recipients)) {
+					if (!noticeByUser.has(userId)) {
+						noticeByUser.set(userId, "milestone_status");
+					}
+				}
+			}
+
+			const projectView = {
+				id: access.row.id,
+				name: access.row.name,
+				slug: access.row.slug,
+			};
+			const milestoneView = {
+				id: milestoneId,
+				title: detail.milestone.title,
+			};
+			const statusRowId =
+				eventRows.find((row) => row.eventType === "status")?.id ?? null;
+			const assigneeRowId =
+				eventRows.find((row) => row.eventType === "assignee_added")?.id ?? null;
+
+			const notifications = await createNotifications(
+				tx,
+				tenant,
+				[...noticeByUser.entries()]
+					.filter(([userId]) => userId !== tenant.userId)
+					.map(
+						([recipientUserId, type]): NotificationCandidate => ({
+							recipientUserId,
+							actorUserId: tenant.userId,
+							type,
+							dedupeKey:
+								type === "mention"
+									? `mention:milestone:${milestoneId}:${recipientUserId}:${detail.milestone.updatedAt}`
+									: type === "milestone_assigned"
+										? `assign:${assigneeRowId ?? milestoneId}:${recipientUserId}`
+										: `status:${statusRowId ?? milestoneId}:${recipientUserId}`,
+							project: projectView,
+							milestone: milestoneView,
+							data:
+								type === "milestone_status" && statusChange
+									? { status: statusChange.to }
+									: {},
+						}),
+					),
+			);
+
+			return { detail, changed, eventRows, notifications };
 		},
 	);
 
@@ -1555,6 +1721,7 @@ export async function updateMilestone(
 		...write.detail,
 		changed: write.changed,
 		timeline,
+		notifications: write.notifications,
 	};
 }
 
@@ -1616,7 +1783,35 @@ export async function setMilestoneAssignees(
 			const changed: MilestoneChangedField[] =
 				events.length > 0 ? ["assignees"] : [];
 
-			return { detail, changed, eventRows };
+			const beforeIds = new Set(previous.map((person) => person.userId));
+			const addedUserIds = next
+				.filter((person) => !beforeIds.has(person.userId))
+				.map((person) => person.userId);
+			const assigneeRowId =
+				eventRows.find((row) => row.eventType === "assignee_added")?.id ?? null;
+			const notifications = await createNotifications(
+				tx,
+				tenant,
+				addedUserIds
+					.filter((userId) => userId !== tenant.userId)
+					.map((recipientUserId) => ({
+						recipientUserId,
+						actorUserId: tenant.userId,
+						type: "milestone_assigned" as const,
+						dedupeKey: `assign:${assigneeRowId ?? milestoneId}:${recipientUserId}`,
+						project: {
+							id: access.row.id,
+							name: access.row.name,
+							slug: access.row.slug,
+						},
+						milestone: {
+							id: milestoneId,
+							title: detail.milestone.title,
+						},
+					})),
+			);
+
+			return { detail, changed, eventRows, notifications };
 		},
 	);
 
@@ -1628,6 +1823,7 @@ export async function setMilestoneAssignees(
 		...write.detail,
 		changed: write.changed,
 		timeline,
+		notifications: write.notifications,
 	};
 }
 
@@ -1717,7 +1913,37 @@ async function setMilestoneLock(
 				access,
 			);
 
-			return { detail, eventRows };
+			const recipients = new Set([
+				...(await loadMilestoneAssigneeUserIds(tx, tenant, milestoneId)),
+				...(await loadProjectMemberUserIds(tx, tenant, projectId, ["client"])),
+			]);
+			const eventRowId = eventRows[0]?.id ?? milestoneId;
+
+			const notifications = await createNotifications(
+				tx,
+				tenant,
+				[...recipients]
+					.filter((userId) => userId !== tenant.userId)
+					.map((recipientUserId) => ({
+						recipientUserId,
+						actorUserId: tenant.userId,
+						type: locked
+							? ("scope_locked" as const)
+							: ("scope_unlocked" as const),
+						dedupeKey: `${locked ? "lock" : "unlock"}:${eventRowId}:${recipientUserId}`,
+						project: {
+							id: access.row.id,
+							name: access.row.name,
+							slug: access.row.slug,
+						},
+						milestone: {
+							id: milestoneId,
+							title: detail.milestone.title,
+						},
+					})),
+			);
+
+			return { detail, eventRows, notifications };
 		},
 	);
 
@@ -1727,6 +1953,7 @@ async function setMilestoneLock(
 		...write.detail,
 		changed: ["lock"],
 		timeline,
+		notifications: write.notifications,
 	};
 }
 

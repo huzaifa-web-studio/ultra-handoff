@@ -26,6 +26,9 @@ const completeEnv = {
 	S3_PUBLIC_ENDPOINT: "https://storage.example.com",
 	SMTP_HOST: "smtp.example.com",
 	SMTP_FROM: "Handoff <no-reply@example.com>",
+	VAPID_PUBLIC_KEY: "public-key",
+	VAPID_PRIVATE_KEY: "private-key",
+	VAPID_SUBJECT: "mailto:no-reply@example.com",
 } as const;
 
 describe("findProductionEnvProblems", () => {

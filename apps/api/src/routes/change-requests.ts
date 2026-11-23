@@ -45,6 +45,7 @@ import {
 	updateChangeRequest,
 } from "../services/change-request.service";
 import type { MilestoneTimelineComment } from "../services/milestone.service";
+import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
 
 /** Every change request route lives under one milestone. */
 const milestoneParams = t.Object({
@@ -193,6 +194,7 @@ export const changeRequestRoutes = new Elysia({ name: "change-requests" })
 					openCount,
 				);
 				publishTimeline(params.projectId, params.milestoneId, timeline);
+				dispatchNotificationDeliveries(result.notifications);
 
 				return { changeRequest, openCount };
 			} catch (error) {
@@ -236,6 +238,7 @@ export const changeRequestRoutes = new Elysia({ name: "change-requests" })
 					openCount,
 				);
 				publishTimeline(params.projectId, params.milestoneId, timeline);
+				dispatchNotificationDeliveries(result.notifications);
 
 				// An acceptance appends a scope section, so open panes refetch
 				// that one section rather than the whole milestone detail.
@@ -316,6 +319,7 @@ export const changeRequestRoutes = new Elysia({ name: "change-requests" })
 					openCount,
 				);
 				publishTimeline(params.projectId, params.milestoneId, timeline);
+				dispatchNotificationDeliveries(result.notifications);
 
 				// A move creates a milestone, so the list has to learn about it
 				// even when the reader is not looking at the source milestone.

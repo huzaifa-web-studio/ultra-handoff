@@ -27,6 +27,7 @@ import type { Comment, CommentThread as CommentThreadType } from "./api";
 import { dayMarkers } from "./comment-day";
 import { CommentDayDivider } from "./comment-day-divider";
 import { CommentItem } from "./comment-item";
+import { CommentUnreadDivider } from "./unread-divider";
 
 /**
  * Replies beyond this count get a bounded, scrollable list.
@@ -97,6 +98,10 @@ export function CommentThread({
 		thread.comment.createdAt,
 	);
 
+	const firstUnreadId = thread.unread.firstUnreadCommentId;
+	const unreadInRoot = firstUnreadId === thread.comment.id;
+	const unreadReplies = thread.unread.count - (unreadInRoot ? 1 : 0);
+
 	const repliesRef = useRef<HTMLOListElement>(null);
 	const previousReplyCount = useRef(replyCount);
 
@@ -142,6 +147,8 @@ export function CommentThread({
 					!frameless && isReplyTarget && "bg-app-selected/30",
 				)}
 			>
+				{unreadInRoot ? <CommentUnreadDivider /> : null}
+
 				<CommentItem
 					orgSlug={orgSlug}
 					organizationId={organizationId}
@@ -175,6 +182,11 @@ export function CommentThread({
 									aria-hidden
 								/>
 								{replyCount} {replyCount === 1 ? "reply" : "replies"}
+								{collapsed && unreadReplies > 0 ? (
+									<span className="ml-1.5 bg-app-attention px-1.5 py-0.5 text-[0.6rem] font-semibold text-app-attention-text tabular-nums">
+										{unreadReplies} new
+									</span>
+								) : null}
 							</Button>
 						</div>
 					)}
@@ -196,6 +208,9 @@ export function CommentThread({
 								return (
 									<Fragment key={reply.id}>
 										{marker ? <CommentDayDivider heading={marker} /> : null}
+										{reply.id === firstUnreadId ? (
+											<CommentUnreadDivider />
+										) : null}
 
 										<li>
 											<CommentItem

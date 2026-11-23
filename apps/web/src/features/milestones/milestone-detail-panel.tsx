@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "#/components/user-avatar";
+import { useProjectUnread } from "#/features/notifications/hooks";
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
 import { formatDate, formatRelativeTime } from "#/lib/date";
@@ -388,6 +389,12 @@ function MilestoneDetailContent({
 	onRefetch: () => void;
 	onDeleted: () => void;
 }) {
+	const projectUnread = useProjectUnread(orgSlug, projectId);
+	const unreadComments =
+		projectUnread.data?.milestones.find(
+			(item) => item.milestoneId === milestone.id,
+		)?.unread ?? 0;
+
 	const update = useUpdateMilestone(orgSlug, projectId);
 	const setAssignees = useSetMilestoneAssignees(orgSlug, projectId);
 	const setLock = useSetMilestoneLock(orgSlug, projectId);
@@ -1063,8 +1070,16 @@ function MilestoneDetailContent({
 							</span>
 						)}
 					</TabsTrigger>
-					<TabsTrigger id="comments" className="flex-none cursor-pointer">
+					<TabsTrigger
+						id="comments"
+						className="flex-none cursor-pointer gap-1.5"
+					>
 						Comments
+						{unreadComments > 0 ? (
+							<span className="bg-app-attention px-1.5 py-0.5 text-[0.6rem] font-semibold text-app-attention-text tabular-nums">
+								{unreadComments}
+							</span>
+						) : null}
 					</TabsTrigger>
 
 					{/*

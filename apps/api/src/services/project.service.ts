@@ -74,6 +74,13 @@ import { keyFromFileUrl, keyFromRichText } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
 import { publishMemberRevocation } from "../realtime/bus";
 import {
+	createNotifications,
+	loadProjectManagerUserIds,
+	loadProjectMemberUserIds,
+	type NotificationCandidate,
+	type NotificationDelivery,
+} from "./notification.service";
+import {
 	getOrganizationMember,
 	getOrganizationMembers,
 	listOrganizationOwners,
@@ -83,6 +90,7 @@ import {
 	deleteObjectsBestEffort,
 	deletePreviousProjectLogo,
 } from "./upload.service";
+import { loadUserMap } from "./user.service";
 
 /** Lifecycle state derived from `archived_at`. */
 export type ProjectStatus = "active" | "archived";
@@ -883,34 +891,12 @@ export async function setProjectPinned(
 }
 
 /**
- * Read the user rows for a set of user ids.
+ * Name and avatar lookup lives in `user.service.ts`.
  *
- * Privileged on purpose: `user` is a Better Auth table, so it is read through
- * a small lookup instead of being joined into the tenant query. Read only.
- * Exported so the milestone service labels assignees with the same lookup.
+ * Re-exported so existing callers keep one stable import while the
+ * notification writer can use the same helper without importing this service.
  */
-export async function loadUserMap(
-	userIds: string[],
-): Promise<Map<string, { name: string; email: string; image: string | null }>> {
-	if (userIds.length === 0) return new Map();
-
-	const rows = await adminDb
-		.select({
-			id: user.id,
-			name: user.name,
-			email: user.email,
-			image: user.image,
-		})
-		.from(user)
-		.where(inArray(user.id, userIds));
-
-	return new Map(
-		rows.map((row) => [
-			row.id,
-			{ name: row.name, email: row.email, image: row.image },
-		]),
-	);
-}
+export { loadUserMap } from "./user.service";
 
 /** One Better Auth user row, in the shape the mention picker needs. */
 export type UserProfile = {
@@ -1284,7 +1270,11 @@ export async function setProjectArchived(
 	tenant: TenantContext,
 	projectId: string,
 	archived: boolean,
-): Promise<{ status: ProjectStatus; archivedAt: string | null }> {
+): Promise<{
+	status: ProjectStatus;
+	archivedAt: string | null;
+	notifications: NotificationDelivery[];
+}> {
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
@@ -1310,6 +1300,7 @@ export async function setProjectArchived(
 					archivedAt: access.row.archivedAt
 						? access.row.archivedAt.toISOString()
 						: null,
+					notifications: [] as NotificationDelivery[],
 				};
 			}
 
@@ -1325,9 +1316,73 @@ export async function setProjectArchived(
 					),
 				);
 
+			const recipients = new Set<string>();
+
+			if (archived) {
+				for (const userId of await loadProjectManagerUserIds(
+					tx,
+					tenant,
+					projectId,
+				)) {
+					recipients.add(userId);
+				}
+
+				// A client keeps seeing the archived project only when the
+				// project opted in. Notifying anyone else would create a link
+				// they cannot open and a row the list filters out immediately.
+				if (access.row.archiveVisibleToClient) {
+					for (const userId of await loadProjectMemberUserIds(
+						tx,
+						tenant,
+						projectId,
+						["client"],
+					)) {
+						recipients.add(userId);
+					}
+				}
+			} else {
+				for (const userId of await loadProjectMemberUserIds(
+					tx,
+					tenant,
+					projectId,
+				)) {
+					recipients.add(userId);
+				}
+
+				for (const owner of await listOrganizationOwners(
+					tenant.organizationId,
+				)) {
+					recipients.add(owner.userId);
+				}
+			}
+
+			const notifications = await createNotifications(
+				tx,
+				tenant,
+				[...recipients]
+					.filter((userId) => userId !== tenant.userId)
+					.map((recipientUserId) => ({
+						recipientUserId,
+						actorUserId: tenant.userId,
+						type: archived
+							? ("project_archived" as const)
+							: ("project_unarchived" as const),
+						// The service already no-ops a repeated state, so a
+						// random key is safe and lets a later real transition
+						// notify again.
+						dedupeKey: `${archived ? "archive" : "restore"}:${projectId}:${recipientUserId}:${randomUUID()}`,
+						project: {
+							id: access.row.id,
+							name: access.row.name,
+							slug: access.row.slug,
+						},
+					})),
+			);
+
 			return {
 				status: archived ? "archived" : "active",
 				archivedAt: archivedAt ? archivedAt.toISOString() : null,
+				notifications,
 			};
 		},
 	);
@@ -1507,11 +1562,15 @@ async function insertProjectMember(
 	projectId: string,
 	target: OrganizationMemberRecord,
 	role: ProjectRole,
-): Promise<{ userId: string; role: ProjectRole }> {
+): Promise<{
+	userId: string;
+	role: ProjectRole;
+	notifications: NotificationDelivery[];
+}> {
 	const forcedByOrganization = isOrganizationOwner(target.role);
 	const finalRole: ProjectRole = forcedByOrganization ? "owner" : role;
 
-	await withTenant(
+	const notifications = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await loadProjectAccess(tx, tenant, projectId);
@@ -1539,9 +1598,11 @@ async function insertProjectMember(
 				});
 			}
 
+			const memberRowId = randomUUID();
+
 			try {
 				await tx.insert(projectMember).values({
-					id: randomUUID(),
+					id: memberRowId,
 					organizationId: tenant.organizationId,
 					projectId,
 					memberId: target.memberId,
@@ -1557,10 +1618,29 @@ async function insertProjectMember(
 
 				throw error;
 			}
+
+			return createNotifications(tx, tenant, [
+				{
+					recipientUserId: target.userId,
+					actorUserId: tenant.userId,
+					type: "project_member_added",
+					dedupeKey: `project_member:${memberRowId}`,
+					project: {
+						id: access.row.id,
+						name: access.row.name,
+						slug: access.row.slug,
+					},
+					data: { role: finalRole },
+				},
+			]);
 		},
 	);
 
-	return { userId: target.userId, role: finalRole };
+	return {
+		userId: target.userId,
+		role: finalRole,
+		notifications,
+	};
 }
 
 /**
@@ -1576,7 +1656,7 @@ export async function bulkSetProjectsArchived(
 	tenant: TenantContext,
 	projectIds: string[],
 	archived: boolean,
-): Promise<BulkResult> {
+): Promise<BulkResult & { notifications: NotificationDelivery[] }> {
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
@@ -1634,7 +1714,71 @@ export async function bulkSetProjectsArchived(
 					);
 			}
 
-			return { results };
+			const candidates: NotificationCandidate[] = [];
+			const organizationOwners = archived
+				? []
+				: await listOrganizationOwners(tenant.organizationId);
+
+			for (const projectId of toUpdate) {
+				const found = access.get(projectId);
+
+				if (!found) continue;
+
+				const recipients = new Set<string>();
+
+				if (archived) {
+					for (const userId of await loadProjectManagerUserIds(
+						tx,
+						tenant,
+						projectId,
+					)) {
+						recipients.add(userId);
+					}
+
+					if (found.row.archiveVisibleToClient) {
+						for (const userId of await loadProjectMemberUserIds(
+							tx,
+							tenant,
+							projectId,
+							["client"],
+						)) {
+							recipients.add(userId);
+						}
+					}
+				} else {
+					for (const userId of await loadProjectMemberUserIds(
+						tx,
+						tenant,
+						projectId,
+					)) {
+						recipients.add(userId);
+					}
+
+					for (const owner of organizationOwners) {
+						recipients.add(owner.userId);
+					}
+				}
+
+				for (const recipientUserId of recipients) {
+					if (recipientUserId === tenant.userId) continue;
+
+					candidates.push({
+						recipientUserId,
+						actorUserId: tenant.userId,
+						type: archived ? "project_archived" : "project_unarchived",
+						dedupeKey: `${archived ? "archive" : "restore"}:${projectId}:${recipientUserId}:${randomUUID()}`,
+						project: {
+							id: found.row.id,
+							name: found.row.name,
+							slug: found.row.slug,
+						},
+					});
+				}
+			}
+
+			const notifications = await createNotifications(tx, tenant, candidates);
+
+			return { results, notifications };
 		},
 	);
 }
@@ -1792,7 +1936,11 @@ export async function addProjectMember(
 	projectId: string,
 	targetUserId: string,
 	role: ProjectRole,
-): Promise<{ userId: string; role: ProjectRole }> {
+): Promise<{
+	userId: string;
+	role: ProjectRole;
+	notifications: NotificationDelivery[];
+}> {
 	const target = await getOrganizationMember(
 		tenant.organizationId,
 		targetUserId,
@@ -1823,7 +1971,7 @@ export async function bulkAddProjectMembers(
 	projectId: string,
 	targetUserIds: string[],
 	role: ProjectRole,
-): Promise<BulkResult> {
+): Promise<BulkResult & { notifications: NotificationDelivery[] }> {
 	// Better Auth member rows are resolved in one privileged read, outside the
 	// tenant transaction, because they are not business tables.
 	const targets = await getOrganizationMembers(
@@ -1854,7 +2002,10 @@ export async function bulkAddProjectMembers(
 					});
 				}
 
-				return { results: toResults() };
+				return {
+					results: toResults(),
+					notifications: [] as NotificationDelivery[],
+				};
 			}
 
 			const canManage = canManageProjectMembers(tenant.role, access.role);
@@ -1956,13 +2107,15 @@ export async function bulkAddProjectMembers(
 				});
 			}
 
+			let insertedUserIds = new Set<string>();
+
 			if (toInsert.length > 0) {
 				const inserted = await tx
 					.insert(projectMember)
 					.values(toInsert)
 					.onConflictDoNothing()
 					.returning({ userId: projectMember.userId });
-				const insertedIds = new Set(inserted.map((row) => row.userId));
+				insertedUserIds = new Set(inserted.map((row) => row.userId));
 
 				for (const row of toInsert) {
 					const target = targets.get(row.userId);
@@ -1970,7 +2123,7 @@ export async function bulkAddProjectMembers(
 
 					outcome.set(
 						row.userId,
-						insertedIds.has(row.userId)
+						insertedUserIds.has(row.userId)
 							? {
 									key: row.userId,
 									label,
@@ -1990,7 +2143,42 @@ export async function bulkAddProjectMembers(
 				}
 			}
 
-			return { results: toResults() };
+			const notifications =
+				insertedUserIds.size > 0
+					? await createNotifications(
+							tx,
+							tenant,
+							(
+								await tx
+									.select({
+										id: projectMember.id,
+										userId: projectMember.userId,
+										role: projectMember.role,
+									})
+									.from(projectMember)
+									.where(
+										and(
+											eq(projectMember.organizationId, tenant.organizationId),
+											eq(projectMember.projectId, projectId),
+											inArray(projectMember.userId, [...insertedUserIds]),
+										),
+									)
+							).map((row) => ({
+								recipientUserId: row.userId,
+								actorUserId: tenant.userId,
+								type: "project_member_added" as const,
+								dedupeKey: `project_member:${row.id}`,
+								project: {
+									id: access.row.id,
+									name: access.row.name,
+									slug: access.row.slug,
+								},
+								data: { role: row.role },
+							})),
+						)
+					: [];
+
+			return { results: toResults(), notifications };
 		},
 	);
 }
@@ -2006,7 +2194,11 @@ export async function updateProjectMemberRole(
 	projectId: string,
 	targetUserId: string,
 	role: ProjectRole,
-): Promise<{ userId: string; role: ProjectRole }> {
+): Promise<{
+	userId: string;
+	role: ProjectRole;
+	notifications: NotificationDelivery[];
+}> {
 	if (targetUserId === tenant.userId) {
 		throw new APIError("BAD_REQUEST", {
 			message: "You cannot change your own project role.",
@@ -2026,7 +2218,7 @@ export async function updateProjectMemberRole(
 
 	const owners = await listOrganizationOwners(tenant.organizationId);
 
-	await withTenant(
+	const notifications = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await loadProjectAccess(tx, tenant, projectId);
@@ -2101,10 +2293,25 @@ export async function updateProjectMemberRole(
 						eq(projectMember.userId, targetUserId),
 					),
 				);
+
+			return createNotifications(tx, tenant, [
+				{
+					recipientUserId: targetUserId,
+					actorUserId: tenant.userId,
+					type: "project_role_changed",
+					dedupeKey: `project_role:${projectId}:${targetUserId}:${target.role}:${role}`,
+					project: {
+						id: access.row.id,
+						name: access.row.name,
+						slug: access.row.slug,
+					},
+					data: { role },
+				},
+			]);
 		},
 	);
 
-	return { userId: targetUserId, role };
+	return { userId: targetUserId, role, notifications };
 }
 
 /**

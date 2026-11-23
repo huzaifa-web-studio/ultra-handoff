@@ -41,7 +41,7 @@ function makePages(
 	total = threads.length,
 ): CommentPages {
 	return {
-		pages: [{ threads, total, nextCursor: null }],
+		pages: [{ threads, total, unreadTotal: 0, nextCursor: null }],
 		pageParams: [null],
 	};
 }
@@ -158,8 +158,8 @@ describe("withTotal", () => {
 	it("writes the count into every loaded page", () => {
 		const pages: CommentPages = {
 			pages: [
-				{ threads: [], total: 1, nextCursor: "cursor-1" },
-				{ threads: [], total: 1, nextCursor: null },
+				{ threads: [], total: 1, unreadTotal: 0, nextCursor: "cursor-1" },
+				{ threads: [], total: 1, unreadTotal: 0, nextCursor: null },
 			],
 			pageParams: [null, "cursor-1"],
 		};

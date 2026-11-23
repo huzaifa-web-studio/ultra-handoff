@@ -31,6 +31,14 @@ import {
 	toggleMilestoneChecklistItem,
 	updateMilestoneComment,
 } from "../services/comment.service";
+import {
+	getProjectUnreadSummary,
+	markCommentsRead,
+} from "../services/comment-read.service";
+import {
+	dispatchCommentRead,
+	dispatchNotificationDeliveries,
+} from "../services/notification-dispatch.service";
 
 /** Every comment route lives under one milestone. */
 const milestoneParams = t.Object({
@@ -141,8 +149,13 @@ export const commentRoutes = new Elysia({ name: "comments" })
 					result.comment,
 					result.total,
 				);
+				dispatchNotificationDeliveries(result.notifications);
 
-				return result;
+				return {
+					comment: result.comment,
+					total: result.total,
+					unreadTotal: result.unreadTotal,
+				};
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not post the comment."),
@@ -242,8 +255,9 @@ export const commentRoutes = new Elysia({ name: "comments" })
 					result.comment,
 					null,
 				);
+				dispatchNotificationDeliveries(result.notifications);
 
-				return result;
+				return { comment: result.comment };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not save the comment."),
@@ -275,8 +289,13 @@ export const commentRoutes = new Elysia({ name: "comments" })
 					result.comment,
 					result.total,
 				);
+				dispatchNotificationDeliveries(result.notifications);
 
-				return result;
+				return {
+					comment: result.comment,
+					total: result.total,
+					unreadTotal: result.unreadTotal,
+				};
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not delete the comment."),
@@ -284,4 +303,67 @@ export const commentRoutes = new Elysia({ name: "comments" })
 			}
 		},
 		{ tenant: true, params: commentParams },
+	)
+	/**
+	 * Move the viewer's read cursor to the comments they just saw.
+	 *
+	 * The body carries comment ids, not a timestamp. The server resolves each id
+	 * to its thread and to the stored timestamp, so a forged or stale id cannot
+	 * move a cursor to an arbitrary point in time.
+	 */
+	.post(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/reads",
+		async ({ tenant, status, params, body }) => {
+			try {
+				const result = await markCommentsRead(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					body.commentIds,
+				);
+
+				dispatchCommentRead(tenant.organizationId, tenant.userId, {
+					projectId: params.projectId,
+					milestoneId: params.milestoneId,
+					rootCommentIds: result.threads.map((thread) => thread.rootCommentId),
+					unreadTotal: result.unreadTotal,
+				});
+
+				return result;
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not update the read state."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: milestoneParams,
+			body: t.Object({
+				commentIds: t.Array(t.String({ minLength: 1, maxLength: 64 }), {
+					minItems: 1,
+					maxItems: 50,
+				}),
+			}),
+		},
+	)
+	/** Unread comments grouped by milestone for one project. */
+	.get(
+		"/orgs/:orgSlug/projects/:projectId/comments/unread",
+		async ({ tenant, status, params }) => {
+			try {
+				return await getProjectUnreadSummary(tenant, params.projectId);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not load the unread count."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: t.Object({
+				orgSlug: t.String({ minLength: 1, maxLength: 255 }),
+				projectId: t.String({ minLength: 1, maxLength: 64 }),
+			}),
+		},
 	);

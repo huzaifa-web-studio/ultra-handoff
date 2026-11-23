@@ -126,6 +126,24 @@ export const smtpEnv = {
 };
 
 /**
+ * Web Push settings.
+ *
+ * The VAPID pair identifies this deployment to the browser push services. The
+ * public key is also served to the web app through `/account/push/config`, so
+ * it never becomes a second build time variable.
+ */
+export const pushEnv = {
+	publicKey: readString("VAPID_PUBLIC_KEY"),
+	privateKey: readString("VAPID_PRIVATE_KEY"),
+	subject: readString("VAPID_SUBJECT", "mailto:no-reply@example.com"),
+};
+
+/** True when this deployment can send Web Push. */
+export const pushEnabled = Boolean(
+	pushEnv.publicKey.trim() && pushEnv.privateKey.trim(),
+);
+
+/**
  * S3-compatible object storage (SeaweedFS) settings.
  *
  * `endpoint` is the address the API uses for server to server calls.

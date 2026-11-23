@@ -9,6 +9,7 @@ import { SidebarTrigger } from "@org/ui/components/sidebar";
 import { useMatches, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { authClient } from "#/features/auth/client";
+import { NotificationBell } from "#/features/notifications/notification-bell";
 import { projectBreadcrumbStore } from "./project-breadcrumb";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -70,7 +71,8 @@ export function AppHeader() {
 			 * Pushed to the trailing edge so the control has a stable position on
 			 * every workspace screen, independent of breadcrumb length.
 			 */}
-			<div className="ml-auto flex items-center">
+			<div className="ml-auto flex items-center gap-1">
+				{activeOrg?.slug ? <NotificationBell orgSlug={activeOrg.slug} /> : null}
 				<ThemeToggle />
 			</div>
 		</header>

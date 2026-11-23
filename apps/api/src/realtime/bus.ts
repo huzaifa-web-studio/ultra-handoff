@@ -22,10 +22,12 @@ import { getRedis, redisConnectionOptions } from "../lib/redis";
 import { type MemberRevocation, REALTIME_CONTROL_CHANNEL } from "./control";
 import {
 	createRealtimeEnvelope,
+	createUserRealtimeEnvelope,
 	parseRealtimeEnvelope,
 	projectTopic,
 	REALTIME_CHANNEL,
 	type RealtimeEventType,
+	userTopic,
 } from "./protocol";
 import { applyRevocation, handleControlMessage } from "./revoke";
 
@@ -95,6 +97,17 @@ function deliverLocally(raw: string): void {
 
 	if (!envelope) return;
 
+	// A personal envelope carries no project. The topic is derived from the
+	// workspace and the person, so one workspace never leaks into another.
+	if (envelope.scope === "user") {
+		if (!envelope.organizationId || !envelope.userId) return;
+
+		localPublisher(userTopic(envelope.organizationId, envelope.userId), raw);
+		return;
+	}
+
+	if (!envelope.projectId) return;
+
 	localPublisher(projectTopic(envelope.projectId), raw);
 }
 
@@ -150,13 +163,7 @@ export function stopRealtimeBus(): void {
  * Never throws. The caller uses `void` and does not need a catch, which keeps
  * publishing out of the success path of every mutation.
  */
-export async function publishRealtimeEvent<T>(
-	projectId: string,
-	type: RealtimeEventType,
-	data: T,
-): Promise<void> {
-	const envelope = createRealtimeEnvelope(projectId, type, data);
-	const raw = JSON.stringify(envelope);
+async function publishRaw(raw: string): Promise<void> {
 	const redis = getRedis();
 
 	// A connecting client is waited for briefly, so a publish during boot still
@@ -173,6 +180,35 @@ export async function publishRealtimeEvent<T>(
 	} catch {
 		deliverLocally(raw);
 	}
+}
+
+export async function publishRealtimeEvent<T>(
+	projectId: string,
+	type: RealtimeEventType,
+	data: T,
+): Promise<void> {
+	await publishRaw(
+		JSON.stringify(createRealtimeEnvelope(projectId, type, data)),
+	);
+}
+
+/**
+ * Publish one personal event to one person inside one workspace.
+ *
+ * Same degraded rules as a project event: a Redis outage falls back to the
+ * local process, and a failed publish never fails the user's save.
+ */
+export async function publishUserEvent<T>(
+	organizationId: string,
+	userId: string,
+	type: RealtimeEventType,
+	data: T,
+): Promise<void> {
+	await publishRaw(
+		JSON.stringify(
+			createUserRealtimeEnvelope(organizationId, userId, type, data),
+		),
+	);
 }
 
 /**

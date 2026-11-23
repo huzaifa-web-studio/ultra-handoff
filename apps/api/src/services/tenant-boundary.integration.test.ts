@@ -171,7 +171,14 @@ function tenant(
 	memberId: string,
 	role: string,
 ): TenantContext {
-	return { organizationId, userId, memberId, slug: "qa", role };
+	return {
+		organizationId,
+		userId,
+		memberId,
+		memberCreatedAt: new Date("2026-01-01T00:00:00Z"),
+		slug: "qa",
+		role,
+	};
 }
 
 const tenantOwnerA = () => tenant(ids.orgA, ids.ownerA, ids.mOwnerA, "owner");

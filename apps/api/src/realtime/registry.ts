@@ -30,7 +30,14 @@ export type RealtimeConnection = {
 	id: string;
 	userId: string;
 	organizationId: string;
-	projectId: string;
+	/**
+	 * The project this socket is scoped to.
+	 *
+	 * Undefined for a personal (notification) socket. The registry indexes by
+	 * project only when it is present, and presence joins refuse a connection
+	 * that has no project.
+	 */
+	projectId?: string;
 	connectedAt: number;
 	/** Last time any frame arrived from this client. */
 	lastSeenAt: number;
@@ -66,6 +73,10 @@ export class RealtimeRegistry {
 	add(connection: RealtimeConnection): void {
 		this.byId.set(connection.id, connection);
 
+		// A personal socket has no project index. Presence and project fan-out
+		// must never see it.
+		if (!connection.projectId) return;
+
 		const project = this.byProject.get(connection.projectId) ?? new Set();
 		project.add(connection.id);
 		this.byProject.set(connection.projectId, project);
@@ -83,14 +94,18 @@ export class RealtimeRegistry {
 
 		this.byId.delete(id);
 
-		const project = this.byProject.get(connection.projectId);
-		if (project) {
-			project.delete(id);
+		if (connection.projectId) {
+			const project = this.byProject.get(connection.projectId);
+			if (project) {
+				project.delete(id);
 
-			if (project.size === 0) this.byProject.delete(connection.projectId);
+				if (project.size === 0) this.byProject.delete(connection.projectId);
+			}
 		}
 
 		for (const milestoneId of connection.milestones) {
+			if (!connection.projectId) continue;
+
 			const key = milestoneKey(connection.projectId, milestoneId);
 			const members = this.byMilestone.get(key);
 
@@ -173,7 +188,7 @@ export class RealtimeRegistry {
 	subscribeMilestone(connectionId: string, milestoneId: string): boolean {
 		const connection = this.byId.get(connectionId);
 
-		if (!connection) return false;
+		if (!connection || !connection.projectId) return false;
 
 		connection.milestones.add(milestoneId);
 
@@ -189,7 +204,7 @@ export class RealtimeRegistry {
 	unsubscribeMilestone(connectionId: string, milestoneId: string): boolean {
 		const connection = this.byId.get(connectionId);
 
-		if (!connection) return false;
+		if (!connection || !connection.projectId) return false;
 
 		connection.milestones.delete(milestoneId);
 

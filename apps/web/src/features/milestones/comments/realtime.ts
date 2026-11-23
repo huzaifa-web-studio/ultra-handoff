@@ -23,10 +23,10 @@ import type {
 	RealtimeEnvelope,
 } from "@org/api";
 import { useQueryClient } from "@tanstack/react-query";
-
+import { projectUnreadKey } from "#/features/notifications/hooks";
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import type { Comment } from "./api";
-import { applyCommentEvent } from "./hooks";
+import { applyCommentEvent, commentsKey } from "./hooks";
 
 /** Recompute the two capabilities the server strips before broadcasting. */
 export function toViewerComment(
@@ -137,8 +137,21 @@ export function useRealtimeComments({
 				milestoneId,
 				comment: toViewerComment(payload.comment, viewerId, archived),
 				total: payload.total,
+				viewerId,
 			},
 			kind,
 		);
+		void queryClient.invalidateQueries({
+			queryKey: projectUnreadKey(orgSlug, projectId),
+		});
+
+		// A delete can remove the oldest unread row. The page reducer cannot
+		// know whether the deleted row sat before or after the cursor, so the
+		// server recalculates the thread instead of guessing.
+		if (kind === "deleted" && payload.comment.author?.id !== viewerId) {
+			void queryClient.invalidateQueries({
+				queryKey: commentsKey(orgSlug, projectId, milestoneId),
+			});
+		}
 	});
 }

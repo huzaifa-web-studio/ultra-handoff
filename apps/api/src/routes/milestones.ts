@@ -53,6 +53,7 @@ import {
 	getMilestoneScopeEntry,
 	updateMilestoneScopeEntry,
 } from "../services/milestone-scope.service";
+import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
 
 /** Every milestone route lives under one project. */
 const milestoneParams = t.Object({
@@ -283,8 +284,13 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 				const result = await createMilestone(tenant, params.projectId, body);
 
 				publishMilestoneCreated(params.projectId, result.milestone);
+				dispatchNotificationDeliveries(result.notifications);
 
-				return result;
+				return {
+					projectId: result.projectId,
+					milestone: result.milestone,
+					viewer: result.viewer,
+				};
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not create the milestone."),
@@ -336,9 +342,10 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					params.milestoneId,
 					body,
 				);
-				// `changed` and `timeline` are transport metadata. The HTTP
-				// response stays the detail the editor already expects.
-				const { changed, timeline, ...detail } = result;
+				// `changed`, `timeline` and `notifications` are transport
+				// metadata. The HTTP response stays the detail the editor
+				// already expects.
+				const { changed, timeline, notifications, ...detail } = result;
 
 				// A no-op save returns an empty change list. Broadcasting it
 				// would tell every open thread an edit happened, so the publish
@@ -351,6 +358,8 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 						timeline,
 					);
 				}
+
+				dispatchNotificationDeliveries(notifications);
 
 				return detail;
 			} catch (error) {
@@ -392,9 +401,10 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					params.milestoneId,
 					body.userIds,
 				);
-				// `changed` and `timeline` are transport metadata. The HTTP
-				// response stays the detail the editor already expects.
-				const { changed, timeline, ...detail } = result;
+				// `changed`, `timeline` and `notifications` are transport
+				// metadata. The HTTP response stays the detail the editor
+				// already expects.
+				const { changed, timeline, notifications, ...detail } = result;
 
 				publishMilestoneUpdated(
 					params.projectId,
@@ -402,6 +412,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					changed,
 					timeline,
 				);
+				dispatchNotificationDeliveries(notifications);
 
 				return detail;
 			} catch (error) {
@@ -497,13 +508,14 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/scope/:entryId",
 		async ({ tenant, status, params, body }) => {
 			try {
-				const entry = await updateMilestoneScopeEntry(
+				const result = await updateMilestoneScopeEntry(
 					tenant,
 					params.projectId,
 					params.milestoneId,
 					params.entryId,
 					body,
 				);
+				const { notifications, ...entry } = result;
 
 				publishScopeChanged(
 					params.projectId,
@@ -511,6 +523,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					entry.id,
 					tenant.userId,
 				);
+				dispatchNotificationDeliveries(notifications);
 
 				return { scopeEntry: entry };
 			} catch (error) {
@@ -544,7 +557,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					params.milestoneId,
 					body.reason,
 				);
-				const { changed, timeline, ...detail } = result;
+				const { changed, timeline, notifications, ...detail } = result;
 
 				publishMilestoneUpdated(
 					params.projectId,
@@ -552,6 +565,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					changed,
 					timeline,
 				);
+				dispatchNotificationDeliveries(notifications);
 
 				return detail;
 			} catch (error) {
@@ -577,7 +591,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					params.milestoneId,
 					body.reason,
 				);
-				const { changed, timeline, ...detail } = result;
+				const { changed, timeline, notifications, ...detail } = result;
 
 				publishMilestoneUpdated(
 					params.projectId,
@@ -585,6 +599,7 @@ export const milestoneRoutes = new Elysia({ name: "milestones" })
 					changed,
 					timeline,
 				);
+				dispatchNotificationDeliveries(notifications);
 
 				return detail;
 			} catch (error) {

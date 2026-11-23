@@ -1,0 +1,1 @@
+CREATE POLICY "notification_actor_delete" ON "notification" AS PERMISSIVE FOR DELETE TO "app_tenant" USING ("notification"."organization_id" = current_setting('app.current_org_id', true) and actor_user_id = current_setting('app.current_user_id', true));

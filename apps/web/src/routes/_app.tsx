@@ -6,12 +6,14 @@ import {
 	useMatches,
 	useNavigate,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { AppHeader } from "#/components/app-sidebar/app-header";
 import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
 import { AppNotFound } from "#/components/app-sidebar/not-found";
 import { authClient } from "#/features/auth/client";
 import { broadcastAuth } from "#/features/auth/sync";
+import { disablePush } from "#/features/notifications/push";
+import { NotificationRealtimeProvider } from "#/features/notifications/realtime";
 import { decideActiveWorkspace } from "#/features/organization/active-workspace";
 import { resetOrganizationDialog } from "#/features/organization/store";
 
@@ -57,6 +59,37 @@ function AppLayout() {
 	// workspace screen. The verify page is the only place with a resend action,
 	// so an unverified visitor is sent there instead of the marketing page.
 	const unverified = !!session?.user && !session.user.emailVerified;
+
+	/*
+	 * Report the browser's timezone once per session.
+	 *
+	 * Reminder sweeps need it to compute the person's local day. The write is
+	 * best effort: a failure only means reminders stay on UTC until the next
+	 * session, never a blocked page.
+	 */
+	const reportedTimezone = useRef<string | null>(null);
+
+	useEffect(() => {
+		const user = session?.user;
+		if (!user) return;
+
+		let timezone = "UTC";
+
+		try {
+			timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+		} catch {
+			return;
+		}
+
+		const stored = (user as { timezone?: string | null }).timezone ?? null;
+
+		if (stored === timezone) return;
+		if (reportedTimezone.current === timezone) return;
+
+		reportedTimezone.current = timezone;
+
+		void authClient.updateUser({ timezone } as never).catch(() => undefined);
+	}, [session?.user]);
 
 	const missingScope =
 		isPending ||
@@ -125,6 +158,9 @@ function AppLayout() {
 	}
 
 	async function handleSignOut() {
+		// A shared browser must stop receiving this person's alerts before the
+		// session is cleared.
+		await disablePush();
 		await authClient.signOut();
 		broadcastAuth("auth:signed-out");
 		// The next sign in is a fresh visit, so the organization prompt is
@@ -134,37 +170,42 @@ function AppLayout() {
 	}
 
 	return (
-		/*
-		 * Fixed shell height, scrollable content.
-		 *
-		 * Why: pages that fill the viewport (the members and invitations
-		 * tables) need a definite height to size their cards against. With the
-		 * old `min-h-svh` shell and a document scroll, `h-full` on a page
-		 * resolved against an auto parent, so a table simply grew with its
-		 * rows. The shell now owns the viewport height and the content div is
-		 * the scroll container, which gives `h-full` a real number to resolve
-		 * against.
-		 */
-		<SidebarProvider className="h-svh overflow-hidden">
-			<AppSidebar
-				user={{
-					name: session.user.name ?? session.user.email,
-					email: session.user.email,
-					avatar: session.user.image ?? undefined,
-				}}
-				onSignOut={handleSignOut}
-			/>
-			<SidebarInset>
-				<AppHeader />
-				{/*
-				 * SidebarInset already renders the <main> landmark, so the
-				 * scrollable content area is a plain div. It is also the scroll
-				 * container for every app page, which keeps the header fixed.
-				 */}
-				<div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-8">
-					<Outlet />
-				</div>
-			</SidebarInset>
-		</SidebarProvider>
+		<NotificationRealtimeProvider
+			orgSlug={activeOrgSlug ?? ""}
+			userId={session.user.id}
+		>
+			{/*
+			 * Fixed shell height, scrollable content.
+			 *
+			 * Why: pages that fill the viewport (the members and invitations
+			 * tables) need a definite height to size their cards against. With the
+			 * old `min-h-svh` shell and a document scroll, `h-full` on a page
+			 * resolved against an auto parent, so a table simply grew with its
+			 * rows. The shell now owns the viewport height and the content div is
+			 * the scroll container, which gives `h-full` a real number to resolve
+			 * against.
+			 */}
+			<SidebarProvider className="h-svh overflow-hidden">
+				<AppSidebar
+					user={{
+						name: session.user.name ?? session.user.email,
+						email: session.user.email,
+						avatar: session.user.image ?? undefined,
+					}}
+					onSignOut={handleSignOut}
+				/>
+				<SidebarInset>
+					<AppHeader />
+					{/*
+					 * SidebarInset already renders the <main> landmark, so the
+					 * scrollable content area is a plain div. It is also the scroll
+					 * container for every app page, which keeps the header fixed.
+					 */}
+					<div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-8">
+						<Outlet />
+					</div>
+				</SidebarInset>
+			</SidebarProvider>
+		</NotificationRealtimeProvider>
 	);
 }

@@ -24,14 +24,16 @@ import { Elysia, t } from "elysia";
 
 import { withTenant } from "../db/tenant";
 import { realtimeEnv, serverEnv } from "../lib/env";
-import { resolveTenantScope } from "../middleware/tenant";
+import { resolveTenantScope, type TenantContext } from "../middleware/tenant";
 import { milestoneExistsInProject } from "../services/milestone.service";
 import { loadProjectAccess } from "../services/project.service";
 import {
 	createRealtimeEnvelope,
+	createUserRealtimeEnvelope,
 	parseInboundMessage,
 	projectTopic,
 	type RealtimeEventType,
+	userTopic,
 } from "./protocol";
 import {
 	type RealtimeConnection,
@@ -59,8 +61,14 @@ type GatewaySocket = RealtimeSocketHandle & {
 type RealtimeAuth =
 	| {
 			ok: true;
+			scope: "project";
 			projectId: string;
-			tenant: { userId: string; organizationId: string };
+			tenant: TenantContext;
+	  }
+	| {
+			ok: true;
+			scope: "user";
+			tenant: TenantContext;
 	  }
 	| { ok: false; code: number; reason: string };
 
@@ -84,11 +92,13 @@ type RealtimeSocketData = {
  * an HTTP route feature, and a WebSocket upgrade is an HTTP GET with params.
  * Calling the same resolver keeps one membership rule for both surfaces.
  */
-async function authorize(
+async function resolveRealtimeTenant(
 	request: Request,
 	orgSlug: string,
-	projectId: string,
-): Promise<RealtimeAuth> {
+): Promise<
+	| { ok: true; tenant: TenantContext }
+	| { ok: false; code: number; reason: string }
+> {
 	try {
 		// A WebSocket upgrade is not covered by CORS. A hostile page cannot read
 		// the stream, but it can still open it with the visitor's cookies if the
@@ -127,7 +137,28 @@ async function authorize(
 			return { ok: false, code: CLOSE_FORBIDDEN, reason: "forbidden" };
 		}
 
-		const tenant = resolution.tenant;
+		return {
+			ok: true,
+			tenant: resolution.tenant,
+		};
+	} catch {
+		// A database failure is transient. 1011 tells the client to retry.
+		return { ok: false, code: CLOSE_SERVER_ERROR, reason: "server error" };
+	}
+}
+
+/** Authorise one project socket, including that project's access rule. */
+async function authorizeProject(
+	request: Request,
+	orgSlug: string,
+	projectId: string,
+): Promise<RealtimeAuth> {
+	const resolved = await resolveRealtimeTenant(request, orgSlug);
+
+	if (!resolved.ok) return resolved;
+
+	try {
+		const tenant = resolved.tenant;
 		const access = await withTenant(
 			{ organizationId: tenant.organizationId, userId: tenant.userId },
 			(tx) => loadProjectAccess(tx, tenant, projectId),
@@ -141,16 +172,31 @@ async function authorize(
 
 		return {
 			ok: true,
+			scope: "project",
 			projectId,
-			tenant: {
-				userId: tenant.userId,
-				organizationId: tenant.organizationId,
-			},
+			tenant,
 		};
 	} catch {
-		// A database failure is transient. 1011 tells the client to retry.
 		return { ok: false, code: CLOSE_SERVER_ERROR, reason: "server error" };
 	}
+}
+
+/**
+ * Authorise one personal socket.
+ *
+ * No project check is needed because the socket only receives the caller's own
+ * notifications for this workspace. The tenant resolver has already proved the
+ * membership and the verified address.
+ */
+async function authorizeUser(
+	request: Request,
+	orgSlug: string,
+): Promise<RealtimeAuth> {
+	const resolved = await resolveRealtimeTenant(request, orgSlug);
+
+	if (!resolved.ok) return resolved;
+
+	return { ok: true, scope: "user", tenant: resolved.tenant };
 }
 
 /** Read the auth slot back off the socket context. */
@@ -186,6 +232,25 @@ function sendEnvelope<T>(
 ): void {
 	try {
 		socket.send(JSON.stringify(createRealtimeEnvelope(projectId, type, data)));
+	} catch {
+		// The close handler owns cleanup. A failed send is not a request error.
+	}
+}
+
+/** Send one personal envelope on a user scoped socket. */
+function sendUserEnvelope<T>(
+	socket: GatewaySocket,
+	organizationId: string,
+	userId: string,
+	type: RealtimeEventType,
+	data: T,
+): void {
+	try {
+		socket.send(
+			JSON.stringify(
+				createUserRealtimeEnvelope(organizationId, userId, type, data),
+			),
+		);
 	} catch {
 		// The close handler owns cleanup. A failed send is not a request error.
 	}
@@ -315,11 +380,24 @@ async function handleMessage(ws: GatewaySocket, raw: unknown): Promise<void> {
 
 	switch (message.type) {
 		case "ping":
-			sendEnvelope(ws, connection.projectId, "system.pong", {
-				at: new Date().toISOString(),
-			});
+			if (connection.projectId) {
+				sendEnvelope(ws, connection.projectId, "system.pong", {
+					at: new Date().toISOString(),
+				});
+			} else {
+				sendUserEnvelope(
+					ws,
+					connection.organizationId,
+					connection.userId,
+					"system.pong",
+					{ at: new Date().toISOString() },
+				);
+			}
 			break;
 		case "presence.join": {
+			// A personal socket has no presence group.
+			if (!connection.projectId) break;
+
 			// The milestone id comes from the client, so it cannot widen the
 			// topic. Confirming it belongs to the authorised project keeps one
 			// project's presence index from accepting another project's id.
@@ -332,7 +410,7 @@ async function handleMessage(ws: GatewaySocket, raw: unknown): Promise<void> {
 					milestoneExistsInProject(
 						tx,
 						connection.organizationId,
-						connection.projectId,
+						connection.projectId as string,
 						message.milestoneId,
 					),
 			).catch(() => false);
@@ -357,9 +435,66 @@ async function handleMessage(ws: GatewaySocket, raw: unknown): Promise<void> {
 	}
 }
 
-export const realtimeRoutes = new Elysia({ name: "realtime" }).ws(
-	"/orgs/:orgSlug/projects/:projectId/realtime",
-	{
+/**
+ * Register one authorised connection and send its ready frame.
+ *
+ * Shared by the project socket and the personal socket. The only difference is
+ * the topic and the scope of the ready frame, both derived from `auth`.
+ */
+function openConnection(ws: GatewaySocket, auth: RealtimeAuth & { ok: true }) {
+	const now = Date.now();
+	const connection: RealtimeConnection = {
+		id: randomUUID(),
+		userId: auth.tenant.userId,
+		organizationId: auth.tenant.organizationId,
+		projectId: auth.scope === "project" ? auth.projectId : undefined,
+		connectedAt: now,
+		lastSeenAt: now,
+		lastPongAt: now,
+		milestones: new Set(),
+		windowStartedAt: now,
+		windowFrames: 0,
+		socket: ws,
+	};
+
+	realtimeRegistry.add(connection);
+
+	if (auth.scope === "project") {
+		ws.subscribe(projectTopic(auth.projectId));
+	} else {
+		ws.subscribe(userTopic(auth.tenant.organizationId, auth.tenant.userId));
+	}
+
+	// Stable for the life of this socket, unlike the wrapper Elysia creates
+	// per callback.
+	(ws.data as unknown as RealtimeSocketData).realtimeConnectionId =
+		connection.id;
+
+	// The ready frame is the client's proof that auth and the topic
+	// subscription both succeeded, so it can stop showing "connecting".
+	if (auth.scope === "project") {
+		sendEnvelope(ws, auth.projectId, "system.ready", {
+			connectionId: connection.id,
+			scope: "project",
+			pingIntervalMs: realtimeEnv.pingIntervalMs,
+		});
+	} else {
+		sendUserEnvelope(
+			ws,
+			auth.tenant.organizationId,
+			auth.tenant.userId,
+			"system.ready",
+			{
+				connectionId: connection.id,
+				scope: "user",
+				pingIntervalMs: realtimeEnv.pingIntervalMs,
+			},
+		);
+	}
+}
+
+export const realtimeRoutes = new Elysia({ name: "realtime" })
+	.ws("/orgs/:orgSlug/projects/:projectId/realtime", {
 		params: t.Object({
 			orgSlug: t.String({ minLength: 1, maxLength: 255 }),
 			projectId: t.String({ minLength: 1, maxLength: 64 }),
@@ -370,7 +505,7 @@ export const realtimeRoutes = new Elysia({ name: "realtime" }).ws(
 		 * the adapter copies it into `ws.data`.
 		 */
 		transform: async (context) => {
-			const auth = await authorize(
+			const auth = await authorizeProject(
 				context.request,
 				context.params.orgSlug,
 				context.params.projectId,
@@ -390,35 +525,7 @@ export const realtimeRoutes = new Elysia({ name: "realtime" }).ws(
 				return;
 			}
 
-			const now = Date.now();
-			const connection: RealtimeConnection = {
-				id: randomUUID(),
-				userId: auth.tenant.userId,
-				organizationId: auth.tenant.organizationId,
-				projectId: auth.projectId,
-				connectedAt: now,
-				lastSeenAt: now,
-				lastPongAt: now,
-				milestones: new Set(),
-				windowStartedAt: now,
-				windowFrames: 0,
-				socket: ws,
-			};
-
-			realtimeRegistry.add(connection);
-			ws.subscribe(projectTopic(auth.projectId));
-
-			// Stable for the life of this socket, unlike the wrapper Elysia
-			// creates per callback.
-			(ws.data as unknown as RealtimeSocketData).realtimeConnectionId =
-				connection.id;
-
-			// The ready frame is the client's proof that auth and the topic
-			// subscription both succeeded, so it can stop showing "connecting".
-			sendEnvelope(ws, auth.projectId, "system.ready", {
-				connectionId: connection.id,
-				pingIntervalMs: realtimeEnv.pingIntervalMs,
-			});
+			openConnection(ws, auth);
 		},
 
 		message(ws, raw) {
@@ -436,5 +543,52 @@ export const realtimeRoutes = new Elysia({ name: "realtime" }).ws(
 
 			if (connection) realtimeRegistry.remove(connection.id);
 		},
-	},
-);
+	})
+	/**
+	 * Personal stream: the bell, the unread badge and cross tab read state.
+	 *
+	 * It lives under the organization slug, not under a project, because the
+	 * user is browsing the workspace list, settings or invitations when many of
+	 * these arrive.
+	 */
+	.ws("/orgs/:orgSlug/realtime", {
+		params: t.Object({
+			orgSlug: t.String({ minLength: 1, maxLength: 255 }),
+		}),
+
+		transform: async (context) => {
+			const auth = await authorizeUser(context.request, context.params.orgSlug);
+
+			(context as unknown as RealtimeSocketData).realtimeAuth = auth;
+		},
+
+		open(ws) {
+			const auth = readAuth(ws.data);
+
+			if (!auth || !auth.ok) {
+				const code = auth && !auth.ok ? auth.code : CLOSE_UNAUTHENTICATED;
+				const reason = auth && !auth.ok ? auth.reason : "unauthenticated";
+
+				ws.close(code, reason);
+				return;
+			}
+
+			openConnection(ws, auth);
+		},
+
+		message(ws, raw) {
+			void handleMessage(ws, raw);
+		},
+
+		pong(ws) {
+			const connection = connectionFor(ws.data);
+
+			if (connection) realtimeRegistry.touchPong(connection.id);
+		},
+
+		close(ws) {
+			const connection = connectionFor(ws.data);
+
+			if (connection) realtimeRegistry.remove(connection.id);
+		},
+	});

@@ -27,8 +27,14 @@ import {
 	timestamp,
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { NOTIFICATION_TYPE_SQL_VALUES } from "../lib/notification-types";
 import { member, organization, user } from "./auth-schema";
-import { tenantIsolation } from "./rls";
+import {
+	notificationPolicies,
+	pushSubscriptionClaim,
+	tenantIsolation,
+	userIsolation,
+} from "./rls";
 
 /**
  * A client engagement inside one workspace.
@@ -309,6 +315,16 @@ export const milestone = pgTable(
 			table.dueDate,
 		),
 		index("milestone_organization_idx").on(table.organizationId),
+		/**
+		 * The reminder sweep reads one workspace's milestones by due date.
+		 *
+		 * The existing list index starts with `project_id`, so a workspace wide
+		 * "what is due soon" query cannot use it. This one matches the sweep.
+		 */
+		index("milestone_organization_due_idx").on(
+			table.organizationId,
+			table.dueDate,
+		),
 		/**
 		 * Substring search for the mention picker. The picker searches titles
 		 * across every visible project, so without a trigram index a large
@@ -848,5 +864,222 @@ export const linkPreview = pgTable(
 			sql`${table.status} in ('pending', 'ready', 'unavailable', 'blocked')`,
 		),
 		tenantIsolation(table.organizationId),
+	],
+).enableRLS();
+
+/**
+ * One entry in a person's bell.
+ *
+ * Why a row per recipient instead of one event with read state: a notification
+ * is addressed to a specific person. A comment that mentions two people is two
+ * rows, so one person's read state can never affect the other's, and the list
+ * stays a plain indexed read.
+ *
+ * Why the subject columns are typed foreign keys instead of a polymorphic
+ * `subject_type` and `subject_id`: the same reason `comment` uses typed target
+ * columns. Cascade cleanup belongs to the database. Deleting a milestone, a
+ * project, a comment or a change request removes the notifications that point
+ * at it even on a cascade path no service code runs through.
+ *
+ * `dedupe_key` is unique per recipient. It makes a retried request, a repeated
+ * autosave and a fan-out race idempotent instead of producing two bells. Where
+ * a transition is already idempotent in its service, a random key is used and
+ * the index simply never conflicts.
+ *
+ * `data` carries only small enum-like extras. Project names, milestone titles
+ * and previews are read from the joined source row, so a rename is reflected
+ * immediately and a deleted source cannot leave stale copy behind.
+ */
+export const notification = pgTable(
+	"notification",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		recipientUserId: text("recipient_user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		/** Null for a system reminder or when the actor's account is deleted. */
+		actorUserId: text("actor_user_id").references(() => user.id, {
+			onDelete: "set null",
+		}),
+		type: text("type").notNull(),
+		dedupeKey: text("dedupe_key").notNull(),
+		projectId: text("project_id").references(() => project.id, {
+			onDelete: "cascade",
+		}),
+		milestoneId: text("milestone_id").references(() => milestone.id, {
+			onDelete: "cascade",
+		}),
+		commentId: text("comment_id").references(() => comment.id, {
+			onDelete: "cascade",
+		}),
+		changeRequestId: text("change_request_id").references(
+			() => changeRequest.id,
+			{ onDelete: "cascade" },
+		),
+		scopeEntryId: text("scope_entry_id").references(
+			() => milestoneScopeEntry.id,
+			{ onDelete: "cascade" },
+		),
+		data: jsonb("data")
+			.$type<Record<string, string | number | boolean | null>>()
+			.notNull()
+			.default(sql`'{}'::jsonb`),
+		/** Null while unread. The bell's unread count is a partial index read. */
+		readAt: timestamp("read_at"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// The idempotency guard for one recipient.
+		uniqueIndex("notification_recipient_dedupe_idx").on(
+			table.recipientUserId,
+			table.dedupeKey,
+		),
+		// The bell and the full page, newest first, with the id as tiebreaker.
+		index("notification_recipient_created_idx").on(
+			table.recipientUserId,
+			table.createdAt,
+			table.id,
+		),
+		// The unread badge. Partial so the count never walks read history.
+		index("notification_recipient_unread_idx")
+			.on(table.recipientUserId, table.createdAt)
+			.where(sql`${table.readAt} is null`),
+		// Per project counts for the sidebar and the project list.
+		index("notification_recipient_project_unread_idx")
+			.on(table.recipientUserId, table.projectId)
+			.where(sql`${table.readAt} is null`),
+		index("notification_organization_idx").on(table.organizationId),
+		// Cascade deletes and subject cleanup filters stay indexed.
+		index("notification_project_idx").on(table.projectId),
+		index("notification_milestone_idx").on(table.milestoneId),
+		index("notification_comment_idx").on(table.commentId),
+		index("notification_change_request_idx").on(table.changeRequestId),
+		index("notification_scope_entry_idx").on(table.scopeEntryId),
+		check(
+			"notification_type_check",
+			sql`${table.type} in (${sql.raw(NOTIFICATION_TYPE_SQL_VALUES)})`,
+		),
+		notificationPolicies({
+			organizationColumn: table.organizationId,
+			recipientColumn: table.recipientUserId,
+		}),
+	],
+).enableRLS();
+
+/**
+ * How far one person has read one discussion thread.
+ *
+ * Why a cursor per thread instead of a boolean per comment: the product needs
+ * "the oldest message I have not read", including inside a reply thread. One
+ * monotonic cursor answers that with a single row, exactly like a chat read
+ * marker, and it cannot disagree with itself the way a per message set can.
+ *
+ * `root_comment_id` is the thread root (`parent_id ?? id`). Replies share the
+ * cursor of their root, so expanding a thread marks the whole thread in one
+ * write.
+ *
+ * The cursor is intentionally monotonic. `mark read up to X` never moves a
+ * cursor backwards, which is what makes two open tabs safe.
+ *
+ * `last_read_at` is a plain `timestamp` on purpose. It is a copy of
+ * `comment.created_at`, and comparing a `timestamp` with a `timestamptz`
+ * would shift with the session timezone.
+ */
+export const commentThreadRead = pgTable(
+	"comment_thread_read",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		projectId: text("project_id")
+			.notNull()
+			.references(() => project.id, { onDelete: "cascade" }),
+		milestoneId: text("milestone_id")
+			.notNull()
+			.references(() => milestone.id, { onDelete: "cascade" }),
+		rootCommentId: text("root_comment_id")
+			.notNull()
+			.references(() => comment.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		lastReadAt: timestamp("last_read_at").notNull(),
+		lastReadCommentId: text("last_read_comment_id")
+			.notNull()
+			.references(() => comment.id, { onDelete: "cascade" }),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// The conflict target for the monotonic upsert.
+		uniqueIndex("comment_thread_read_root_user_idx").on(
+			table.rootCommentId,
+			table.userId,
+		),
+		// The comments tab and project unread summary read one person's cursors.
+		index("comment_thread_read_user_milestone_idx").on(
+			table.userId,
+			table.milestoneId,
+		),
+		index("comment_thread_read_organization_idx").on(table.organizationId),
+		index("comment_thread_read_project_idx").on(table.projectId),
+		userIsolation(table.userId),
+	],
+).enableRLS();
+
+/**
+ * One browser's Web Push subscription.
+ *
+ * Why this table has no `organization_id`: a push subscription is a device
+ * token, not workspace business data. The same browser should receive every
+ * workspace's alerts with one subscription. The row is protected by a user-only
+ * policy instead of the tenant policy, and routes reach it through `withUser`.
+ *
+ * `endpoint` is globally unique. Signing in as a different person on the same
+ * browser updates the row's `user_id`, which is what stops the previous person
+ * from receiving pushes on a shared device.
+ *
+ * `failure_count` lets the sender delete a subscription that the push service
+ * keeps rejecting, instead of retrying a dead endpoint forever.
+ */
+export const pushSubscription = pgTable(
+	"push_subscription",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		/** The push service URL. Treated as a secret and never logged. */
+		endpoint: text("endpoint").notNull(),
+		p256dh: text("p256dh").notNull(),
+		auth: text("auth").notNull(),
+		userAgent: text("user_agent"),
+		failureCount: integer("failure_count").notNull().default(0),
+		lastUsedAt: timestamp("last_used_at"),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		uniqueIndex("push_subscription_endpoint_idx").on(table.endpoint),
+		index("push_subscription_user_idx").on(table.userId),
+		userIsolation(table.userId),
+		pushSubscriptionClaim({
+			endpointColumn: table.endpoint,
+			userColumn: table.userId,
+		}),
 	],
 ).enableRLS();

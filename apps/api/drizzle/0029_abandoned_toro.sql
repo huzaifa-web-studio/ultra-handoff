@@ -1,0 +1,1 @@
+CREATE POLICY "push_subscription_claim_select" ON "push_subscription" AS PERMISSIVE FOR SELECT TO "app_tenant" USING ("push_subscription"."endpoint" = current_setting('app.push_endpoint', true));

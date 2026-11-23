@@ -25,6 +25,9 @@ const REQUIRED_IN_PRODUCTION = [
 	"S3_PUBLIC_ENDPOINT",
 	"SMTP_HOST",
 	"SMTP_FROM",
+	"VAPID_PUBLIC_KEY",
+	"VAPID_PRIVATE_KEY",
+	"VAPID_SUBJECT",
 ] as const;
 
 /** Variables that must be absolute http(s) URLs when present. */

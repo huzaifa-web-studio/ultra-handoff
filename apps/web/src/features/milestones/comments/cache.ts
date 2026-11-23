@@ -96,7 +96,14 @@ export function appendToPages(data: CommentPages, next: Comment): CommentPages {
 		pages: [
 			{
 				...newest,
-				threads: [...newest.threads, { comment: next, replies: [] }],
+				threads: [
+					...newest.threads,
+					{
+						comment: next,
+						replies: [],
+						unread: { count: 0, firstUnreadCommentId: null },
+					},
+				],
 			},
 			...older,
 		],
@@ -108,5 +115,65 @@ export function withTotal(data: CommentPages, total: number): CommentPages {
 	return {
 		...data,
 		pages: data.pages.map((page) => ({ ...page, total })),
+	};
+}
+
+/** Write the milestone unread total into every loaded page. */
+export function withUnreadTotal(
+	data: CommentPages,
+	unreadTotal: number,
+): CommentPages {
+	return {
+		...data,
+		pages: data.pages.map((page) => ({ ...page, unreadTotal })),
+	};
+}
+
+/** True when a comment id is already in the cache, used to skip echo bumps. */
+export function hasComment(data: CommentPages, commentId: string): boolean {
+	return data.pages.some((page) =>
+		page.threads.some(
+			(thread) =>
+				thread.comment.id === commentId ||
+				thread.replies.some((reply) => reply.id === commentId),
+		),
+	);
+}
+
+/**
+ * Add one new message to its thread's unread count.
+ *
+ * The server is still the authority; this only keeps the divider correct
+ * between a realtime arrival and the next refetch. It is skipped for the
+ * viewer's own message, an activity row and a deleted row.
+ */
+export function withUnreadComment(
+	data: CommentPages,
+	comment: Comment,
+	viewerId: string,
+): CommentPages {
+	if (comment.kind !== "comment") return data;
+	if (comment.deletedAt !== null) return data;
+	if (comment.author?.id === viewerId) return data;
+
+	const rootId = comment.parentId ?? comment.id;
+
+	return {
+		...data,
+		pages: data.pages.map((page) => ({
+			...page,
+			threads: page.threads.map((thread) => {
+				if (thread.comment.id !== rootId) return thread;
+
+				return {
+					...thread,
+					unread: {
+						count: thread.unread.count + 1,
+						firstUnreadCommentId:
+							thread.unread.firstUnreadCommentId ?? comment.id,
+					},
+				};
+			}),
+		})),
 	};
 }

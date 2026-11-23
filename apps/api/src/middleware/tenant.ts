@@ -37,6 +37,13 @@ export type TenantContext = TenantScope & {
 	 * is as trustworthy as the organization id.
 	 */
 	memberId: string;
+	/**
+	 * When the caller joined this workspace.
+	 *
+	 * Used as the unread baseline. A person added to a project with months of
+	 * history should not open the app to a backlog they were never part of.
+	 */
+	memberCreatedAt: Date;
 };
 
 export type TenantResolution =
@@ -69,6 +76,7 @@ export async function resolveTenantScope(
 			slug: organization.slug,
 			role: member.role,
 			memberId: member.id,
+			memberCreatedAt: member.createdAt,
 		})
 		.from(member)
 		.innerJoin(organization, eq(member.organizationId, organization.id))
@@ -85,6 +93,7 @@ export async function resolveTenantScope(
 			organizationId: row.organizationId,
 			userId: session.user.id,
 			memberId: row.memberId,
+			memberCreatedAt: row.memberCreatedAt,
 			slug: row.slug,
 			role: row.role,
 		},

@@ -9,6 +9,14 @@ export const user = pgTable(
 		email: text("email").notNull().unique(),
 		emailVerified: boolean("email_verified").default(false).notNull(),
 		image: text("image"),
+		/**
+		 * The browser's IANA timezone, for local day reminders.
+		 *
+		 * Reported by the signed in client after it reads
+		 * `Intl.DateTimeFormat().resolvedOptions().timeZone`. Null means the
+		 * client has never reported one, and every reminder falls back to UTC.
+		 */
+		timezone: text("timezone"),
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 		updatedAt: timestamp("updated_at")
 			.defaultNow()

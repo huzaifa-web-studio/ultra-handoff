@@ -14,6 +14,7 @@ when a required value is missing, so `docker compose config` is the first check.
 | Auth | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_URL` |
 | Storage | `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_ALLOWED_ORIGINS`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_REGION` |
 | Mail | `SMTP_HOST`, `SMTP_FROM`, optional `SMTP_USER`, `SMTP_PASS` |
+| Web Push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` |
 | Web build | `VITE_API_URL` |
 | Redis | `REDIS_URL` |
 
@@ -25,6 +26,11 @@ Notes:
   invitation.
 - `DATABASE_APP_URL` must point at the unprivileged `app_tenant` role. Pointing
   both database URLs at the owner silently disables row level security.
+- Generate the Web Push pair once with `bunx web-push generate-vapid-keys` and
+  keep the private key only in the deployment secret store. The public key is
+  served to the browser by `/account/push/config`, so it is not a build time
+  variable. Web Push requires HTTPS, and on iOS it requires the site to be
+  added to the Home Screen. Without these keys production fails the boot check.
 
 ## 2. Pre-flight
 

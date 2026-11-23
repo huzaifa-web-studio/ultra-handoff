@@ -18,6 +18,7 @@
 import type { ChangeRequestRow } from "../services/change-request.service";
 import type { CommentRow } from "../services/comment.service";
 import type { MilestoneSummary } from "../services/milestone.service";
+import type { NotificationDelivery } from "../services/notification.service";
 
 /** A comment as it travels over the stream, without viewer capabilities. */
 export type RealtimeComment = Omit<CommentRow, "canEdit" | "canDelete">;
@@ -138,6 +139,26 @@ export function toRealtimeChangeRequest(
 		updatedAt: changeRequest.updatedAt,
 	};
 }
+
+/**
+ * One personal notification.
+ *
+ * The payload is the rendered delivery, not the raw row: the browser can show
+ * an operating system alert immediately and does not need to fetch the row
+ * first. The stored row remains the source of truth for the list.
+ */
+export type NotificationCreatedPayload = NotificationDelivery;
+
+/** A read action, so the same person's other tabs update their badge. */
+export type NotificationReadPayload = { unread: number };
+
+/** A discussion cursor moved, so another tab refreshes its unread state. */
+export type CommentReadPayload = {
+	projectId: string;
+	milestoneId: string;
+	rootCommentIds: string[];
+	unreadTotal: number;
+};
 
 /** A change request as it travels over the stream. */
 export type RealtimeChangeRequest = Omit<

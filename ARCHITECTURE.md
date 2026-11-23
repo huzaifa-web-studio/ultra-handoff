@@ -176,6 +176,30 @@ PostgreSQL 18
 
 ---
 
+## Notifications, Reminders and Push
+
+Notifications are workspace scoped and addressed to one person. The
+`notification` table stores the recipient, the subject ids and a dedupe key.
+The bell reads only that person's rows through a recipient-scoped RLS policy.
+Writing is cross-user by nature, so the insert policy is workspace scoped while
+reads, updates and deletes stay recipient scoped. The writer temporarily scopes
+the transaction to the recipient for the insert so `RETURNING` can echo the new
+row, then restores the actor before the rest of the transaction runs.
+
+Message read state is a monotonic cursor per thread root in
+`comment_thread_read`. The oldest unread message is derived from the cursor and
+the person's project membership date, so joining a project with history does
+not create a backlog.
+
+Reminder sweeps run hourly. Each recipient's `user.timezone` decides their
+local day and the 09:00 eligibility window. Overdue reminders fire on day 1, 7,
+14 and 21.
+
+Browser alerts use the page Notification API while the app is open and Web Push
+with `apps/web/public/sw.js` when the tab is closed. Push subscriptions live in
+`push_subscription`, which is personal data protected by a user-only policy and
+`withUser`, not the tenant policy.
+
 ## Authentication Flow (Planned)
 
 When authentication is added:

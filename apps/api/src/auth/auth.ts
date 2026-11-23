@@ -11,12 +11,17 @@ import {
 	passwordRegex,
 	passwordRuleMessage,
 } from "../lib/password";
+import { normalizeTimezone } from "../lib/timezone";
 import { enqueueEmail } from "../queues/email";
 import { getAccountDeletionBlocker } from "../services/account.service";
 import {
 	rememberActiveOrganization,
 	resolveSignInOrganization,
 } from "../services/organization.service";
+import {
+	notifyInvitationAccepted,
+	notifyOrganizationRoleChanged,
+} from "../services/organization-notification.service";
 import { deletePreviousAvatar } from "../services/upload.service";
 import { ACCOUNT_LINKING_OPTIONS } from "./account-linking";
 import {
@@ -98,6 +103,19 @@ export const auth = betterAuth({
 				required: false,
 				input: false,
 				returned: false,
+			},
+			/**
+			 * The browser's IANA timezone, used for local day reminders.
+			 *
+			 * The client reports it after sign in. It is user owned rather than
+			 * server owned because only the browser knows the person's zone, and
+			 * the reminder sweep reads it to decide whether "today" has arrived.
+			 */
+			timezone: {
+				type: "string",
+				required: false,
+				input: true,
+				returned: true,
 			},
 		},
 		deleteUser: {
@@ -277,6 +295,30 @@ export const auth = betterAuth({
 	},
 	hooks: {
 		before: createAuthMiddleware(async (ctx) => {
+			/**
+			 * Reject a timezone that `Intl` cannot resolve.
+			 *
+			 * The reminder sweep trusts this value to compute a local day. A
+			 * malformed zone would silently fall back to UTC, which is a wrong
+			 * reminder time rather than an error, so it is rejected at the edge.
+			 */
+			if (ctx.path === "/update-user") {
+				const body = ctx.body as Record<string, unknown> | undefined;
+				const timezone = body?.timezone;
+
+				if (body && timezone !== undefined && timezone !== null) {
+					const normalized = normalizeTimezone(timezone);
+
+					if (!normalized) {
+						throw new APIError("BAD_REQUEST", {
+							message: "That timezone is not valid.",
+						});
+					}
+
+					body.timezone = normalized;
+				}
+			}
+
 			/**
 			 * Gate the one endpoint that can create a user from an address
 			 * alone.
@@ -496,6 +538,49 @@ export const auth = betterAuth({
 				},
 				beforeUpdateMemberRole: async ({ newRole }) => {
 					assertAllowedRoles(newRole);
+				},
+				/**
+				 * Tell the inviter their invitation was accepted.
+				 *
+				 * Acceptance is owned by Better Auth, so this hook is the only
+				 * observation point. The helper is best effort and never throws
+				 * into the acceptance request.
+				 */
+				afterAcceptInvitation: async ({
+					invitation,
+					member,
+					user,
+					organization: acceptedOrganization,
+				}) => {
+					await notifyInvitationAccepted({
+						organization: {
+							id: acceptedOrganization.id,
+							name: acceptedOrganization.name,
+							slug: acceptedOrganization.slug,
+						},
+						inviterId: invitation.inviterId,
+						memberId: member.id,
+						memberUserId: user.id,
+					});
+				},
+				/** Tell the member their organization role changed. */
+				afterUpdateMemberRole: async ({
+					member,
+					previousRole,
+					user,
+					organization: updatedOrganization,
+				}) => {
+					await notifyOrganizationRoleChanged({
+						organization: {
+							id: updatedOrganization.id,
+							name: updatedOrganization.name,
+							slug: updatedOrganization.slug,
+						},
+						memberId: member.id,
+						userId: member.userId || user.id,
+						previousRole,
+						newRole: member.role,
+					});
 				},
 			},
 		}),

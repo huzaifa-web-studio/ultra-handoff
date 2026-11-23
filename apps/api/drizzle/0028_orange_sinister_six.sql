@@ -1,0 +1,2 @@
+CREATE POLICY "push_subscription_claim_update" ON "push_subscription" AS PERMISSIVE FOR UPDATE TO "app_tenant" USING ("push_subscription"."endpoint" = current_setting('app.push_endpoint', true)) WITH CHECK ("push_subscription"."user_id" = current_setting('app.current_user_id', true));--> statement-breakpoint
+CREATE POLICY "push_subscription_claim_delete" ON "push_subscription" AS PERMISSIVE FOR DELETE TO "app_tenant" USING ("push_subscription"."endpoint" = current_setting('app.push_endpoint', true));

@@ -37,16 +37,33 @@ import {
 	canModifyComment,
 } from "../auth/comment-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
-import { comment } from "../db/schema";
+import { comment, notification } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { findChecklistItem } from "../lib/checklist";
+import { collectMentionKeys } from "../lib/mentions";
 import type { MilestoneEventType } from "../lib/milestone-events";
 import { consumeRateLimit } from "../lib/rate-limit";
 import { sanitizeCommentBody } from "../lib/rich-text";
 import { keyFromRichText } from "../lib/storage";
 import type { TenantContext } from "../middleware/tenant";
+import {
+	advanceThreadCursor,
+	type CommentUnread,
+	computeThreadUnread,
+	countMilestoneUnread,
+	loadThreadReadCursors,
+	loadUnreadBaseline,
+	threadRootId,
+	threadUnreadState,
+} from "./comment-read.service";
 import { assertCommentMentions } from "./mention.service";
 import { requireMilestoneAccess } from "./milestone.service";
+import {
+	createNotifications,
+	loadMilestoneAssigneeUserIds,
+	loadProjectMemberUserIds,
+	type NotificationDelivery,
+} from "./notification.service";
 import { loadUserMap } from "./project.service";
 import { deleteObjectsBestEffort } from "./upload.service";
 
@@ -97,6 +114,8 @@ export type CommentRow = {
 export type CommentThread = {
 	comment: CommentRow;
 	replies: CommentRow[];
+	/** The viewer's cursor state for this thread. */
+	unread: CommentUnread;
 };
 
 /** One page of discussion. */
@@ -104,6 +123,8 @@ export type CommentListResult = {
 	threads: CommentThread[];
 	/** Non-deleted comments in the whole milestone, for the tab badge. */
 	total: number;
+	/** Unread messages in the whole milestone, for the unread badge. */
+	unreadTotal: number;
 	/** Opaque cursor for the next older page, or null at the end. */
 	nextCursor: string | null;
 };
@@ -111,17 +132,23 @@ export type CommentListResult = {
 /** One complete thread, used by the focused comment tab. */
 export type CommentThreadResult = {
 	thread: CommentThread;
+	unreadTotal: number;
 };
 
 /** The write result every create and delete returns. */
 export type CommentWriteResult = {
 	comment: CommentRow;
 	total: number;
+	unreadTotal: number;
+	/** Transport metadata, stripped by the route. */
+	notifications: NotificationDelivery[];
 };
 
 /** The edit result. The count cannot change on an edit. */
 export type CommentEditResult = {
 	comment: CommentRow;
+	/** Mentions added by the edit, as transport metadata. */
+	notifications: NotificationDelivery[];
 };
 
 /**
@@ -424,32 +451,60 @@ export async function listMilestoneComments(
 							.orderBy(asc(comment.createdAt), asc(comment.id))
 					: [];
 
-			const [people, total] = await Promise.all([
+			const [people, total, baselineAt, cursors] = await Promise.all([
 				loadPeople([...pageRoots, ...replies]),
 				countComments(tx, tenant, milestoneId),
+				loadUnreadBaseline(tx, tenant, projectId),
+				loadThreadReadCursors(tx, tenant, rootIds),
 			]);
 
-			const repliesByRoot = new Map<string, CommentRow[]>();
+			const recordsByRoot = new Map<string, CommentRecord[]>();
 
 			for (const reply of replies) {
 				if (!reply.parentId) continue;
 
-				const list = repliesByRoot.get(reply.parentId) ?? [];
-				list.push(toCommentRow(reply, people, tenant.userId, locked));
-				repliesByRoot.set(reply.parentId, list);
+				const list = recordsByRoot.get(reply.parentId) ?? [];
+				list.push(reply);
+				recordsByRoot.set(reply.parentId, list);
 			}
 
 			// The page is selected newest first for the cursor, but a discussion
 			// reads oldest first. Reversing here keeps the newest comment at the
 			// bottom of the pane.
-			const threads: CommentThread[] = [...pageRoots].reverse().map((root) => ({
-				comment: toCommentRow(root, people, tenant.userId, locked),
-				replies: repliesByRoot.get(root.id) ?? [],
-			}));
+			const threads: CommentThread[] = [...pageRoots].reverse().map((root) => {
+				const threadReplies = recordsByRoot.get(root.id) ?? [];
+				const orderedRecords = [root, ...threadReplies];
+				const cursor = cursors.get(root.id);
+
+				return {
+					comment: toCommentRow(root, people, tenant.userId, locked),
+					replies: threadReplies.map((reply) =>
+						toCommentRow(reply, people, tenant.userId, locked),
+					),
+					unread: computeThreadUnread({
+						comments: orderedRecords.map((record) => ({
+							id: record.id,
+							authorId: record.authorId,
+							kind: record.kind,
+							createdAt: record.createdAt,
+							deletedAt: record.deletedAt,
+						})),
+						viewerId: tenant.userId,
+						baselineAt,
+						cursorId: cursor?.lastReadCommentId ?? null,
+					}),
+				};
+			});
 
 			return {
 				threads,
 				total,
+				unreadTotal: await countMilestoneUnread(
+					tx,
+					tenant,
+					milestoneId,
+					baselineAt,
+				),
 				nextCursor:
 					hasMore && pageRoots.length > 0
 						? encodeCursor(pageRoots[pageRoots.length - 1] as CommentRecord)
@@ -506,7 +561,24 @@ export async function getMilestoneCommentThread(
 				)
 				.orderBy(asc(comment.createdAt), asc(comment.id));
 
-			const people = await loadPeople([root, ...replies]);
+			const [people, baselineAt] = await Promise.all([
+				loadPeople([root, ...replies]),
+				loadUnreadBaseline(tx, tenant, projectId),
+			]);
+
+			const unread = await threadUnreadState(
+				tx,
+				tenant,
+				projectId,
+				root.id,
+				[root, ...replies].map((record) => ({
+					id: record.id,
+					authorId: record.authorId,
+					kind: record.kind,
+					createdAt: record.createdAt,
+					deletedAt: record.deletedAt,
+				})),
+			);
 
 			return {
 				thread: {
@@ -514,7 +586,14 @@ export async function getMilestoneCommentThread(
 					replies: replies.map((reply) =>
 						toCommentRow(reply, people, tenant.userId, locked),
 					),
+					unread,
 				},
+				unreadTotal: await countMilestoneUnread(
+					tx,
+					tenant,
+					milestoneId,
+					baselineAt,
+				),
 			};
 		},
 	);
@@ -546,7 +625,7 @@ export async function createMilestoneComment(
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const { access } = await requireMilestoneAccess(
+			const { access, milestone } = await requireMilestoneAccess(
 				tx,
 				tenant,
 				projectId,
@@ -555,6 +634,8 @@ export async function createMilestoneComment(
 
 			assertProjectActive(access.row.archivedAt);
 			assertCanComment(tenant.role, access.role);
+
+			let parentAuthorId: string | null = null;
 
 			if (parentId) {
 				const parent = await loadCommentRecord(
@@ -588,6 +669,8 @@ export async function createMilestoneComment(
 							"Replies are one level deep. Reply to the first comment instead.",
 					});
 				}
+
+				parentAuthorId = parent.authorId;
 			}
 
 			const commentId = randomUUID();
@@ -622,9 +705,89 @@ export async function createMilestoneComment(
 
 			const people = await loadUserMap([tenant.userId]);
 
+			// The author's own message can never be unread to them.
+			await advanceThreadCursor(tx, tenant, {
+				projectId,
+				milestoneId,
+				rootCommentId: threadRootId(commentId, parentId),
+				commentId,
+				createdAt: record.createdAt,
+			});
+
+			const projectView = {
+				id: access.row.id,
+				name: access.row.name,
+				slug: access.row.slug,
+			};
+			const milestoneView = {
+				id: milestone.id,
+				title: milestone.title,
+			};
+			const commentView = {
+				id: commentId,
+				parentId,
+				preview: body.text,
+			};
+			const noticeByUser = new Map<
+				string,
+				"mention" | "comment_reply" | "comment_new"
+			>();
+
+			// Mentions are the strongest signal. A person who is both mentioned
+			// and replied to gets one row, not two.
+			for (const mention of collectMentionKeys(body.value)) {
+				if (mention.type === "user") {
+					noticeByUser.set(mention.id, "mention");
+				}
+			}
+
+			if (parentAuthorId && !noticeByUser.has(parentAuthorId)) {
+				noticeByUser.set(parentAuthorId, "comment_reply");
+			}
+
+			if (!parentId) {
+				const [assignees, clients] = await Promise.all([
+					loadMilestoneAssigneeUserIds(tx, tenant, milestoneId),
+					loadProjectMemberUserIds(tx, tenant, projectId, ["client"]),
+				]);
+
+				for (const userId of [...assignees, ...clients]) {
+					if (!noticeByUser.has(userId)) {
+						noticeByUser.set(userId, "comment_new");
+					}
+				}
+			}
+
+			const candidates = [...noticeByUser.entries()]
+				.filter(([userId]) => userId !== tenant.userId)
+				.map(([recipientUserId, type]) => ({
+					recipientUserId,
+					actorUserId: tenant.userId,
+					type,
+					dedupeKey:
+						type === "mention"
+							? `mention:comment:${commentId}:${recipientUserId}`
+							: type === "comment_reply"
+								? `reply:comment:${commentId}:${recipientUserId}`
+								: `comment:${commentId}:${recipientUserId}`,
+					project: projectView,
+					milestone: milestoneView,
+					comment: commentView,
+				}));
+
+			const notifications = await createNotifications(tx, tenant, candidates);
+			const baselineAt = await loadUnreadBaseline(tx, tenant, projectId);
+
 			return {
 				comment: toCommentRow(record, people, tenant.userId, false),
 				total: await countComments(tx, tenant, milestoneId),
+				unreadTotal: await countMilestoneUnread(
+					tx,
+					tenant,
+					milestoneId,
+					baselineAt,
+				),
+				notifications,
 			};
 		},
 	);
@@ -643,7 +806,7 @@ export async function updateMilestoneComment(
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const { access } = await requireMilestoneAccess(
+			const { access, milestone } = await requireMilestoneAccess(
 				tx,
 				tenant,
 				projectId,
@@ -681,6 +844,15 @@ export async function updateMilestoneComment(
 			// An edit can add or remove mentions, so the same guard runs again.
 			await assertCommentMentions(tx, tenant, projectId, body.value);
 
+			const beforeMentions = mentionedUserIds(record.body);
+			const afterMentions = mentionedUserIds(body.value);
+			const addedMentions = [...afterMentions].filter(
+				(userId) => !beforeMentions.has(userId),
+			);
+			const removedMentions = [...beforeMentions].filter(
+				(userId) => !afterMentions.has(userId),
+			);
+
 			await tx
 				.update(comment)
 				.set({
@@ -696,6 +868,24 @@ export async function updateMilestoneComment(
 					),
 				);
 
+			// A mention removed by an edit should not keep an unread bell. The
+			// actor delete policy allows the author to clean up the row their
+			// own comment caused without being able to read it.
+			if (removedMentions.length > 0) {
+				await tx.delete(notification).where(
+					and(
+						eq(notification.organizationId, tenant.organizationId),
+						eq(notification.type, "mention"),
+						inArray(
+							notification.dedupeKey,
+							removedMentions.map(
+								(userId) => `mention:comment:${commentId}:${userId}`,
+							),
+						),
+					),
+				);
+			}
+
 			const updated = await loadCommentRecord(
 				tx,
 				tenant,
@@ -710,11 +900,50 @@ export async function updateMilestoneComment(
 			}
 
 			const people = await loadPeople([updated]);
+			const notifications =
+				addedMentions.length > 0
+					? await createNotifications(
+							tx,
+							tenant,
+							addedMentions
+								.filter((userId) => userId !== tenant.userId)
+								.map((userId) => ({
+									recipientUserId: userId,
+									actorUserId: tenant.userId,
+									type: "mention" as const,
+									dedupeKey: `mention:comment:${commentId}:${userId}`,
+									project: {
+										id: access.row.id,
+										name: access.row.name,
+										slug: access.row.slug,
+									},
+									milestone: {
+										id: milestone.id,
+										title: milestone.title,
+									},
+									comment: {
+										id: commentId,
+										parentId: updated.parentId,
+										preview: body.text,
+									},
+								})),
+						)
+					: [];
 
 			return {
 				comment: toCommentRow(updated, people, tenant.userId, false),
+				notifications,
 			};
 		},
+	);
+}
+
+/** The user ids mentioned in one rich text body. */
+function mentionedUserIds(body: unknown[]): Set<string> {
+	return new Set(
+		collectMentionKeys(body)
+			.filter((mention) => mention.type === "user")
+			.map((mention) => mention.id),
 	);
 }
 
@@ -920,12 +1149,32 @@ export async function deleteMilestoneComment(
 				});
 			}
 
+			// The comment is gone, so its mention and reply notifications must
+			// not keep an unread badge alive. The actor delete policy allows the
+			// author to remove rows their own comment caused.
+			await tx
+				.delete(notification)
+				.where(
+					and(
+						eq(notification.organizationId, tenant.organizationId),
+						eq(notification.commentId, commentId),
+					),
+				);
+
 			const people = await loadPeople([deleted]);
+			const baselineAt = await loadUnreadBaseline(tx, tenant, projectId);
 
 			return {
 				result: {
 					comment: toCommentRow(deleted, people, tenant.userId, false),
 					total: await countComments(tx, tenant, milestoneId),
+					unreadTotal: await countMilestoneUnread(
+						tx,
+						tenant,
+						milestoneId,
+						baselineAt,
+					),
+					notifications: [],
 				},
 				removedKeys,
 			};

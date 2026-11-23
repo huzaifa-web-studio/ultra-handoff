@@ -28,4 +28,13 @@ export const TENANT_TABLES: readonly string[] = [
 	"comment",
 	"change_request",
 	"link_preview",
+	"notification",
+	"comment_thread_read",
+	/**
+	 * Personal device tokens rather than workspace data.
+	 *
+	 * Listed here so the tenant role may reach it, but protected by the
+	 * user-only policy in src/db/rls.ts instead of `tenantIsolation`.
+	 */
+	"push_subscription",
 ];

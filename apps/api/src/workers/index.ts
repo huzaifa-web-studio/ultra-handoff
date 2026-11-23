@@ -19,6 +19,11 @@ import {
 	stopLinkPreviewWorker,
 } from "../queues/link-preview";
 import {
+	startMilestoneReminderWorker,
+	stopMilestoneReminderWorker,
+} from "../queues/milestone-reminders";
+import { startPushWorker, stopPushWorker } from "../queues/push";
+import {
 	startUploadVerificationWorker,
 	stopUploadVerification,
 } from "../queues/upload-verification";
@@ -35,6 +40,8 @@ export function startWorkers(): () => Promise<void> {
 	startUploadVerificationWorker();
 	startLinkPreviewWorker();
 	startAccountCleanupWorker();
+	startMilestoneReminderWorker();
+	startPushWorker();
 
 	return async () => {
 		// Close the workers before the shared Redis client they depend on.
@@ -42,6 +49,8 @@ export function startWorkers(): () => Promise<void> {
 		await stopUploadVerification();
 		await stopLinkPreviewWorker();
 		await stopAccountCleanupWorker();
+		await stopMilestoneReminderWorker();
+		await stopPushWorker();
 		await closeRedis();
 	};
 }

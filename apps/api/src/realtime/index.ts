@@ -11,6 +11,7 @@
 
 import {
 	publishRealtimeEvent,
+	publishUserEvent,
 	setRealtimeLocalPublisher,
 	startRealtimeBus,
 	stopRealtimeBus,
@@ -46,5 +47,5 @@ export function startRealtime(server: RealtimeServer): () => void {
 	};
 }
 
-export { publishRealtimeEvent };
+export { publishRealtimeEvent, publishUserEvent };
 export type { RealtimeEnvelope, RealtimeEventType } from "./protocol";

@@ -105,6 +105,37 @@ export async function closeTenantDb(): Promise<void> {
 }
 
 /**
+ * Run `fn` inside a transaction scoped to one person, without a workspace.
+ *
+ * Why this exists: a few rows belong to a person rather than to a workspace,
+ * such as a browser push subscription. Those tables carry `user_id` only and
+ * use the `userIsolation` policy. Requiring an organization id for them would
+ * either force duplicate rows per workspace or force the privileged client.
+ *
+ * Business tables still use `withTenant`. A table without an
+ * `organization_id` cannot be reached through this helper by accident, because
+ * its tenant policy would compare a missing org setting and return nothing.
+ */
+export async function withUser<T>(
+	userId: string,
+	fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+	assertScopeValue(userId, "userId");
+
+	return getTenantDb().transaction(async (tx) => {
+		const applied = await tx.execute<{ usr: string }>(
+			sql`select set_config('app.current_user_id', ${userId}, true) as usr`,
+		);
+
+		if (applied[0]?.usr !== userId) {
+			throw new Error("Failed to apply the user scope");
+		}
+
+		return fn(tx);
+	});
+}
+
+/**
  * Run `fn` inside a transaction scoped to one organization.
  *
  * Everything inside the callback is subject to the tenant policies. Nothing

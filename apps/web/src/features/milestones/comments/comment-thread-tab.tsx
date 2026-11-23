@@ -19,6 +19,7 @@ import { ScrollArea } from "@org/ui/components/scroll-area";
 import { RefreshCwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MentionProvider } from "#/components/rich-text/mentions/mention-context";
+import { useMarkCommentsRead } from "#/features/notifications/hooks";
 import { useClockTick } from "#/hooks/use-clock-tick";
 import { formatDayHeading } from "#/lib/date";
 import type { Comment } from "./api";
@@ -65,6 +66,32 @@ export function CommentThreadTab({
 	const query = useCommentThread(orgSlug, projectId, milestoneId, commentId, {
 		enabled: hasBeenActive,
 	});
+
+	/*
+	 * A focused thread is the one place where the whole conversation is on
+	 * screen, so opening it marks the root and the newest reply read. Doing it
+	 * only while the tab is active prevents a background tab from consuming a
+	 * notification the person never looked at.
+	 */
+	const markRead = useMarkCommentsRead(orgSlug, projectId, milestoneId);
+	const markedRef = useRef(new Set<string>());
+
+	useEffect(() => {
+		if (!active || !query.data) return;
+		if (document.visibilityState !== "visible") return;
+
+		const { thread } = query.data;
+		const lastReply = thread.replies[thread.replies.length - 1];
+		const ids = [
+			thread.comment.id,
+			...(lastReply ? [lastReply.id] : []),
+		].filter((id) => !markedRef.current.has(id));
+
+		if (ids.length === 0) return;
+
+		for (const id of ids) markedRef.current.add(id);
+		markRead.mutate(ids);
+	}, [active, query.data, markRead]);
 
 	const [pendingDelete, setPendingDelete] = useState<Comment | null>(null);
 	const [replyFocusToken, setReplyFocusToken] = useState(0);

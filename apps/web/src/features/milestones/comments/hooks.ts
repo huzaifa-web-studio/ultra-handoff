@@ -40,8 +40,11 @@ import {
 import {
 	appendToPages,
 	type CommentPages,
+	hasComment,
 	replaceInPages,
 	withTotal,
+	withUnreadComment,
+	withUnreadTotal,
 } from "./cache";
 
 /** Every comment query for one milestone. */
@@ -124,6 +127,7 @@ function appendReplyToThread(
 			);
 
 			return {
+				...current,
 				thread: {
 					...current.thread,
 					replies: exists
@@ -153,10 +157,11 @@ function replaceInThread(
 			if (!current) return current;
 
 			if (current.thread.comment.id === comment.id) {
-				return { thread: { ...current.thread, comment } };
+				return { ...current, thread: { ...current.thread, comment } };
 			}
 
 			return {
+				...current,
 				thread: {
 					...current.thread,
 					replies: current.thread.replies.map((reply) =>
@@ -183,18 +188,41 @@ export function applyCommentEvent(
 	queryClient: ReturnType<typeof useQueryClient>,
 	orgSlug: string,
 	projectId: string,
-	input: { milestoneId: string; comment: Comment; total: number | null },
+	input: {
+		milestoneId: string;
+		comment: Comment;
+		total: number | null;
+		unreadTotal?: number;
+		/** Makes the viewer's own echo skip the unread bump. */
+		viewerId?: string;
+	},
 	kind: CommentEventKind,
 ): void {
 	const key = listKey(orgSlug, projectId, input.milestoneId);
 
 	updatePages(queryClient, key, (pages) => {
-		const next =
+		const existed =
+			kind === "created" ? hasComment(pages, input.comment.id) : true;
+		let next =
 			kind === "created"
 				? appendToPages(pages, input.comment)
 				: replaceInPages(pages, input.comment);
 
-		return input.total === null ? next : withTotal(next, input.total);
+		if (
+			kind === "created" &&
+			!existed &&
+			input.viewerId &&
+			input.comment.kind === "comment"
+		) {
+			next = withUnreadComment(next, input.comment, input.viewerId);
+		}
+
+		if (input.total !== null) next = withTotal(next, input.total);
+		if (input.unreadTotal !== undefined) {
+			next = withUnreadTotal(next, input.unreadTotal);
+		}
+
+		return next;
 	});
 
 	if (kind === "created") {
@@ -282,7 +310,7 @@ export function useCreateComment(
 			// stale instead and the refetch picks the new comment up.
 			if (queryClient.getQueryData<CommentPages>(key)) {
 				updatePages(queryClient, key, (pages) =>
-					appendToPages(pages, data.comment),
+					withUnreadTotal(appendToPages(pages, data.comment), data.unreadTotal),
 				);
 			} else {
 				void queryClient.invalidateQueries({ queryKey: key });
@@ -379,7 +407,12 @@ export function useDeleteComment(
 				queryClient,
 				orgSlug,
 				projectId,
-				{ milestoneId, comment: data.comment, total: data.total },
+				{
+					milestoneId,
+					comment: data.comment,
+					total: data.total,
+					unreadTotal: data.unreadTotal,
+				},
 				"deleted",
 			);
 		},

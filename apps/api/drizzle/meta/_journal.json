@@ -183,6 +183,34 @@
       "when": 1794513501826,
       "tag": "0025_far_phil_sheldon",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795166720829,
+      "tag": "0026_large_wendell_vaughn",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1795167521015,
+      "tag": "0027_wakeful_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1795171516930,
+      "tag": "0028_orange_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795171557745,
+      "tag": "0029_abandoned_toro",
+      "breakpoints": true
     }
   ]
 }

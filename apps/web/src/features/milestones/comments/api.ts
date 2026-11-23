@@ -109,6 +109,7 @@ export async function createComment(
 export type CommentWriteResponse = {
 	comment: Comment;
 	total: number;
+	unreadTotal: number;
 };
 
 /** Change the body of your own comment. */

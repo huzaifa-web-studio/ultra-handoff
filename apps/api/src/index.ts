@@ -22,8 +22,10 @@ import { linkPreviewRoutes } from "./routes/link-previews";
 import { memberRoutes } from "./routes/members";
 import { mentionRoutes } from "./routes/mentions";
 import { milestoneRoutes } from "./routes/milestones";
+import { notificationRoutes } from "./routes/notifications";
 import { organizationRoutes } from "./routes/organization";
 import { projectRoutes } from "./routes/projects";
+import { pushRoutes } from "./routes/push";
 import { uploadRoutes } from "./routes/uploads";
 import { startWorkers } from "./workers";
 
@@ -58,6 +60,7 @@ async function buildApp() {
 		.use(uploadRoutes)
 		.use(fileRoutes)
 		.use(accountRoutes)
+		.use(pushRoutes)
 		.use(organizationRoutes)
 		// Workspace member and invitation management (tenant scoped).
 		.use(memberRoutes)
@@ -71,6 +74,8 @@ async function buildApp() {
 		.use(changeRequestRoutes)
 		// Live comment, milestone and presence stream for the project workspace.
 		.use(realtimeRoutes)
+		// Personal bell, unread badge and read actions (tenant scoped).
+		.use(notificationRoutes)
 		// Mention suggestions for the comment editor (tenant scoped).
 		.use(mentionRoutes)
 		// Cached link previews for the milestone editor (tenant scoped).
@@ -120,11 +125,14 @@ export type App = Awaited<ReturnType<typeof buildApp>>;
  */
 export type {
 	ChangeRequestRealtimePayload,
+	CommentReadPayload,
 	CommentRealtimePayload,
 	MilestoneChangedField,
 	MilestoneCreatedPayload,
 	MilestoneDeletedPayload,
 	MilestoneUpdatedPayload,
+	NotificationCreatedPayload,
+	NotificationReadPayload,
 	RealtimeChangeRequest,
 	RealtimeComment,
 } from "./realtime/events";

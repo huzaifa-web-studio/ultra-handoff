@@ -14,6 +14,7 @@ import { BULK_SELECTION_MAX } from "../auth/permissions";
 import type { ProjectRole } from "../auth/project-permissions";
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import { tenantPlugin } from "../middleware/tenant";
+import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
 import {
 	addProjectMember,
 	bulkAddProjectMembers,
@@ -264,7 +265,10 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		"/orgs/:orgSlug/projects/:projectId/archive",
 		async ({ tenant, status, params }) => {
 			try {
-				return await setProjectArchived(tenant, params.projectId, true);
+				const result = await setProjectArchived(tenant, params.projectId, true);
+				dispatchNotificationDeliveries(result.notifications);
+
+				return { status: result.status, archivedAt: result.archivedAt };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not archive the project."),
@@ -278,7 +282,14 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		"/orgs/:orgSlug/projects/:projectId/unarchive",
 		async ({ tenant, status, params }) => {
 			try {
-				return await setProjectArchived(tenant, params.projectId, false);
+				const result = await setProjectArchived(
+					tenant,
+					params.projectId,
+					false,
+				);
+				dispatchNotificationDeliveries(result.notifications);
+
+				return { status: result.status, archivedAt: result.archivedAt };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not restore the project."),
@@ -337,7 +348,14 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		"/orgs/:orgSlug/projects/bulk-archive",
 		async ({ tenant, status, body }) => {
 			try {
-				return await bulkSetProjectsArchived(tenant, body.projectIds, true);
+				const result = await bulkSetProjectsArchived(
+					tenant,
+					body.projectIds,
+					true,
+				);
+				dispatchNotificationDeliveries(result.notifications);
+
+				return { results: result.results };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not archive those projects."),
@@ -351,7 +369,14 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		"/orgs/:orgSlug/projects/bulk-unarchive",
 		async ({ tenant, status, body }) => {
 			try {
-				return await bulkSetProjectsArchived(tenant, body.projectIds, false);
+				const result = await bulkSetProjectsArchived(
+					tenant,
+					body.projectIds,
+					false,
+				);
+				dispatchNotificationDeliveries(result.notifications);
+
+				return { results: result.results };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not restore those projects."),
@@ -379,12 +404,15 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		"/orgs/:orgSlug/projects/:projectId/members",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await addProjectMember(
+				const result = await addProjectMember(
 					tenant,
 					params.projectId,
 					body.userId,
 					body.role as ProjectRole,
 				);
+				dispatchNotificationDeliveries(result.notifications);
+
+				return { userId: result.userId, role: result.role };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not add that person."),
@@ -405,12 +433,15 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		"/orgs/:orgSlug/projects/:projectId/members/bulk",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await bulkAddProjectMembers(
+				const result = await bulkAddProjectMembers(
 					tenant,
 					params.projectId,
 					body.userIds,
 					body.role as ProjectRole,
 				);
+				dispatchNotificationDeliveries(result.notifications);
+
+				return { results: result.results };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not add those people."),
@@ -453,12 +484,15 @@ export const projectRoutes = new Elysia({ name: "projects" })
 		"/orgs/:orgSlug/projects/:projectId/members/:userId",
 		async ({ tenant, status, params, body }) => {
 			try {
-				return await updateProjectMemberRole(
+				const result = await updateProjectMemberRole(
 					tenant,
 					params.projectId,
 					params.userId,
 					body.role as ProjectRole,
 				);
+				dispatchNotificationDeliveries(result.notifications);
+
+				return { userId: result.userId, role: result.role };
 			} catch (error) {
 				return status(authErrorStatus(error), {
 					message: authErrorMessage(error, "Could not change that role."),

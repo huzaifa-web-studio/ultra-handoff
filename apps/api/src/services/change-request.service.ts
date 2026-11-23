@@ -38,6 +38,7 @@ import { validateMilestoneNote } from "../auth/milestone-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
 import { changeRequest, milestone, milestoneScopeEntry } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
+import { collectMentionKeys } from "../lib/mentions";
 import type { MilestoneEventDraft } from "../lib/milestone-events";
 import { sanitizeOptionalCommentBody } from "../lib/rich-text";
 import type { TenantContext } from "../middleware/tenant";
@@ -55,6 +56,13 @@ import {
 	createChangeScopeEntry,
 	type MilestoneScopeEntrySummary,
 } from "./milestone-scope.service";
+import {
+	createNotifications,
+	loadMilestoneAssigneeUserIds,
+	loadProjectManagerUserIds,
+	type NotificationCandidate,
+	type NotificationDelivery,
+} from "./notification.service";
 import { loadUserMap } from "./project.service";
 
 /** A database row, before it is mapped to the wire shape. */
@@ -109,6 +117,8 @@ export type ChangeRequestWriteResult = {
 	/** The scope section an acceptance added, null for every other write. */
 	scopeEntry: MilestoneScopeEntrySummary | null;
 	timeline: MilestoneTimelineComment[];
+	/** Transport metadata, stripped by the route. */
+	notifications: NotificationDelivery[];
 };
 
 /** Moving a request also returns the milestone that was created. */
@@ -145,6 +155,15 @@ export type MoveChangeRequestInput = {
 	estimateMinutes?: number | null;
 	assigneeUserIds?: string[];
 };
+
+/** The user ids mentioned in one rich text body. */
+function mentionedUserIds(body: unknown[]): Set<string> {
+	return new Set(
+		collectMentionKeys(body)
+			.filter((mention) => mention.type === "user")
+			.map((mention) => mention.id),
+	);
+}
 
 /** Every status initialized to zero, so the UI never has to guess. */
 function emptyCounts(): Record<ChangeRequestStatus, number> {
@@ -479,7 +498,7 @@ export async function createChangeRequest(
 	const write = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const { access } = await requireMilestoneAccess(
+			const { access, milestone } = await requireMilestoneAccess(
 				tx,
 				tenant,
 				projectId,
@@ -521,10 +540,62 @@ export async function createChangeRequest(
 				buildEvent("change_request_created", title),
 			]);
 
+			const recipients = new Set([
+				...(await loadProjectManagerUserIds(tx, tenant, projectId)),
+				...(await loadMilestoneAssigneeUserIds(tx, tenant, milestoneId)),
+			]);
+			const noticeByUser = new Map<
+				string,
+				"mention" | "change_request_created"
+			>();
+
+			for (const userId of mentionedUserIds(body.value)) {
+				noticeByUser.set(userId, "mention");
+			}
+
+			for (const userId of recipients) {
+				if (!noticeByUser.has(userId)) {
+					noticeByUser.set(userId, "change_request_created");
+				}
+			}
+
+			const notifications = await createNotifications(
+				tx,
+				tenant,
+				[...noticeByUser.entries()]
+					.filter(([userId]) => userId !== tenant.userId)
+					.map(
+						([recipientUserId, type]): NotificationCandidate => ({
+							recipientUserId,
+							actorUserId: tenant.userId,
+							type,
+							dedupeKey:
+								type === "mention"
+									? `mention:change:${record.id}:${recipientUserId}`
+									: `cr_created:${record.id}:${recipientUserId}`,
+							project: {
+								id: access.row.id,
+								name: access.row.name,
+								slug: access.row.slug,
+							},
+							milestone: {
+								id: milestone.id,
+								title: milestone.title,
+							},
+							changeRequest: {
+								id: record.id,
+								title: record.title,
+							},
+							...(type === "mention" ? {} : {}),
+						}),
+					),
+			);
+
 			return {
 				...(await toWriteShape(tx, tenant, milestoneId, record)),
 				scopeEntry: null,
 				eventRows,
+				notifications,
 			};
 		},
 	);
@@ -536,6 +607,7 @@ export async function createChangeRequest(
 		openCount: write.openCount,
 		scopeEntry: null,
 		timeline,
+		notifications: write.notifications,
 	};
 }
 
@@ -571,7 +643,7 @@ export async function updateChangeRequest(
 	const write = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const { access } = await requireMilestoneAccess(
+			const { access, milestone } = await requireMilestoneAccess(
 				tx,
 				tenant,
 				projectId,
@@ -591,6 +663,8 @@ export async function updateChangeRequest(
 			let event: MilestoneEventDraft | null = null;
 			let acceptedScopeEntry: MilestoneScopeEntrySummary | null = null;
 			let acceptedScopeBody: unknown[] | null = null;
+			let addedMentionIds: string[] = [];
+			let decisionStatus: string | null = null;
 
 			if (editsContent) {
 				if (
@@ -608,6 +682,11 @@ export async function updateChangeRequest(
 
 				if (body) {
 					await assertCommentMentions(tx, tenant, projectId, body.value);
+
+					const beforeMentions = mentionedUserIds(record.body);
+					addedMentionIds = [...mentionedUserIds(body.value)].filter(
+						(userId) => !beforeMentions.has(userId),
+					);
 				}
 
 				await tx
@@ -665,6 +744,7 @@ export async function updateChangeRequest(
 						.where(changeRequestScope(tenant, milestoneId, changeRequestId));
 
 					event = buildEvent("change_request_withdrawn", record.title);
+					decisionStatus = "withdrawn";
 				} else {
 					if (!canDecideChangeRequest(tenant.role, access.role)) {
 						throw new APIError("FORBIDDEN", {
@@ -750,6 +830,7 @@ export async function updateChangeRequest(
 						record.title,
 						note,
 					);
+					decisionStatus = next;
 				}
 			}
 
@@ -764,11 +845,75 @@ export async function updateChangeRequest(
 				? await recordMilestoneEvents(tx, tenant, milestoneId, [event])
 				: [];
 
+			const noticeByUser = new Map<
+				string,
+				"mention" | "change_request_decided" | "change_request_withdrawn"
+			>();
+
+			for (const userId of addedMentionIds) {
+				noticeByUser.set(userId, "mention");
+			}
+
+			if (decisionStatus === "withdrawn") {
+				const recipients = new Set([
+					...(await loadProjectManagerUserIds(tx, tenant, projectId)),
+					...(await loadMilestoneAssigneeUserIds(tx, tenant, milestoneId)),
+				]);
+
+				for (const userId of recipients) {
+					if (!noticeByUser.has(userId)) {
+						noticeByUser.set(userId, "change_request_withdrawn");
+					}
+				}
+			} else if (decisionStatus && record.requestedBy) {
+				if (!noticeByUser.has(record.requestedBy)) {
+					noticeByUser.set(record.requestedBy, "change_request_decided");
+				}
+			}
+
+			const notifications = await createNotifications(
+				tx,
+				tenant,
+				[...noticeByUser.entries()]
+					.filter(([userId]) => userId !== tenant.userId)
+					.map(
+						([recipientUserId, type]): NotificationCandidate => ({
+							recipientUserId,
+							actorUserId: tenant.userId,
+							type,
+							dedupeKey:
+								type === "mention"
+									? `mention:change:${changeRequestId}:${recipientUserId}:${updated.updatedAt.toISOString()}`
+									: type === "change_request_decided"
+										? `cr_decided:${changeRequestId}:${decisionStatus}:${recipientUserId}`
+										: `cr_withdrawn:${changeRequestId}:${recipientUserId}`,
+							project: {
+								id: access.row.id,
+								name: access.row.name,
+								slug: access.row.slug,
+							},
+							milestone: {
+								id: milestone.id,
+								title: milestone.title,
+							},
+							changeRequest: {
+								id: updated.id,
+								title: updated.title,
+							},
+							data:
+								type === "change_request_decided" && decisionStatus
+									? { decision: decisionStatus }
+									: {},
+						}),
+					),
+			);
+
 			return {
 				...(await toWriteShape(tx, tenant, milestoneId, updated)),
 				scopeEntry: acceptedScopeEntry,
 				acceptedScopeBody,
 				eventRows,
+				notifications,
 			};
 		},
 	);
@@ -788,6 +933,7 @@ export async function updateChangeRequest(
 		openCount: write.openCount,
 		scopeEntry: write.scopeEntry,
 		timeline,
+		notifications: write.notifications,
 	};
 }
 
@@ -883,11 +1029,43 @@ export async function moveChangeRequestToMilestone(
 				),
 			]);
 
+			const alreadyNotified = new Set(
+				created.notifications.map((delivery) => delivery.recipientUserId),
+			);
+			const decisionNotifications =
+				record.requestedBy &&
+				record.requestedBy !== tenant.userId &&
+				!alreadyNotified.has(record.requestedBy)
+					? await createNotifications(tx, tenant, [
+							{
+								recipientUserId: record.requestedBy,
+								actorUserId: tenant.userId,
+								type: "change_request_decided",
+								dedupeKey: `cr_decided:${changeRequestId}:moved:${record.requestedBy}`,
+								project: {
+									id: access.row.id,
+									name: access.row.name,
+									slug: access.row.slug,
+								},
+								milestone: {
+									id: milestoneId,
+									title: created.milestone.title,
+								},
+								changeRequest: {
+									id: updated.id,
+									title: updated.title,
+								},
+								data: { decision: "moved" },
+							},
+						])
+					: [];
+
 			return {
 				...(await toWriteShape(tx, tenant, milestoneId, updated)),
 				scopeEntry: null,
 				eventRows,
 				created,
+				notifications: [...created.notifications, ...decisionNotifications],
 			};
 		},
 	);
@@ -905,5 +1083,6 @@ export async function moveChangeRequestToMilestone(
 		openCount: write.openCount,
 		scopeEntry: null,
 		timeline,
+		notifications: write.notifications,
 	};
 }
