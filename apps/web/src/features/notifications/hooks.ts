@@ -9,6 +9,7 @@
  */
 
 import {
+	type InfiniteData,
 	keepPreviousData,
 	useInfiniteQuery,
 	useMutation,
@@ -25,6 +26,7 @@ import {
 	markCommentsRead,
 	markNotificationRead,
 	type NotificationFilter,
+	type NotificationPage,
 	type ProjectUnreadResponse,
 } from "./api";
 
@@ -105,13 +107,44 @@ export function useMarkNotificationRead(orgSlug: string) {
 	return useMutation({
 		mutationFn: (notificationId: string) =>
 			markNotificationRead(orgSlug, notificationId),
-		onSuccess: (data) => {
+		onSuccess: (data, notificationId) => {
 			queryClient.setQueryData(notificationSummaryKey(orgSlug), (current) =>
 				current && data ? { ...current, unread: data.unread } : current,
 			);
-			void queryClient.invalidateQueries({
-				queryKey: [...notificationsKey(orgSlug), "list"],
-			});
+
+			/*
+			 * Patch the cached pages instead of invalidating the list. Clicking
+			 * three rows used to refetch page one three times. The unread view
+			 * also drops the row, because it no longer matches that filter, and
+			 * every page takes the fresh unread total so the label stays right.
+			 */
+			const readAt = new Date().toISOString();
+
+			for (const filter of ["all", "unread"] as const) {
+				queryClient.setQueryData<InfiniteData<NotificationPage>>(
+					notificationListKey(orgSlug, filter),
+					(current) => {
+						if (!current) return current;
+
+						return {
+							...current,
+							pages: current.pages.map((page) => ({
+								...page,
+								unread: data?.unread ?? page.unread,
+								notifications: page.notifications
+									.filter(
+										(row) => filter === "all" || row.id !== notificationId,
+									)
+									.map((row) =>
+										row.id === notificationId && row.readAt === null
+											? { ...row, readAt }
+											: row,
+									),
+							})),
+						};
+					},
+				);
+			}
 		},
 	});
 }
