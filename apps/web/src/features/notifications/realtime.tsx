@@ -24,13 +24,12 @@ import type {
 } from "@org/api";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import {
 	acquireUserRealtimeSocket,
 	type RealtimeStatus,
 } from "#/lib/realtime/socket";
-import { markNotificationRead } from "./api";
 import {
 	hasDesktopOptIn,
 	isAwayFromApp,
@@ -108,36 +107,6 @@ export function NotificationRealtimeProvider({
 	children: ReactNode;
 }) {
 	const queryClient = useQueryClient();
-	const handledClick = useRef(false);
-
-	/*
-	 * An operating system alert opens the target with `?notification=<id>`.
-	 * That click is the only signal for reminder and project rows, which have
-	 * no message read event to clear them.
-	 */
-	useEffect(() => {
-		if (!orgSlug || handledClick.current) return;
-
-		const url = new URL(window.location.href);
-		const id = url.searchParams.get("notification");
-
-		if (!id) return;
-
-		handledClick.current = true;
-		url.searchParams.delete("notification");
-		window.history.replaceState({}, "", url.toString());
-
-		void markNotificationRead(orgSlug, id)
-			.then(() => {
-				void queryClient.invalidateQueries({
-					queryKey: notificationSummaryKey(orgSlug),
-				});
-				void queryClient.invalidateQueries({
-					queryKey: [...notificationsKey(orgSlug), "list"],
-				});
-			})
-			.catch(() => undefined);
-	}, [orgSlug, queryClient]);
 
 	// Register early so a push can arrive on a later page load even before the
 	// person opens the notification settings card.

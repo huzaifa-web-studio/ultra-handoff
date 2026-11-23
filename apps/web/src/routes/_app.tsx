@@ -12,6 +12,7 @@ import { AppSidebar } from "#/components/app-sidebar/app-sidebar";
 import { AppNotFound } from "#/components/app-sidebar/not-found";
 import { authClient } from "#/features/auth/client";
 import { broadcastAuth } from "#/features/auth/sync";
+import { useNotificationLink } from "#/features/notifications/link";
 import { disablePush } from "#/features/notifications/push";
 import { NotificationRealtimeProvider } from "#/features/notifications/realtime";
 import { decideActiveWorkspace } from "#/features/organization/active-workspace";
@@ -103,12 +104,25 @@ function AppLayout() {
 	 * one is sent back to it instead of rendering a second open workspace.
 	 */
 	const activeOrgSlug = activeOrganization?.slug ?? null;
+	const urlOrgSlug = findUrlOrgSlug(matches);
+
+	/*
+	 * A notification click can name another workspace. Resolve that before the
+	 * guard below replaces the URL, otherwise the alert is thrown away and stays
+	 * unread. The hook owns the mark-read for that click.
+	 */
+	const { holdRedirect } = useNotificationLink({
+		urlSlug: urlOrgSlug,
+		activeSlug: activeOrgSlug,
+	});
+
 	const workspaceDecision = decideActiveWorkspace({
-		urlSlug: findUrlOrgSlug(matches),
+		urlSlug: urlOrgSlug,
 		activeSlug: activeOrgSlug,
 		activePending: activeOrganizationPending,
 	});
-	const redirectingWorkspace = workspaceDecision === "redirect";
+	const redirectingWorkspace =
+		workspaceDecision === "redirect" && !holdRedirect;
 	const waitingForWorkspace = workspaceDecision === "wait";
 
 	useEffect(() => {
@@ -152,8 +166,14 @@ function AppLayout() {
 	]);
 
 	// `waitingForWorkspace` keeps the URL organization from flashing on screen
-	// while the active one is still loading.
-	if (missingScope || redirectingWorkspace || waitingForWorkspace) {
+	// while the active one is still loading. `holdRedirect` covers a
+	// notification click that is switching workspace right now.
+	if (
+		missingScope ||
+		redirectingWorkspace ||
+		waitingForWorkspace ||
+		holdRedirect
+	) {
 		return null;
 	}
 
