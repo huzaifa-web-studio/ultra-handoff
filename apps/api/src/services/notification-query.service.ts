@@ -82,8 +82,42 @@ export type NotificationMarkResult = {
 	unread: number;
 };
 
-/** Decode a notification cursor, rejecting anything we did not produce. */
-function decodeCursor(cursor: string): string | null {
+/**
+ * A notification cursor.
+ *
+ * Why it carries the position rather than a row id: a keyset that resolves the
+ * row by id silently returns an empty page when that row was deleted, which
+ * ends the list for the reader. The timestamp text and the id are enough to
+ * resume from the same point without the row existing.
+ *
+ * `createdAt` is read as text from Postgres so microseconds survive. Truncating
+ * to a JavaScript Date would lose them and repeat or skip rows that share a
+ * millisecond.
+ */
+type NotificationCursor = {
+	createdAt: string;
+	id: string;
+};
+
+/** Six fractional digits at most, matching the column. */
+const CURSOR_TIMESTAMP_PATTERN =
+	/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?$/;
+
+/** Notifications use UUID primary keys. */
+const CURSOR_ID_PATTERN =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Decode a notification cursor, rejecting anything we did not produce.
+ *
+ * `Buffer.from(value, "base64url")` never throws for a string, so validation
+ * has to happen after decoding. The cursor is not a security boundary, because
+ * every query is still scoped to the recipient and the organization; a forged
+ * valid cursor only changes where the person starts reading their own list.
+ */
+export function decodeNotificationCursor(
+	cursor: string,
+): NotificationCursor | null {
 	let decoded: string;
 
 	try {
@@ -92,14 +126,44 @@ function decodeCursor(cursor: string): string | null {
 		return null;
 	}
 
-	if (decoded.length === 0 || decoded.length > 128) return null;
+	if (decoded.length === 0 || decoded.length > 256) return null;
 
-	return decoded;
+	let parsed: unknown;
+
+	try {
+		parsed = JSON.parse(decoded);
+	} catch {
+		return null;
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return null;
+	}
+
+	const record = parsed as Record<string, unknown>;
+
+	if (
+		typeof record.t !== "string" ||
+		!CURSOR_TIMESTAMP_PATTERN.test(record.t)
+	) {
+		return null;
+	}
+
+	if (typeof record.i !== "string" || !CURSOR_ID_PATTERN.test(record.i)) {
+		return null;
+	}
+
+	return { createdAt: record.t, id: record.i };
 }
 
-/** Encode one notification id as the next page cursor. */
-function encodeCursor(id: string): string {
-	return Buffer.from(id, "utf8").toString("base64url");
+/** Encode one position as the next page cursor. */
+export function encodeNotificationCursor(
+	createdAt: string,
+	id: string,
+): string {
+	return Buffer.from(JSON.stringify({ t: createdAt, i: id }), "utf8").toString(
+		"base64url",
+	);
 }
 
 /** Normalise the JSON column, which is outside TypeScript once stored. */
@@ -129,35 +193,87 @@ function organizationNameFromData(data: NotificationData): string | null {
 	return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/** Reminder types whose copy depends on the milestone's current due date. */
+const REMINDER_TYPES = ["milestone_due_soon", "milestone_overdue"] as const;
+
 /**
- * The shared WHERE conditions.
+ * The conditions every read shares.
  *
- * `projectVisibility` is the same rule the project list uses, so a
- * notification about a project that was deleted, archived away or left cannot
- * appear while the project itself cannot be opened. Rows with no project, such
- * as an organization role change, skip the check.
+ * Why this is separate from visibility: these three conditions do not need a
+ * join to `comment` or `milestone`, so the unread count can apply them with a
+ * single scan of `notification` plus `project`. The rare row classes then add
+ * their own EXISTS below.
  */
-function notificationScope(tx: TenantTx, tenant: TenantContext) {
+function notificationBaseScope(tx: TenantTx, tenant: TenantContext) {
 	return [
 		eq(notification.organizationId, tenant.organizationId),
 		eq(notification.recipientUserId, tenant.userId),
 		or(isNull(notification.projectId), projectVisibility(tx, tenant)),
-		// A soft deleted comment must not keep an unread mention alive. The row
-		// stays for audit, but every read path hides it.
-		or(isNull(notification.commentId), isNull(comment.deletedAt)),
-		/**
-		 * A reminder is true only for the due date it was sent for. When the
-		 * date moves, the old unread reminder is hidden instead of pointing at
-		 * a date the milestone no longer has. A completed milestone hides an
-		 * unread reminder for the same reason.
-		 */
-		sql`not (
-			${notification.type} in ('milestone_due_soon', 'milestone_overdue')
-			and (
-				(${milestone.dueDate})::text is distinct from (${notification.data} ->> 'dueDate')
-				or (${notification.readAt} is null and ${milestone.status} in ('done', 'cancelled'))
-			)
-		)`,
+	];
+}
+
+/**
+ * A notification whose comment was soft deleted is hidden.
+ *
+ * The `is null` guard is inside the predicate, not only in the caller: Postgres
+ * short-circuits `OR`, so an ordinary notification never runs the EXISTS. That
+ * is what keeps the count and the grouped summary off the `comment` table.
+ */
+function commentVisible() {
+	return sql`(
+		${notification.commentId} is null
+		or not exists (
+			select 1 from ${comment} as visible_comment
+			where visible_comment.id = ${notification.commentId}
+				and visible_comment.deleted_at is not null
+		)
+	)`;
+}
+
+/**
+ * A reminder is true only for the due date it was sent for.
+ *
+ * When the date moves, the old reminder is hidden instead of pointing at a date
+ * the milestone no longer has. A completed milestone hides an unread reminder
+ * for the same reason. The read check is part of the rule because a read row is
+ * history and stays visible after completion.
+ *
+ * The type guard comes first for the same reason as `commentVisible`: the
+ * common row never touches `milestone`.
+ */
+function reminderVisible() {
+	return sql`(
+		${notification.type} not in ('milestone_due_soon', 'milestone_overdue')
+		or exists (
+			select 1 from ${milestone} as current_milestone
+			where current_milestone.id = ${notification.milestoneId}
+				and current_milestone.due_date::text is not distinct from (${notification.data} ->> 'dueDate')
+				and (
+					current_milestone.status not in ('done', 'cancelled')
+					or ${notification.readAt} is not null
+				)
+		)
+	)`;
+}
+
+/**
+ * The shared visibility predicate.
+ *
+ * `projectVisibility` is the same rule the project list uses, so a notification
+ * about a project that was deleted, archived away or left cannot appear while
+ * the project itself cannot be opened. Rows with no project, such as an
+ * organization role change, skip that check.
+ *
+ * Why EXISTS for the rare cases: before this, the count joined `comment` and
+ * `milestone` once per unread row, which showed up as 20,000 sequential scans
+ * at 20,000 unread. The classes that need those tables are now guarded by their
+ * own column, so the common row never touches them.
+ */
+function notificationScope(tx: TenantTx, tenant: TenantContext) {
+	return [
+		...notificationBaseScope(tx, tenant),
+		commentVisible(),
+		reminderVisible(),
 	];
 }
 
@@ -168,6 +284,8 @@ function notificationSelection() {
 		type: notification.type,
 		readAt: notification.readAt,
 		createdAt: notification.createdAt,
+		// The cursor needs the exact stored value, including microseconds.
+		createdAtText: sql<string>`${notification.createdAt}::text`,
 		actorUserId: notification.actorUserId,
 		projectId: notification.projectId,
 		milestoneId: notification.milestoneId,
@@ -188,22 +306,42 @@ function notificationSelection() {
 /**
  * Count unread notifications with the same filters as the list.
  *
- * The joins are required because visibility and reminder staleness depend on
- * the project, milestone and comment rows.
+ * Why the aggregate is split with FILTER: almost every unread row is an
+ * ordinary notification with no comment and no reminder. Counting those with
+ * no join to `comment` or `milestone` keeps the hot path on the unread partial
+ * index. The two rare classes are guarded by their own column, so their EXISTS
+ * is skipped for the rows that cannot be in them. One scan, one number.
  */
 async function countUnread(
 	tx: TenantTx,
 	tenant: TenantContext,
 ): Promise<number> {
+	const reminderTypes = sql.raw(
+		REMINDER_TYPES.map((type) => `'${type}'`).join(", "),
+	);
+
 	const [row] = await tx
-		.select({ count: sql<number>`count(*)`.mapWith(Number) })
+		.select({
+			bulk: sql<number>`count(*) filter (
+				where ${notification.commentId} is null
+					and ${notification.type} not in (${reminderTypes})
+			)`.mapWith(Number),
+			comments: sql<number>`count(*) filter (
+				where ${notification.commentId} is not null
+					and ${commentVisible()}
+			)`.mapWith(Number),
+			reminders: sql<number>`count(*) filter (
+				where ${notification.type} in (${reminderTypes})
+					and ${reminderVisible()}
+			)`.mapWith(Number),
+		})
 		.from(notification)
 		.leftJoin(project, eq(notification.projectId, project.id))
-		.leftJoin(milestone, eq(notification.milestoneId, milestone.id))
-		.leftJoin(comment, eq(notification.commentId, comment.id))
-		.where(and(...notificationScope(tx, tenant), isNull(notification.readAt)));
+		.where(
+			and(...notificationBaseScope(tx, tenant), isNull(notification.readAt)),
+		);
 
-	return row?.count ?? 0;
+	return (row?.bulk ?? 0) + (row?.comments ?? 0) + (row?.reminders ?? 0);
 }
 
 /**
@@ -218,9 +356,9 @@ export async function listNotifications(
 	tenant: TenantContext,
 	query: NotificationListQuery,
 ): Promise<NotificationListResult> {
-	const cursorId = query.cursor ? decodeCursor(query.cursor) : null;
+	const cursor = query.cursor ? decodeNotificationCursor(query.cursor) : null;
 
-	if (query.cursor && !cursorId) {
+	if (query.cursor && !cursor) {
 		throw new APIError("BAD_REQUEST", {
 			message: "That notifications page link is no longer valid.",
 		});
@@ -229,13 +367,8 @@ export async function listNotifications(
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			const cursorClause = cursorId
-				? sql`(${notification.createdAt}, ${notification.id}) < (
-						select cursor_notification.created_at, cursor_notification.id
-						from ${notification} as cursor_notification
-						where cursor_notification.id = ${cursorId}
-							and cursor_notification.recipient_user_id = ${tenant.userId}
-					)`
+			const cursorClause = cursor
+				? sql`(${notification.createdAt}, ${notification.id}) < (${cursor.createdAt}::timestamp, ${cursor.id})`
 				: undefined;
 
 			const rows = await tx
@@ -345,13 +478,14 @@ export async function listNotifications(
 			});
 
 			const unread = await countUnread(tx, tenant);
+			const last = page[page.length - 1];
 
 			return {
 				notifications,
 				unread,
 				nextCursor:
-					hasMore && page.length > 0
-						? encodeCursor(page[page.length - 1]?.id as string)
+					hasMore && last
+						? encodeNotificationCursor(last.createdAtText, last.id)
 						: null,
 			};
 		},
@@ -380,8 +514,6 @@ export async function getNotificationSummary(
 				})
 				.from(notification)
 				.leftJoin(project, eq(notification.projectId, project.id))
-				.leftJoin(milestone, eq(notification.milestoneId, milestone.id))
-				.leftJoin(comment, eq(notification.commentId, comment.id))
 				.where(
 					and(
 						...notificationScope(tx, tenant),
@@ -461,8 +593,6 @@ export async function markAllNotificationsRead(
 				.select({ id: notification.id })
 				.from(notification)
 				.leftJoin(project, eq(notification.projectId, project.id))
-				.leftJoin(milestone, eq(notification.milestoneId, milestone.id))
-				.leftJoin(comment, eq(notification.commentId, comment.id))
 				.where(
 					and(
 						...notificationScope(tx, tenant),

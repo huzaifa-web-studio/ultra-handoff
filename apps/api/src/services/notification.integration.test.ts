@@ -540,8 +540,12 @@ suite("notification system", () => {
 			await clearNotifications();
 
 			const at = new Date("2026-06-02T10:00:00Z");
+			// Real notification ids are UUIDs, and the cursor validates that
+			// shape, so the fixtures use UUIDs too.
+			const pageIds = Array.from({ length: 5 }, () => randomUUID());
+
 			await adminDb.insert(notification).values(
-				["n1", "n2", "n3", "n4", "n5"].map((id) => ({
+				pageIds.map((id) => ({
 					id,
 					organizationId: ids.orgA,
 					recipientUserId: ids.dev,
@@ -571,53 +575,65 @@ suite("notification system", () => {
 
 			expect(seen.length).toBe(5);
 			expect(new Set(seen).size).toBe(5);
+			expect(new Set(seen)).toEqual(new Set(pageIds));
 		});
 
-		test("KNOWN: a cursor whose row was deleted returns an empty page", async () => {
+		test("a cursor whose row was deleted still returns the next page", async () => {
 			await clearNotifications();
 
-			const at = new Date("2026-06-03T10:00:00Z");
+			const relative = randomUUID();
+			const older = randomUUID();
+
 			await adminDb.insert(notification).values([
 				{
-					id: "gone",
+					id: relative,
 					organizationId: ids.orgA,
 					recipientUserId: ids.dev,
 					type: "mention" as const,
 					dedupeKey: "gone-1",
 					projectId: ids.pMain,
-					createdAt: at,
-					updatedAt: at,
+					createdAt: new Date("2026-06-03T10:00:00Z"),
 				},
 				{
-					id: "kept",
+					id: older,
 					organizationId: ids.orgA,
 					recipientUserId: ids.dev,
 					type: "mention" as const,
 					dedupeKey: "gone-2",
 					projectId: ids.pMain,
-					createdAt: at,
-					updatedAt: at,
+					createdAt: new Date("2026-06-03T09:00:00Z"),
 				},
 			]);
 
-			const cursor = Buffer.from("gone", "utf8").toString("base64url");
-			await adminDb.execute(sql`delete from "notification" where id = 'gone'`);
+			const first = await listNotifications(tDev(), {
+				cursor: null,
+				limit: 1,
+				filter: "all",
+			});
 
-			const page = await listNotifications(tDev(), {
-				cursor,
+			expect(first.notifications.map((row) => row.id)).toEqual([relative]);
+			expect(first.nextCursor).not.toBeNull();
+
+			// Delete the row the cursor points at. The position is self
+			// contained, so the next page does not depend on that row existing.
+			await adminDb.execute(
+				sql`delete from "notification" where id = ${relative}`,
+			);
+
+			const second = await listNotifications(tDev(), {
+				cursor: first.nextCursor,
 				limit: 10,
 				filter: "all",
 			});
 
-			expect(page.notifications.length).toBe(0);
-			expect(page.nextCursor).toBeNull();
+			expect(second.notifications.map((row) => row.id)).toEqual([older]);
 		});
 
-		test("KNOWN: garbage cursor is accepted and returns an empty page", async () => {
+		test("a malformed cursor is rejected", async () => {
 			await clearNotifications();
 
 			await adminDb.insert(notification).values({
-				id: "visible-row",
+				id: randomUUID(),
 				organizationId: ids.orgA,
 				recipientUserId: ids.dev,
 				type: "mention" as const,
@@ -625,13 +641,25 @@ suite("notification system", () => {
 				projectId: ids.pMain,
 			});
 
-			const page = await listNotifications(tDev(), {
-				cursor: "not-a-real-cursor",
-				limit: 10,
-				filter: "all",
-			});
+			const encodeRaw = (value: string) =>
+				Buffer.from(value, "utf8").toString("base64url");
 
-			expect(page.notifications.length).toBe(0);
+			const cursors = [
+				"not-a-real-cursor",
+				encodeRaw("plain text"),
+				encodeRaw(JSON.stringify({ t: "not a timestamp", i: randomUUID() })),
+				encodeRaw(
+					JSON.stringify({ t: "2026-06-03 10:00:00", i: "not-a-uuid" }),
+				),
+				encodeRaw(JSON.stringify({ t: "2026-06-03 10:00:00" })),
+				encodeRaw(JSON.stringify([1, 2, 3])),
+			];
+
+			for (const cursor of cursors) {
+				await expect(
+					listNotifications(tDev(), { cursor, limit: 10, filter: "all" }),
+				).rejects.toThrow("page link is no longer valid");
+			}
 		});
 
 		test("unread filter returns only unread rows and the same unread count", async () => {
