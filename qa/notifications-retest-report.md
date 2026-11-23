@@ -11,12 +11,11 @@
 ## 1. Scope of this retest
 
 This pass re-tests every finding through automated tests, type checks, the RLS
-verifier, a production type check and a performance measurement on `app_test`.
+verifier, a production type check, a performance measurement on `app_test`, and
+a browser walkthrough with Chrome DevTools in two workspaces.
 
-The browser walkthrough from section 8 of the plan was **not** re-run in this
-pass. It needs two seeded workspaces, a second signed-in person, Chrome
-DevTools approval and screenshots. Those four cases are listed in section 5 as
-the only outstanding items.
+The browser results are in section 5. Only live Web Push delivery remains
+unverified, because the dev deployment has no VAPID keys.
 
 ---
 
@@ -80,22 +79,55 @@ The plan for the count shows the `comment` and `milestone` subplans as
 
 ---
 
-## 5. Outstanding items
+## 5. Browser retest
 
-These are the only parts of the definition of done that were not executed here.
-Each needs a browser with two real workspaces and a second person.
+Run on 23 Nov 2026 against the live dev stack with Chrome DevTools, signed in as
+a fresh owner account in two workspaces. The fixtures are described in section 6
+of this report.
 
-1. Task 8: deep link from the bell on a fresh profile, a reply link, and a
-   deleted thread.
-2. Task 9: same workspace, other workspace, and a workspace the person is not
-   in, with the switch guard checked.
-3. Task 14: console warning count is 0 on the invite dialog and the project
-   members page.
-4. Task 15: zero list requests in the network panel while clicking three bell
-   rows.
-5. Task 10: a live push for a non-active workspace (needs VAPID keys, which the
-   dev deployment does not have).
+| Case | Expected | Observed |
+|---|---|---|
+| Same-workspace mention from the bell | Focused thread, author label, row read | Thread selected and rendered, label "Retest Member B: Cache row one...", bell 2 to 1 unread |
+| Fresh profile deep link (localStorage cleared) | Same result with no stored tabs | Thread opened, label from the loaded thread |
+| Reply notification | Focuses the root thread | `milestoneTab` carried the root id, not the reply id (API check) |
+| Deleted thread link | Deleted panel, not a blank tab | "This discussion was deleted. The replies remain for context.", tab label "Thread" |
+| Plain `milestoneTab=comments` | Shows the list | Comments list rendered with the root comments |
+| Alert for another workspace | Switch, open, mark read | Active workspace moved from A to B, thread opened, `notification` removed from the URL, row read in B |
+| Unknown workspace | No switch, fall back, no error | Redirected to the active workspace root, no error |
+| Blocked switch | Dialog, no switch, no navigation | "CAN'T SWITCH RIGHT NOW" with the operation reason, stayed in the active workspace |
+| Form field warnings | 0 on the members, invitations and project members pages | 0 on all four surfaces (members, invitations, project members, invite and add dialogs) |
+| Mark-read network | No list refetch from the click | 0 notification list requests after the click marker; the badge cleared immediately |
 
-The automated substitutes for 1 to 4 are in place and green. Item 5 was already
-listed as a coverage gap in the original report because the dev deployment has
-no VAPID keys.
+Evidence is in `qa/evidence/notifications/`: `07-comment-deep-link.png`,
+`08-cross-workspace-alert.png`, `09-invite-dialog.png`,
+`10-project-members.png`, `11-deleted-thread.png`.
+
+Two notes from the browser pass:
+
+1. Task 8 needed one small follow-up: a deleted thread resolved with an empty
+   body, so the generated label read "Author: Attachment". The panel now keeps
+   the "Thread" placeholder when `deletedAt` is set.
+2. The milestone page itself still shows the Chrome form-field warning for its
+   own fields (milestone search, title, status and date selects). Those were not
+   part of F15, which names the invite dialog and the project members page, and
+   they do not block autofill of the forms a notification leads to. Worth a
+   separate pass if the warning on every page matters.
+
+## 6. Fixtures used for the browser pass
+
+Two verified accounts and two workspaces, created through the real auth and
+project routes:
+
+- `Retest Owner A`, owner of `retest-a-brtmwt2gq2z`, member of B
+- `Retest Member B`, owner of `retest-b-brtmwt2gq2z`, member of A
+
+The browser session is left signed in as `Retest Owner A`. To remove the
+fixtures, delete those two users; the organizations, projects, comments and
+notifications cascade.
+
+## 7. Outstanding items
+
+Only the live push delivery check remains. It needs VAPID keys, which the dev
+deployment does not have, and it was already listed as a coverage gap in the
+original report.
+
