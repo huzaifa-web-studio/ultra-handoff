@@ -5,6 +5,7 @@
 **Commit under test:** `560673d` (added notifications system)
 **Feature scope:** notification bell and page, notification writers, unread state, comment read cursors, milestone reminders, Web Push, personal realtime stream, timezone handling.
 **Fix plan:** `qa/notifications-fix-plan.md` (all findings, preferred solutions, batches).
+**Retest:** `qa/notifications-retest-report.md` (fix status, automated results, outstanding browser items).
 
 ---
 
