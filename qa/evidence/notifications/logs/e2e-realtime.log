@@ -1,0 +1,14 @@
+--- realtime run mwswzpbd ---
+PASS  a personal socket opens and announces the user scope :: {"v":1,"id":"5cd9919d-4ed7-4475-91b1-83e5f940beab","type":"system.ready","at":"2026-11-23T06:58:33.296Z","scope":"user","organizationId":"CJTQozBLKDk1gRs5vR8b8ZViebnYJSwR","userId":"69I1S6py06b0t5HNoFJ6XLENiqgrtYAp","data":{"connectionId":"a1741cc2-0993-4f8f-b09c-5a92d01082e5","scope":"user","pingIntervalMs":25000}}
+PASS  a comment over HTTP succeeds :: 200
+PASS  the mentioned member receives notification.created on the personal socket :: frames=["system.ready","notification.created"]
+PASS  the realtime frame is scoped to the recipient and the workspace :: {"scope":"user","userId":"69I1S6py06b0t5HNoFJ6XLENiqgrtYAp","organizationId":"CJTQozBLKDk1gRs5vR8b8ZViebnYJSwR"}
+PASS  the frame already carries the rendered copy and href :: {"notificationId":"8b878f2a-ea62-4320-98b5-7d8dc9623f8a","organizationId":"CJTQozBLKDk1gRs5vR8b8ZViebnYJSwR","organizationSlug":"qa-e2e-mwswzpbd","recipientUserId":"69I1S6py06b0t5HNoFJ6XLENiqgrtYAp","
+PASS  the actor's own socket does not receive the recipient's notification :: frames=["system.ready"]
+PASS  marking read notifies the same person's other tabs :: {"unread":1}
+PASS  a project socket never receives personal notification frames :: frames=["system.ready","comment.created"]
+PASS  an unauthenticated socket is closed with 4401 :: 4401
+PASS  a hostile origin is closed with 4403 :: 4403
+PASS  a socket for an unknown workspace is refused :: 4403
+
+--- realtime summary: 11/11 passed ---

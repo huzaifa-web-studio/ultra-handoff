@@ -1,0 +1,54 @@
+--- E2E run mwsx8l4k ---
+PASS  owner sign up and email verification produce a session :: HJnMbvBzpTQQYYHsHlkwIMMhmbJPRRql
+PASS  member sign up and email verification produce a session :: QyNrvmw56IIdeV48zTiErXDgnKxtZkVk
+PASS  owner creates a workspace :: 200 {"name":"E2E Workspace","slug":"qa-e2e-mwsx8l4k","logo":null,"createdAt":"2026-11-23T07:05:27.026Z","id":"M1ZR6RGi4EtSQe
+PASS  owner creates a project :: 200 {"organizationId":"M1ZR6RGi4EtSQe8y5yWCGuAJ0E7qQbXS","project":{"id":"4f472eb7-113f-4b25-b870-f8d9d0051d85","name":"E2E Project","slug":"e2e-project-mwsx8l4k","
+PASS  owner creates a milestone :: 200 {"projectId":"4f472eb7-113f-4b25-b870-f8d9d0051d85","milestone":{"id":"959d833b-4fd2-4ed8-97ee-323bee4a8efc","projectId":"4f472eb7-113f-4b25-b870-f8d9d0051d85",
+PASS  owner invites the second person :: 200 {"organizationId":"M1ZR6RGi4EtSQe8y5yWCGuAJ0E7qQbXS","email":"qa-e2e-mwsx8l4k-membere2e@example.test","role":"member","status":"pending","expiresAt":"2026-11-30
+PASS  the invitation email carries an invitation id :: kA89HkFo0wGL6IVOhadtAXLRn8cD8vf4
+PASS  member accepts the invitation :: 200 {"invitation":{"organizationId":"M1ZR6RGi4EtSQe8y5yWCGuAJ0E7qQbXS","email":"qa-e2e-mwsx8l4k-membere2e@example.test","role":"member","status":"accepted","expires
+PASS  a workspace member with no project access gets an empty bell :: 200 {"notifications":[],"unread":0,"nextCursor":null}
+PASS  owner adds the member to the project :: 200 {"userId":"QyNrvmw56IIdeV48zTiErXDgnKxtZkVk","role":"member"}
+PASS  the new project member gets a project_member_added row :: 200 ["project_member_added"]
+PASS  owner posts a comment that mentions the member :: 200 {"comment":{"id":"b1210ef6-ff57-4bbe-a802-fb3dc0ce0259","parentId":null,"kind":"comment","event":null,"body":[{"type":"p","children":[{"text":"Hey "},{"key":"user:QyNrvmw56IIdeV48zTiErXDgnKxtZkVk","ty
+PASS  the mentioned member sees a mention notification :: 200
+PASS  the notification body carries the actor and the milestone :: Owner E2E mentioned you in a comment on E2E Milestone. "Hey @Member E2E please review"
+PASS  the notification deep links into the milestone comment tab :: /qa-e2e-mwsx8l4k/projects/e2e-project-mwsx8l4k/milestones?milestone=959d833b-4fd2-4ed8-97ee-323bee4a8efc&milestoneTab=comment%3Ab1210ef6-ff57-4bbe-a802-fb3dc0ce0259
+PASS  the actor does not notify themselves :: ["member_joined"]
+PASS  the summary reports the unread count and per project split :: 200 {"unread":2,"byProject":[{"projectId":"4f472eb7-113f-4b25-b870-f8d9d0051d85","unread":2}]}
+PASS  marking one notification read updates exactly one row :: 200 {"updated":1,"unread":1}
+PASS  marking it again is idempotent :: {"updated":0,"unread":1}
+PASS  a different person cannot mark another person's notification read :: 200 {"updated":0,"unread":1}
+PASS  read-all clears the rest :: 200 {"updated":1,"unread":0}
+PASS  an invalid read-all cutoff is rejected :: 400 {"message":"That read cutoff is not a valid date."}
+PASS  a huge limit is clamped rather than rejected :: 200
+PASS  an unknown filter is rejected by validation :: 422 {
+  "type": "validation",
+  "on": "query",
+  "property": "/filter",
+  "message": "Expected kind 'UnionEnum'",
+  "summary
+PASS  an over long cursor is rejected by validation :: 422
+PASS  an unauthenticated read is refused :: 401 Unauthorized
+PASS  an unknown workspace answers without leaking :: 404 Not Found
+PASS  push config reports whether this deployment can push :: 200 {"enabled":false,"publicKey":""}
+PASS  a non https push endpoint is rejected :: 400
+PASS  push config requires a session :: 401
+PASS  a valid timezone is stored :: 200 {"status":true}
+PASS  an invalid timezone is rejected :: 400 {"message":"That timezone is not valid."}
+PASS  the member can read the discussion :: 200
+PASS  the member marks the thread read :: 200 {"unreadTotal":0,"threads":[{"rootCommentId":"b1210ef6-ff57-4bbe-a802-fb3dc0ce0259","unread":{"count":0,"firstUnreadCommentId":null}}]}
+PASS  the project unread summary answers :: 200 {"total":0,"milestones":[]}
+PASS  an empty read request is rejected by validation :: 422
+PASS  the member can create their own separate workspace :: 200 {"name":"E2E Other","slug":"qa-e2e-other-mwsx8l4k","logo":null,"createdAt":"2026-11-23T07:05:27.901Z","id":"MLZhHAfXdWt0
+PASS  notifications never cross a workspace boundary :: 200 rows=0
+PASS  a non member cannot read another workspace's bell :: 404
+PASS  limit=0 is clamped to a single row :: 200
+PASS  a negative limit is clamped :: 200
+PASS  a junk limit falls back to the default :: 200
+PASS  read-all with an empty object defaults the cutoff to now :: 200 {"updated":0,"unread":0}
+PASS  a cursor of only invalid base64 characters is rejected :: 400 {"message":"That notifications page link is no longer valid."}
+PASS  KNOWN: a valid base64 cursor for a missing row returns an empty page :: 200 {"notifications":[],"unread":0,"nextCursor":null}
+
+--- E2E summary: 45/45 passed ---
+{"orgSlug":"qa-e2e-mwsx8l4k","projectId":"4f472eb7-113f-4b25-b870-f8d9d0051d85","projectSlug":"e2e-project-mwsx8l4k","milestoneId":"959d833b-4fd2-4ed8-97ee-323bee4a8efc","memberId":"QyNrvmw56IIdeV48zTiErXDgnKxtZkVk","ownerId":"HJnMbvBzpTQQYYHsHlkwIMMhmbJPRRql"}

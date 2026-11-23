@@ -1,0 +1,9 @@
+bun test v1.4.5 (a7733435c)
+
+../../../../../../../../tmp/opencode/notif-qa/notifications.integration.test.ts:
+[redis] rate-limit check failed: Stream isn't writeable and enableOfflineQueue options is false
+
+ 37 pass
+ 0 fail
+ 114 expect() calls
+Ran 37 tests across 1 file. [2.75s]

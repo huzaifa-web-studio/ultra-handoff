@@ -1,0 +1,17 @@
+seeded 3000 notifications in 658 ms
+bell list (limit 20, all): 108.4 ms
+bell list (limit 20, unread): 116.6 ms
+summary: 65.8 ms
+five pages (limit 50): 713.3 ms
+mark one read: 61.7 ms
+mark all read: 392.3 ms
+summary after read-all: 25.1 ms
+{
+  "unread": 2700,
+  "perProject": 18,
+  "unreadListRows": 20,
+  "pagesRows": 250,
+  "markedOne": 0,
+  "markedAll": 2700,
+  "unreadAfter": 0
+}
