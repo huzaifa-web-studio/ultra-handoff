@@ -37,7 +37,7 @@ import {
 	canModifyComment,
 } from "../auth/comment-permissions";
 import { assertProjectActive } from "../auth/project-permissions";
-import { comment, notification } from "../db/schema";
+import { comment } from "../db/schema";
 import { type TenantTx, withTenant } from "../db/tenant";
 import { findChecklistItem } from "../lib/checklist";
 import { collectMentionKeys } from "../lib/mentions";
@@ -60,6 +60,8 @@ import { assertCommentMentions } from "./mention.service";
 import { requireMilestoneAccess } from "./milestone.service";
 import {
 	createNotifications,
+	deleteCommentNotifications,
+	deleteNotificationsForRecipient,
 	loadMilestoneAssigneeUserIds,
 	loadProjectMemberUserIds,
 	type NotificationDelivery,
@@ -868,22 +870,15 @@ export async function updateMilestoneComment(
 					),
 				);
 
-			// A mention removed by an edit should not keep an unread bell. The
-			// actor delete policy allows the author to clean up the row their
-			// own comment caused without being able to read it.
-			if (removedMentions.length > 0) {
-				await tx.delete(notification).where(
-					and(
-						eq(notification.organizationId, tenant.organizationId),
-						eq(notification.type, "mention"),
-						inArray(
-							notification.dedupeKey,
-							removedMentions.map(
-								(userId) => `mention:comment:${commentId}:${userId}`,
-							),
-						),
-					),
-				);
+			// A mention removed by an edit must not keep an unread bell. The
+			// recipients are known, so the delete is scoped to each of them,
+			// exactly like the insert below. The actor cannot read the row and
+			// does not need to: only the recipient can delete it, and the
+			// transaction is temporarily scoped to them for that statement.
+			for (const userId of removedMentions) {
+				await deleteNotificationsForRecipient(tx, tenant, userId, [
+					`mention:comment:${commentId}:${userId}`,
+				]);
 			}
 
 			const updated = await loadCommentRecord(
@@ -1150,16 +1145,10 @@ export async function deleteMilestoneComment(
 			}
 
 			// The comment is gone, so its mention and reply notifications must
-			// not keep an unread badge alive. The actor delete policy allows the
-			// author to remove rows their own comment caused.
-			await tx
-				.delete(notification)
-				.where(
-					and(
-						eq(notification.organizationId, tenant.organizationId),
-						eq(notification.commentId, commentId),
-					),
-				);
+			// not keep an unread badge alive. The rows belong to many
+			// recipients, so the cleanup runs through the definer function
+			// inside the current workspace.
+			await deleteCommentNotifications(tx, commentId);
 
 			const people = await loadPeople([deleted]);
 			const baselineAt = await loadUnreadBaseline(tx, tenant, projectId);

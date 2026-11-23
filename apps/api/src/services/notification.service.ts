@@ -22,7 +22,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { milestoneAssignee, notification, projectMember } from "../db/schema";
 import type { TenantTx } from "../db/tenant";
 import type {
@@ -111,8 +111,11 @@ export async function createNotifications(
 ): Promise<NotificationDelivery[]> {
 	const seen = new Set<string>();
 	const accepted: NotificationCandidate[] = [];
+	let truncated = 0;
 
-	for (const candidate of candidates) {
+	for (let index = 0; index < candidates.length; index += 1) {
+		const candidate = candidates[index] as NotificationCandidate;
+
 		if (!candidate.recipientUserId) continue;
 		if (
 			candidate.actorUserId &&
@@ -128,7 +131,23 @@ export async function createNotifications(
 		seen.add(key);
 		accepted.push(candidate);
 
-		if (accepted.length >= MAX_CANDIDATES) break;
+		if (accepted.length >= MAX_CANDIDATES) {
+			truncated = candidates.length - index - 1;
+			break;
+		}
+	}
+
+	/**
+	 * The cap is a safety net for a malformed call, not normal behaviour. The
+	 * organization seat limit keeps a real fan-out below it, so a truncated
+	 * list means a caller built candidates it should not have. Logging the
+	 * tenant and both counts makes the silent loss visible without changing the
+	 * behaviour that protects the transaction.
+	 */
+	if (truncated > 0) {
+		console.error(
+			`[notifications] fan-out truncated organization=${tenant.organizationId} accepted=${accepted.length} dropped=${truncated}`,
+		);
 	}
 
 	if (accepted.length === 0) return [];
@@ -268,6 +287,87 @@ export async function createNotifications(
 	}
 
 	return deliveries;
+}
+
+/**
+ * Delete rows the actor caused for another person.
+ *
+ * Why recipient scope: the DELETE policy reads the row first, and only the
+ * recipient can see it. The actor caused the row, so the recipient is known and
+ * the transaction can be scoped to them for this one statement, exactly like
+ * the insert above. The setting is restored afterwards so the rest of the
+ * business transaction keeps running as the actor.
+ *
+ * `onlyUnread` keeps read history intact: a reminder that was already read is
+ * allowed to stay when a newer phase replaces it.
+ */
+export async function deleteNotificationsForRecipient(
+	tx: TenantTx,
+	tenant: NotificationTenant,
+	recipientUserId: string,
+	dedupeKeys: string[],
+	options?: { onlyUnread?: boolean },
+): Promise<number> {
+	if (dedupeKeys.length === 0) return 0;
+
+	const [scopeRow] = await tx.execute<{ usr: string | null }>(
+		sql`select current_setting('app.current_user_id', true) as usr`,
+	);
+	const originalUser = scopeRow?.usr ?? "";
+	let deleted = 0;
+
+	try {
+		await tx.execute(
+			sql`select set_config('app.current_user_id', ${recipientUserId}, true)`,
+		);
+
+		const rows = await tx
+			.delete(notification)
+			.where(
+				and(
+					eq(notification.organizationId, tenant.organizationId),
+					eq(notification.recipientUserId, recipientUserId),
+					inArray(notification.dedupeKey, dedupeKeys),
+					...(options?.onlyUnread ? [isNull(notification.readAt)] : []),
+				),
+			)
+			.returning({ id: notification.id });
+
+		deleted = rows.length;
+	} finally {
+		// Same reasoning as the insert restore: a failed delete must not mask
+		// the original error, but the transaction must still continue as the
+		// actor.
+		if (originalUser) {
+			await tx
+				.execute(
+					sql`select set_config('app.current_user_id', ${originalUser}, true)`,
+				)
+				.catch(() => undefined);
+		}
+	}
+
+	return deleted;
+}
+
+/**
+ * Delete every notification that points at one comment.
+ *
+ * Why a database function: the author deleting their comment has to clean up
+ * rows that belong to many recipients, and the author can read none of them
+ * under the recipient scoped SELECT policy. The function runs as its owner and
+ * scopes itself to the current workspace, so a caller cannot reach another
+ * tenant. The function itself lives in scripts/bootstrap-db.ts.
+ */
+export async function deleteCommentNotifications(
+	tx: TenantTx,
+	commentId: string,
+): Promise<number> {
+	const rows = await tx.execute<{ count: number }>(
+		sql`select public.delete_comment_notifications(${commentId}) as count`,
+	);
+
+	return rows[0]?.count ?? 0;
 }
 
 /** Everyone assigned to one milestone. */

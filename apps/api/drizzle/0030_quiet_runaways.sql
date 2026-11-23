@@ -1,0 +1,1 @@
+DROP POLICY "notification_actor_delete" ON "notification" CASCADE;

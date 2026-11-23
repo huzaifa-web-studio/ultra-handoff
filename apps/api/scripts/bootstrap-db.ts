@@ -118,6 +118,16 @@ async function main(): Promise<void> {
 			`revoke all on all sequences in schema public from ${quotedRole}`,
 		);
 
+		/**
+		 * Which tables exist right now. A fresh database runs bootstrap before
+		 * migrations, so both the grants below and the cleanup function have to
+		 * tolerate a table that is not there yet.
+		 */
+		const existingRows = await admin<{ tablename: string }[]>`
+			select tablename from pg_tables where schemaname = 'public'
+		`;
+		const existing = new Set(existingRows.map((row) => row.tablename));
+
 		if (TENANT_TABLES.length > 0) {
 			/**
 			 * A fresh database runs bootstrap before migrations, so a listed
@@ -125,10 +135,6 @@ async function main(): Promise<void> {
 			 * job. Grant only what exists now; db:setup runs bootstrap once
 			 * more after migrate, which picks up the new tables.
 			 */
-			const existingRows = await admin<{ tablename: string }[]>`
-				select tablename from pg_tables where schemaname = 'public'
-			`;
-			const existing = new Set(existingRows.map((row) => row.tablename));
 			const grantable = TENANT_TABLES.filter((name) => existing.has(name));
 			const pending = TENANT_TABLES.filter((name) => !existing.has(name));
 
@@ -157,6 +163,53 @@ async function main(): Promise<void> {
 		} else {
 			process.stdout.write(
 				"[bootstrap] no business tables listed, tenant role has no table access\n",
+			);
+		}
+
+		/**
+		 * Cross recipient cleanup for a deleted comment.
+		 *
+		 * Why a definer function: the author of a comment deleting it must clear
+		 * notifications that belong to many recipients, and the recipient only
+		 * SELECT policy hides those rows from the author. A normal DELETE would
+		 * match zero rows. This function runs as its owner, takes no
+		 * organization parameter and reads the transaction setting instead, so
+		 * it cannot be pointed at another workspace.
+		 *
+		 * Guarded on the table because a fresh database runs bootstrap before
+		 * migrations; db:setup runs it again afterwards and creates it then.
+		 */
+		if (existing.has("notification")) {
+			await admin.unsafe(`
+				create or replace function public.delete_comment_notifications(p_comment_id text)
+				returns integer
+				language plpgsql
+				security definer
+				set search_path = public, pg_temp
+				as $$
+				declare
+					deleted integer;
+				begin
+					delete from public.notification
+					where comment_id = p_comment_id
+						and organization_id = current_setting('app.current_org_id', true);
+					get diagnostics deleted = row_count;
+					return deleted;
+				end;
+				$$
+			`);
+			await admin.unsafe(
+				`revoke all on function public.delete_comment_notifications(text) from public`,
+			);
+			await admin.unsafe(
+				`grant execute on function public.delete_comment_notifications(text) to ${quotedRole}`,
+			);
+			process.stdout.write(
+				"[bootstrap] delete_comment_notifications ready\n",
+			);
+		} else {
+			process.stdout.write(
+				"[bootstrap] waiting for migrations to create notification before the cleanup function\n",
 			);
 		}
 

@@ -136,6 +136,14 @@ type NotificationColumns = {
  *     from project membership, so it cannot invent a recipient from request
  *     input.
  *
+ * A cross recipient cleanup cannot be expressed here. Postgres requires the row
+ * to be visible under the SELECT policy before a DELETE can remove it, so an
+ * actor scoped delete policy never matches a row the actor cannot read. That
+ * cleanup therefore runs either through `delete_comment_notifications`, a
+ * definer function, or through `deleteNotificationsForRecipient`, which scopes
+ * the transaction to the recipient for the one statement. Do not widen SELECT
+ * to make a delete work.
+ *
  * Postgres ORs permissive policies for the same command, so there is exactly
  * one policy per command here. Adding a broader `tenantIsolation` on the same
  * table would silently widen the SELECT rule.
@@ -171,19 +179,6 @@ export function notificationPolicies({
 			for: "delete",
 			to: appRole,
 			using: selfScope,
-		}),
-		/**
-		 * A person may delete a notification their own action created.
-		 *
-		 * Used when an edit removes a mention or a comment is deleted. The
-		 * author cannot read the row, only remove it, which is exactly the
-		 * cleanup permission needed and nothing more.
-		 */
-		pgPolicy("notification_actor_delete", {
-			as: "permissive",
-			for: "delete",
-			to: appRole,
-			using: sql`${organizationColumn} = current_setting('app.current_org_id', true) and actor_user_id = current_setting('app.current_user_id', true)`,
 		}),
 	];
 }
