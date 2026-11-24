@@ -12,7 +12,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	decodeNotificationCursor,
 	encodeNotificationCursor,
-} from "./notification-query.service";
+} from "./notification-query";
 
 const id = "3f1a2b3c-0000-4000-8000-000000000001";
 

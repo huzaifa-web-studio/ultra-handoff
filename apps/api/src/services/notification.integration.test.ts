@@ -41,7 +41,7 @@ import {
 	listNotifications,
 	markAllNotificationsRead,
 	markNotificationRead,
-} from "./notification-query.service";
+} from "./notification-query";
 import { runReminderSweepForOrganization } from "./reminder.service";
 
 const enabled =

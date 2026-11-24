@@ -24,7 +24,7 @@ import {
 	markAllNotificationsRead,
 	markNotificationRead,
 	type NotificationListQuery,
-} from "../services/notification-query.service";
+} from "../services/notification-query";
 
 /** Page size floor and ceiling. */
 const NOTIFICATION_PAGE_DEFAULT = 20;
