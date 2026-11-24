@@ -34,7 +34,7 @@ import {
 	getProjectUnreadSummary,
 	markCommentsRead,
 } from "./comment-read.service";
-import { updateMilestoneScopeEntry } from "./milestone-scope.service";
+import { updateMilestoneScopeEntry } from "./milestone/scope";
 import { createNotifications } from "./notification.service";
 import {
 	getNotificationSummary,

@@ -34,7 +34,7 @@ import {
 import {
 	createChangeScopeEntry,
 	type MilestoneScopeEntrySummary,
-} from "../milestone-scope.service";
+} from "../milestone/scope";
 import {
 	createNotifications,
 	loadMilestoneAssigneeUserIds,

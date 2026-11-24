@@ -16,8 +16,8 @@ import type { MilestoneStatus } from "../../auth/milestone-permissions";
 import type { comment, milestone } from "../../db/schema";
 import type { MilestoneEventDraft } from "../../lib/milestone-events";
 import type { MilestoneChangedField } from "../../realtime/events";
+import type { MilestoneScopeEntrySummary } from "../milestone/scope";
 import type { MilestonePhaseSummary } from "../milestone-phase.service";
-import type { MilestoneScopeEntrySummary } from "../milestone-scope.service";
 import type { NotificationDelivery } from "../notification.service";
 
 /** One person assigned to a milestone. */

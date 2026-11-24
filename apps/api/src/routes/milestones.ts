@@ -52,7 +52,7 @@ import {
 import {
 	getMilestoneScopeEntry,
 	updateMilestoneScopeEntry,
-} from "../services/milestone-scope.service";
+} from "../services/milestone/scope";
 import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
 
 /** Every milestone route lives under one project. */

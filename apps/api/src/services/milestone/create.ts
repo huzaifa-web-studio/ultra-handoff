@@ -33,8 +33,8 @@ import { sanitizeRichText } from "../../lib/rich-text";
 import type { TenantContext } from "../../middleware/tenant";
 import { queueDocumentPreviews } from "../link-preview.service";
 import { assertCommentMentions } from "../mention.service";
+import { createPhaseRoundEntry } from "../milestone/scope";
 import { openStatusPeriod } from "../milestone-phase.service";
-import { createPhaseRoundEntry } from "../milestone-scope.service";
 import {
 	createNotifications,
 	type NotificationCandidate,

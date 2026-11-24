@@ -39,11 +39,11 @@ import type { TenantContext } from "../../middleware/tenant";
 import type { MilestoneChangedField } from "../../realtime/events";
 import { queueDocumentPreviews } from "../link-preview.service";
 import { assertCommentMentions } from "../mention.service";
+import { createPhaseRoundEntry } from "../milestone/scope";
 import {
 	closeOpenStatusPeriod,
 	openStatusPeriod,
 } from "../milestone-phase.service";
-import { createPhaseRoundEntry } from "../milestone-scope.service";
 import {
 	createNotifications,
 	loadMilestoneAssigneeUserIds,

@@ -11,7 +11,7 @@
 import type { ChangeRequestStatus } from "../../auth/change-request-permissions";
 import type { changeRequest } from "../../db/schema";
 import type { MilestoneDetail, MilestoneTimelineComment } from "../milestone";
-import type { MilestoneScopeEntrySummary } from "../milestone-scope.service";
+import type { MilestoneScopeEntrySummary } from "../milestone/scope";
 import type { NotificationDelivery } from "../notification.service";
 
 export type ChangeRequestRecord = typeof changeRequest.$inferSelect;

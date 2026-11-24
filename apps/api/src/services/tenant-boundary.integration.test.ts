@@ -52,7 +52,7 @@ import {
 	unlockMilestone,
 	updateMilestone,
 } from "./milestone";
-import { updateMilestoneScopeEntry } from "./milestone-scope.service";
+import { updateMilestoneScopeEntry } from "./milestone/scope";
 import {
 	addProjectMember,
 	bulkAddProjectMembers,
