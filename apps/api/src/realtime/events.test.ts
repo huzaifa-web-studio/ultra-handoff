@@ -10,7 +10,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { ChangeRequestRow } from "../services/change-request.service";
 import type { CommentRow } from "../services/comment.service";
-import type { MilestoneSummary } from "../services/milestone.service";
+import type { MilestoneSummary } from "../services/milestone";
 import {
 	toRealtimeChangeRequest,
 	toRealtimeComment,

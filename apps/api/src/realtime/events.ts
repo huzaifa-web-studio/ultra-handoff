@@ -17,7 +17,7 @@
 
 import type { ChangeRequestRow } from "../services/change-request.service";
 import type { CommentRow } from "../services/comment.service";
-import type { MilestoneSummary } from "../services/milestone.service";
+import type { MilestoneSummary } from "../services/milestone";
 import type { NotificationDelivery } from "../services/notification.service";
 
 /** A comment as it travels over the stream, without viewer capabilities. */

@@ -10,7 +10,7 @@
  * server timezone change. Durations are computed here, in seconds, so every
  * client shows the same number regardless of its own clock.
  *
- * Used by: services/milestone.service.ts and routes/milestones.ts.
+ * Used by: services/milestone/ and routes/milestones.ts.
  */
 
 import { randomUUID } from "node:crypto";

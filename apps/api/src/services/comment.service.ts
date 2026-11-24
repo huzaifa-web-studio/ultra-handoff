@@ -10,7 +10,7 @@
  * reuses this file and supplies its own access check instead of copying the
  * thread logic.
  *
- * Shape follows `milestone.service.ts` on purpose:
+ * Shape follows `services/milestone/` on purpose:
  *   - every query runs through `withTenant`, so RLS confines it to one
  *     organization
  *   - project and milestone visibility is delegated to `requireMilestoneAccess`
@@ -57,7 +57,7 @@ import {
 	threadUnreadState,
 } from "./comment-read.service";
 import { assertCommentMentions } from "./mention.service";
-import { requireMilestoneAccess } from "./milestone.service";
+import { requireMilestoneAccess } from "./milestone";
 import {
 	createNotifications,
 	deleteCommentNotifications,

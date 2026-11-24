@@ -16,7 +16,7 @@
  * Reads return metadata only. Rich text bodies are fetched one at a time, so a
  * long lived milestone cannot make the detail response grow with every round.
  *
- * Used by: services/milestone.service.ts, services/change-request.service.ts
+ * Used by: services/milestone/, services/change-request.service.ts
  * and routes/milestones.ts.
  */
 

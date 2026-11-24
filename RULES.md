@@ -264,6 +264,40 @@ This applies to tables, detail panes, list rows, badges, hover titles, date pick
 - ❌ `Nov 3, 2026`
 - ❌ `11/3/2026`
 
+---
+
+## 25. File Size and Folder Modules
+
+**No source file grows without a boundary.** A file that keeps growing is hard to review, hard to search and easy to break.
+
+- 500 lines is the target ceiling for every TypeScript or TSX source file.
+- 1000 lines is the absolute maximum. A file at that size must be split before any other change to it.
+- When a file passes roughly 400 lines and is still growing, split it then.
+
+**Folder shape**
+
+- A module that outgrows the limit becomes a folder: `services/milestone/index.ts` plus one file per concern (`types.ts`, `access.ts`, `list.ts`, `update.ts`).
+- `index.ts` is the only public entry point and re-exports explicitly. Callers import `../services/milestone`, never an internal file.
+- Files inside the folder import their siblings directly, never through `index.ts`, so the barrel cannot create an import cycle.
+- Use kebab-case file names. Drop the `.service.ts` suffix inside the folder because the folder already says it is a service.
+
+**A split is mechanical**
+
+- No signature changes, no renamed exports, no behavior changes, no new validation, same SQL, same error messages, same ordering.
+- Every name that was exported before is still exported from `index.ts`.
+- The split lands as one `refactor:` commit, separate from any behavior change.
+- Run typecheck, Biome and the affected tests after the split.
+
+**Exempt**
+
+- `apps/api/src/db/schema.ts` stays a single file. It is the one canonical data model.
+- Vendored shadcn components in `packages/ui/src/components/ui/` stay as installed.
+- Generated files and migrations.
+
+Test files follow the same limit. An integration suite over 1000 lines is split by scenario, with shared fixtures in a helper file.
+
+Example: `services/milestone/` was split from a 2,195 line `milestone.service.ts` into 13 files, none over 500 lines, with the public surface unchanged.
+
 ## Enforcement
 
 These rules are enforced by:

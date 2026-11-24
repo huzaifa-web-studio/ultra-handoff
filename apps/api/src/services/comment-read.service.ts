@@ -17,7 +17,7 @@
  * open the app to a backlog they were never part of. The effective start is the
  * later of the organization membership and the project membership.
  *
- * Used by: services/comment.service.ts, services/milestone.service.ts and
+ * Used by: services/comment.service.ts, services/milestone/ and
  * src/routes/comments.ts.
  */
 
@@ -35,7 +35,7 @@ import {
 import { type TenantTx, withTenant } from "../db/tenant";
 import { COMMENT_NOTIFICATION_TYPES } from "../lib/notification-types";
 import type { TenantContext } from "../middleware/tenant";
-import { requireMilestoneAccess } from "./milestone.service";
+import { requireMilestoneAccess } from "./milestone";
 import { loadProjectAccess } from "./project.service";
 
 /** The unread state of one thread. */

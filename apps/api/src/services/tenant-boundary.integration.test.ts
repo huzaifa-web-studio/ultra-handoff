@@ -51,7 +51,7 @@ import {
 	toggleMilestoneChecklist,
 	unlockMilestone,
 	updateMilestone,
-} from "./milestone.service";
+} from "./milestone";
 import { updateMilestoneScopeEntry } from "./milestone-scope.service";
 import {
 	addProjectMember,

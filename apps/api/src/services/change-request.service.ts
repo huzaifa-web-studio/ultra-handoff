@@ -6,7 +6,7 @@
  * the decision does to the timeline must be identical everywhere. They live
  * here.
  *
- * Shape follows `milestone.service.ts`:
+ * Shape follows `services/milestone/`:
  *   - every query runs through `withTenant`, so RLS confines it to one workspace
  *   - milestone and project visibility is delegated to `requireMilestoneAccess`
  *   - Better Auth tables are read through `loadUserMap`, never joined inside a
@@ -51,7 +51,7 @@ import {
 	recordMilestoneEvents,
 	requireMilestoneAccess,
 	toMilestoneTimeline,
-} from "./milestone.service";
+} from "./milestone";
 import {
 	createChangeScopeEntry,
 	type MilestoneScopeEntrySummary,

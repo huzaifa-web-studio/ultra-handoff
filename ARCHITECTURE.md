@@ -49,7 +49,7 @@ ultra-handoff/
 ├── compose.yaml                # Production Docker stack (project: ultra)
 ├── compose.dev.yaml            # Development Docker stack with watch (project: ultra-dev)
 ├── opencode.json               # MCP server config + permissions
-├── RULES.md                    # All coding rules (21 rules)
+├── RULES.md                    # All coding rules (25 rules)
 ├── PRODUCT.md                  # Product overview and vision
 ├── AGENTS.md                   # Architecture, tech stack, conventions
 └── README.md                   # Project overview and quick start

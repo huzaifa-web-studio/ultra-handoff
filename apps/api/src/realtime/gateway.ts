@@ -25,7 +25,7 @@ import { Elysia, t } from "elysia";
 import { withTenant } from "../db/tenant";
 import { realtimeEnv, serverEnv } from "../lib/env";
 import { resolveTenantScope, type TenantContext } from "../middleware/tenant";
-import { milestoneExistsInProject } from "../services/milestone.service";
+import { milestoneExistsInProject } from "../services/milestone";
 import { loadProjectAccess } from "../services/project.service";
 import {
 	createRealtimeEnvelope,

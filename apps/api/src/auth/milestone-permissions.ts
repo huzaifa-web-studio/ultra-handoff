@@ -9,7 +9,7 @@
  * The browser copy in `apps/web/src/features/milestones/schema.ts` is cosmetic.
  * Every write is validated here, on the server, before it reaches Postgres.
  *
- * Used by: src/services/milestone.service.ts and src/routes/milestones.ts.
+ * Used by: src/services/milestone/ and src/routes/milestones.ts.
  */
 
 import { APIError } from "better-auth/api";

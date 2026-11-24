@@ -26,7 +26,7 @@
 
 # Working Instructions (OpenCode Agent)
 
-You are working on the **Handoff** monorepo. Follow these routing rules for every task. These rules are enforced by `RULES.md` (21 rules) — read it first.
+You are working on the **Handoff** monorepo. Follow these routing rules for every task. These rules are enforced by `RULES.md` (25 rules) — read it first.
 
 ## Skill / Tool Routing
 
@@ -115,7 +115,7 @@ ultra-handoff/
 ├── compose.yaml      — production Docker stack (project: ultra)
 ├── compose.dev.yaml  — development Docker stack with watch (project: ultra-dev)
 ├── opencode.json     — MCP server config + permissions
-├── RULES.md          — all coding rules (21 rules)
+├── RULES.md          — all coding rules (25 rules)
 └── PRODUCT.md        — product overview and vision
 ```
 
@@ -173,7 +173,7 @@ See `RULES.md` Rule 3 for full details.
 
 ## Rules
 
-All coding rules are defined in `RULES.md` (21 rules). Key rules:
+All coding rules are defined in `RULES.md` (25 rules). Key rules:
 
 - No em dashes in text
 - No standalone CSS files — Tailwind only

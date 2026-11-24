@@ -13,7 +13,7 @@
  * cannot leak across workspaces even when two tenants link the same page.
  *
  * Used by: src/routes/link-previews.ts, src/queues/link-preview.ts and
- * src/services/milestone.service.ts.
+ * src/services/milestone/.
  */
 
 import { randomUUID } from "node:crypto";

@@ -44,7 +44,7 @@ import {
 	moveChangeRequestToMilestone,
 	updateChangeRequest,
 } from "../services/change-request.service";
-import type { MilestoneTimelineComment } from "../services/milestone.service";
+import type { MilestoneTimelineComment } from "../services/milestone";
 import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
 
 /** Every change request route lives under one milestone. */

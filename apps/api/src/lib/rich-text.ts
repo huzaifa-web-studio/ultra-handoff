@@ -21,7 +21,7 @@
  * The same walk produces the plain text mirror used by search, previews and
  * empty body checks. Keeping both in one pass means they can never disagree.
  *
- * Used by: src/services/milestone.service.ts and
+ * Used by: src/services/milestone/ and
  * src/services/comment.service.ts.
  */
 

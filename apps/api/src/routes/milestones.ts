@@ -7,7 +7,7 @@
  * read on its own.
  *
  * The routes only parse input and translate failures. Every rule lives in
- * `milestone.service.ts`, and the tenant macro guarantees `:orgSlug` was
+ * `services/milestone/`, and the tenant macro guarantees `:orgSlug` was
  * resolved from a verified membership before a handler runs.
  *
  * Used by: src/index.ts.
@@ -48,7 +48,7 @@ import {
 	toggleMilestoneChecklist,
 	unlockMilestone,
 	updateMilestone,
-} from "../services/milestone.service";
+} from "../services/milestone";
 import {
 	getMilestoneScopeEntry,
 	updateMilestoneScopeEntry,

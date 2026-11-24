@@ -30,7 +30,7 @@ ultra-handoff/
 ├── compose.yaml      — production Docker stack
 ├── compose.dev.yaml  — development Docker stack with hot reload
 ├── opencode.json     — MCP server config + permissions
-├── RULES.md          — all coding rules (21 rules)
+├── RULES.md          — all coding rules (25 rules)
 ├── PRODUCT.md        — product overview and vision
 └── AGENTS.md         — architecture, tech stack, conventions
 ```
@@ -211,7 +211,7 @@ bun run lint     # Biome lint only
 
 - `PRODUCT.md` — product overview, problem, solution, vision
 - `AGENTS.md` — architecture, tech stack, design system, conventions
-- `RULES.md` — all coding rules (21 rules)
+- `RULES.md` — all coding rules (25 rules)
 
 ## License
 
