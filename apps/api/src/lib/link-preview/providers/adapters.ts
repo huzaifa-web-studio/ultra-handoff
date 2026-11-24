@@ -1,168 +1,16 @@
 /**
- * Public provider adapters for link previews.
+ * Public provider adapters.
  *
- * Adapters only call fixed, public endpoints without credentials. Their
- * requests use the same DNS-pinned, redirect-validating transport as page
- * metadata, and every displayed value is reduced to plain text.
- * Used by: src/lib/link-preview/resolve.ts.
+ * Why this file: each adapter calls a fixed public endpoint without credentials
+ * and returns the same metadata shape. Keeping them together means the shared
+ * transport and text rules stay visible.
+ *
+ * Used by: `resolve.ts`.
  */
 
-import { fetchResource } from "./http";
-import { cleanText } from "./parse";
-
-export type ProviderField = { label: string; value: string };
-export type ProviderMetadata = {
-	provider: string;
-	kind: string;
-	fields: ProviderField[];
-};
-
-type Provider = { name: string; hosts: readonly string[] };
-type ProviderAdapter = (url: URL) => Promise<ProviderMetadata | null>;
-
-/** Providers that receive a useful brand label even when only OG is public. */
-const PROVIDERS: readonly Provider[] = [
-	{ name: "GitHub", hosts: ["github.com", "gist.github.com"] },
-	{ name: "GitLab", hosts: ["gitlab.com"] },
-	{ name: "Bitbucket", hosts: ["bitbucket.org"] },
-	{ name: "Linear", hosts: ["linear.app"] },
-	{ name: "Jira", hosts: ["atlassian.net", "jira.com"] },
-	{ name: "Trello", hosts: ["trello.com"] },
-	{ name: "Asana", hosts: ["asana.com"] },
-	{ name: "Figma", hosts: ["figma.com"] },
-	{ name: "Canva", hosts: ["canva.com"] },
-	{ name: "YouTube", hosts: ["youtube.com", "youtu.be"] },
-	{ name: "Vimeo", hosts: ["vimeo.com"] },
-	{ name: "Loom", hosts: ["loom.com"] },
-	{ name: "Spotify", hosts: ["spotify.com", "open.spotify.com"] },
-	{ name: "SoundCloud", hosts: ["soundcloud.com"] },
-	{ name: "Notion", hosts: ["notion.so", "notion.site"] },
-	{ name: "Google Docs", hosts: ["docs.google.com"] },
-	{ name: "Google Sheets", hosts: ["sheets.google.com"] },
-	{ name: "Google Slides", hosts: ["slides.google.com"] },
-	{ name: "Reddit", hosts: ["reddit.com", "redd.it"] },
-	{ name: "X", hosts: ["x.com", "twitter.com"] },
-	{ name: "LinkedIn", hosts: ["linkedin.com"] },
-	{ name: "Bluesky", hosts: ["bsky.app"] },
-	{ name: "Instagram", hosts: ["instagram.com"] },
-	{ name: "TikTok", hosts: ["tiktok.com"] },
-	{ name: "npm", hosts: ["npmjs.com", "npmjs.org"] },
-	{ name: "PyPI", hosts: ["pypi.org"] },
-	{ name: "crates.io", hosts: ["crates.io"] },
-	{ name: "Stack Overflow", hosts: ["stackoverflow.com", "stackexchange.com"] },
-	{ name: "CodePen", hosts: ["codepen.io"] },
-	{ name: "CodeSandbox", hosts: ["codesandbox.io"] },
-	{ name: "arXiv", hosts: ["arxiv.org"] },
-	{ name: "DOI", hosts: ["doi.org", "dx.doi.org"] },
-];
-
-/** Match exact provider hosts and subdomains without accepting lookalikes. */
-export function identifyProvider(hostname: string): string | null {
-	const host = hostname.toLowerCase().replace(/^www\./, "");
-	return (
-		PROVIDERS.find(({ hosts }) =>
-			hosts.some((domain) => host === domain || host.endsWith(`.${domain}`)),
-		)?.name ?? null
-	);
-}
-
-/** Extract fields Figma publishes in a community file's JSON-LD graph. */
-export function parseFigmaCommunityMetadata(
-	html: string,
-): ProviderMetadata | null {
-	const scripts = html.matchAll(
-		/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
-	);
-
-	for (const [, content] of scripts) {
-		if (!content) continue;
-		try {
-			const parsed = record(JSON.parse(content) as unknown);
-			const graph = parsed?.["@graph"];
-			const nodes = Array.isArray(graph) ? graph : [parsed];
-			const work = nodes.map(record).find((node) => {
-				const type = node?.["@type"];
-				return (
-					type === "CreativeWork" ||
-					(Array.isArray(type) && type.includes("CreativeWork"))
-				);
-			});
-			if (!work) continue;
-
-			const creator = record(work.creator);
-			const stats = Array.isArray(work.interactionStatistic)
-				? work.interactionStatistic
-				: [];
-			const likes = stats.find((entry) => {
-				const interaction = record(entry)?.interactionType;
-				return text(record(interaction)?.["@type"] ?? interaction, 80).endsWith(
-					"LikeAction",
-				);
-			});
-			const uses = stats.find((entry) => {
-				const interaction = record(entry)?.interactionType;
-				return text(record(interaction)?.["@type"] ?? interaction, 80).endsWith(
-					"UseAction",
-				);
-			});
-			const fields = fieldsFrom([
-				["Creator", creator?.name],
-				["Uses", record(uses)?.userInteractionCount],
-				["Likes", record(likes)?.userInteractionCount],
-			]);
-			if (fields.length > 0) {
-				return { provider: "Figma", kind: "Community file", fields };
-			}
-		} catch {
-			// A malformed JSON-LD block should not prevent other blocks being read.
-		}
-	}
-
-	return null;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-	return value !== null && typeof value === "object"
-		? (value as Record<string, unknown>)
-		: null;
-}
-
-function text(value: unknown, limit = 180): string {
-	return typeof value === "string" ? cleanText(value, limit) : "";
-}
-
-function number(value: unknown): string {
-	return typeof value === "number" && Number.isFinite(value)
-		? new Intl.NumberFormat("en").format(value)
-		: "";
-}
-
-function fieldsFrom(entries: [string, unknown][]): ProviderField[] {
-	return entries
-		.flatMap(([label, value]) => {
-			const formatted = text(value) || number(value);
-			return formatted ? [{ label, value: formatted }] : [];
-		})
-		.slice(0, 6);
-}
-
-/** Read JSON only through the hardened URL resolver and bounded transport. */
-async function getJson(url: string): Promise<unknown | null> {
-	try {
-		const result = await fetchResource(url, {
-			maxBytes: 128 * 1024,
-			acceptContentTypes: ["application/json", "text/json"],
-			accept: "application/json",
-			timeoutMs: 5_000,
-		});
-		if (!result.ok) return null;
-		return JSON.parse(result.response.body.toString("utf8")) as unknown;
-	} catch {
-		// Provider outages, malformed JSON and throttling are non-fatal. The
-		// resolver still returns the universal page metadata preview.
-		return null;
-	}
-}
+import { fetchResource } from "../http";
+import { fieldsFrom, getJson, record, text } from "./shared";
+import type { ProviderMetadata } from "./types";
 
 function githubRequest(url: URL): string | null {
 	const parts = url.pathname.split("/").filter(Boolean);
@@ -181,7 +29,9 @@ function githubRequest(url: URL): string | null {
 	return `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 }
 
-async function githubMetadata(url: URL): Promise<ProviderMetadata | null> {
+export async function githubMetadata(
+	url: URL,
+): Promise<ProviderMetadata | null> {
 	const endpoint = githubRequest(url);
 	if (!endpoint) return null;
 	const data = record(await getJson(endpoint));
@@ -220,7 +70,9 @@ async function githubMetadata(url: URL): Promise<ProviderMetadata | null> {
 	return { provider: "GitHub", kind, fields: fieldsFrom(entries) };
 }
 
-async function gitlabMetadata(url: URL): Promise<ProviderMetadata | null> {
+export async function gitlabMetadata(
+	url: URL,
+): Promise<ProviderMetadata | null> {
 	if (url.hostname !== "gitlab.com") return null;
 	const parts = url.pathname.split("/").filter(Boolean);
 	const marker = parts.findIndex(
@@ -262,7 +114,9 @@ async function gitlabMetadata(url: URL): Promise<ProviderMetadata | null> {
 	};
 }
 
-async function bitbucketMetadata(url: URL): Promise<ProviderMetadata | null> {
+export async function bitbucketMetadata(
+	url: URL,
+): Promise<ProviderMetadata | null> {
 	if (url.hostname !== "bitbucket.org") return null;
 	const [workspace, repo, section, id] = url.pathname
 		.split("/")
@@ -296,7 +150,7 @@ async function bitbucketMetadata(url: URL): Promise<ProviderMetadata | null> {
 	};
 }
 
-async function stackOverflowMetadata(
+export async function stackOverflowMetadata(
 	url: URL,
 ): Promise<ProviderMetadata | null> {
 	if (!url.hostname.endsWith("stackoverflow.com")) return null;
@@ -319,7 +173,9 @@ async function stackOverflowMetadata(
 	};
 }
 
-async function blueskyMetadata(url: URL): Promise<ProviderMetadata | null> {
+export async function blueskyMetadata(
+	url: URL,
+): Promise<ProviderMetadata | null> {
 	const match = /\/profile\/([^/]+)\/post\/([^/]+)/.exec(url.pathname);
 	if (!match?.[1] || !match[2]) return null;
 	const uri = `at://${match[1]}/app.bsky.feed.post/${match[2]}`;
@@ -356,7 +212,7 @@ function oembedEndpoint(provider: string, url: URL): string | null {
 	return null;
 }
 
-async function oembedMetadata(
+export async function oembedMetadata(
 	provider: string,
 	url: URL,
 ): Promise<ProviderMetadata | null> {
@@ -380,7 +236,7 @@ async function oembedMetadata(
 	};
 }
 
-async function packageMetadata(
+export async function packageMetadata(
 	provider: string,
 	url: URL,
 ): Promise<ProviderMetadata | null> {
@@ -426,7 +282,7 @@ async function packageMetadata(
 	};
 }
 
-async function doiMetadata(url: URL): Promise<ProviderMetadata | null> {
+export async function doiMetadata(url: URL): Promise<ProviderMetadata | null> {
 	const doi = decodeURIComponent(url.pathname.replace(/^\//, ""));
 	if (!doi) return null;
 	const data = record(
@@ -465,7 +321,9 @@ async function doiMetadata(url: URL): Promise<ProviderMetadata | null> {
 	};
 }
 
-async function arxivMetadata(url: URL): Promise<ProviderMetadata | null> {
+export async function arxivMetadata(
+	url: URL,
+): Promise<ProviderMetadata | null> {
 	const match = /(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?/.exec(url.pathname);
 	if (!match?.[1]) return null;
 	try {
@@ -507,43 +365,3 @@ async function arxivMetadata(url: URL): Promise<ProviderMetadata | null> {
 }
 
 /** One adapter registry keeps host recognition separate from API strategy. */
-const ADAPTERS: Readonly<Record<string, ProviderAdapter>> = {
-	GitHub: githubMetadata,
-	GitLab: gitlabMetadata,
-	Bitbucket: bitbucketMetadata,
-	"Stack Overflow": stackOverflowMetadata,
-	Bluesky: blueskyMetadata,
-	YouTube: (url) => oembedMetadata("YouTube", url),
-	Vimeo: (url) => oembedMetadata("Vimeo", url),
-	Loom: (url) => oembedMetadata("Loom", url),
-	Spotify: (url) => oembedMetadata("Spotify", url),
-	SoundCloud: (url) => oembedMetadata("SoundCloud", url),
-	npm: (url) => packageMetadata("npm", url),
-	PyPI: (url) => packageMetadata("PyPI", url),
-	"crates.io": (url) => packageMetadata("crates.io", url),
-	DOI: doiMetadata,
-	arXiv: arxivMetadata,
-};
-
-/** Resolve the best-effort adapter result for an arbitrary public URL. */
-export async function resolveProviderMetadata(
-	rawUrl: string,
-): Promise<ProviderMetadata | null> {
-	let url: URL;
-	try {
-		url = new URL(rawUrl);
-	} catch {
-		return null;
-	}
-	const provider = identifyProvider(url.hostname);
-	if (!provider) return null;
-	try {
-		const adapter = ADAPTERS[provider];
-		return adapter
-			? await adapter(url)
-			: { provider, kind: "Link", fields: [] };
-	} catch {
-		// Malformed encoded URLs and provider payloads must not fail the OG fetch.
-		return null;
-	}
-}
