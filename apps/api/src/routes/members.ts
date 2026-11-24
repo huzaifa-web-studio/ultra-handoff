@@ -14,7 +14,7 @@ import {
 	type InvitationHistoryQuery,
 	type InvitationStatus,
 	listInvitationHistory,
-} from "../services/invitation.service";
+} from "../services/invitation";
 import {
 	bulkRemoveMembers,
 	bulkUpdateMemberRole,

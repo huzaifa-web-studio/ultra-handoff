@@ -17,7 +17,7 @@ import { isProduction, isTest } from "./env";
  * the caller's generic fallback reaches the browser.
  *
  * Used by: src/services/member.service.ts and
- * src/services/invitation.service.ts.
+ * src/services/invitation/.
  */
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {

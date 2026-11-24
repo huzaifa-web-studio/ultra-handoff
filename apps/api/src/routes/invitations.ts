@@ -4,7 +4,7 @@ import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import {
 	previewInvitation,
 	sendInvitationMagicLink,
-} from "../services/invitation.service";
+} from "../services/invitation";
 
 /**
  * Public invitation routes.

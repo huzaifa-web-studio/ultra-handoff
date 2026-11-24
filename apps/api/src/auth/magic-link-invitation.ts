@@ -3,7 +3,7 @@
  *
  * Why a separate module: the gate in `src/auth/auth.ts` needs one read against
  * the Better Auth `invitation` table. Importing it from
- * `services/invitation.service.ts` would create a cycle, because that service
+ * `services/invitation/` would create a cycle, because that service
  * imports the `auth` instance. The table belongs to Better Auth, so the read
  * goes through the privileged `adminDb`, read only, which is the same rule the
  * other auth-table lookups follow.

@@ -6,7 +6,7 @@
  * the browser can render every bulk result with one component, and adding a new
  * bulk action only needs a new status value here.
  *
- * Used by: member.service.ts, invitation.service.ts and project/.
+ * Used by: member.service.ts, invitation/ and project/.
  */
 
 /** One item's outcome. Partial failure is a normal result, not an error. */

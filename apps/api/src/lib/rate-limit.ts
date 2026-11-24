@@ -11,7 +11,7 @@ import { getRedis, logRedisIssue } from "./redis";
  * Every helper fails open. A Redis outage must not stop people from inviting
  * teammates, and Better Auth's own limiter still applies.
  *
- * Used by: src/services/invitation.service.ts.
+ * Used by: src/services/invitation/.
  */
 
 /**

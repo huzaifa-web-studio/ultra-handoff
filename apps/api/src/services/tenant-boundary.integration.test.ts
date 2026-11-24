@@ -40,7 +40,7 @@ import {
 	listMilestoneComments,
 	updateMilestoneComment,
 } from "./comment";
-import { listInvitationHistory } from "./invitation.service";
+import { listInvitationHistory } from "./invitation";
 import {
 	createMilestone,
 	deleteMilestone,
