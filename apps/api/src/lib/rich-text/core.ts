@@ -1,319 +1,48 @@
 /**
- * Rich text sanitising and plain text extraction.
+ * Rich text sanitizer walk.
  *
- * Why this exists: rich text arrives from the browser as a Plate (Slate) JSON
- * value. Storing it unchecked would let a crafted request write arbitrary node
- * shapes, unbounded payloads and `javascript:` links into a column that every
- * project member later renders.
+ * Why this file: the recursive walk is the one place that enforces the
+ * allowlist, the depth and node caps and the plain text mirror. Keeping the walk
+ * whole means the two profiles share the same rules.
  *
- * The rules are a small allowlist rather than a blocklist:
- *   - only known block types survive, anything else becomes a paragraph so no
- *     content is lost
- *   - only known marks survive
- *   - link URLs must be absolute http, https or mailto
- *   - node count, depth and payload size are capped
- *
- * Two profiles share the walk. A milestone description is a brief that may
- * contain headings, tables, images, attachments and bookmarks. A comment is a
- * message and only allows the lighter block set, with smaller caps. Keeping one
- * walk means the two can never develop different link or mark rules.
- *
- * The same walk produces the plain text mirror used by search, previews and
- * empty body checks. Keeping both in one pass means they can never disagree.
- *
- * Used by: src/services/milestone/ and
- * src/services/comment/.
+ * Used by: `sanitizeRichText` callers and `comment.ts`.
  */
 
 import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
-import {
-	COMMENT_BODY_MAX,
-	COMMENT_TEXT_MAX,
-} from "../auth/comment-permissions";
-import {
-	MILESTONE_DESCRIPTION_MAX,
-	MILESTONE_TEXT_MAX,
-} from "../auth/milestone-permissions";
 import {
 	MAX_MENTION_NAME,
 	MENTION_SLUG_MAX,
 	MENTION_SLUG_PATTERN,
 	mentionKey,
 	parseMentionKey,
-} from "./mentions";
-import { MAX_ATTACHMENT_BYTES } from "./storage/config";
-
-/** Block types the editor is allowed to produce. */
-const ALLOWED_BLOCK_TYPES = new Set([
-	"p",
-	"h1",
-	"h2",
-	"h3",
-	"h4",
-	"blockquote",
-	"ul",
-	"ol",
-	"li",
-	"lic",
-	"taskList",
-	"table",
-	"tr",
-	"td",
-	"th",
-	"code_block",
-	"code_line",
-	"hr",
-	"img",
-	"bookmark",
-	"file",
-	"mention",
-]);
-
-/** Marks the editor toolbar can toggle. */
-const ALLOWED_MARKS = new Set([
-	"bold",
-	"italic",
-	"underline",
-	"strikethrough",
-	"code",
-]);
-
-/** Block types that may carry an indent level. */
-const INDENTABLE_BLOCK_TYPES = new Set(["p", "h2", "h3", "blockquote"]);
-
-/** Highest indent level accepted from a saved document. */
-const MAX_INDENT = 8;
-
-/** Cell types that can carry a row or column span. */
-const TABLE_CELL_TYPES = new Set(["td", "th"]);
-
-/** Longest image alt text stored. A short caption is enough for a screen reader. */
-const MAX_IMAGE_ALT_LENGTH = 200;
-
-/** Longest caption stored on an image. */
-const MAX_IMAGE_CAPTION_LENGTH = 500;
-
-/** Width range the resize handle can produce, in pixels. */
-const MIN_IMAGE_WIDTH = 92;
-const MAX_IMAGE_WIDTH = 4_096;
-
-/** Largest row or column span accepted. */
-const MAX_TABLE_SPAN = 20;
-
-/** Largest number of column widths stored on a table. */
-const MAX_TABLE_COLUMNS = 20;
-
-/** Widest single column accepted, in pixels. */
-const MAX_TABLE_COLUMN_WIDTH = 2_000;
-
-/** Link protocols that are safe to render as a clickable anchor. */
-const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
-
-/**
- * Block types a comment is allowed to contain.
- *
- * The comment composer is a full editor: headings, quotes, lists, checklists,
- * tables, images, link cards and file attachments. The set is explicit so a
- * plugin that exists only in the milestone kit still cannot be smuggled into a
- * comment.
- */
-const COMMENT_BLOCK_TYPES = new Set([
-	"p",
-	"h2",
-	"h3",
-	"blockquote",
-	"ul",
-	"ol",
-	"li",
-	"lic",
-	"taskList",
-	"table",
-	"tr",
-	"td",
-	"th",
-	"img",
-	"bookmark",
-	"file",
-	"mention",
-]);
-
-/** Longest attachment name stored on a file node. */
-const MAX_FILE_NAME_LENGTH = 200;
-
-/** Longest MIME string stored on a file node. Used only for the type icon. */
-const MAX_FILE_MIME_LENGTH = 100;
-
-/**
- * The rules for one kind of rich text value.
- *
- * Why a profile instead of more parameters: the walk needs the same six limits
- * and two allowlists everywhere, and passing them one by one makes every call
- * site long and easy to get wrong. A profile is the unit the two surfaces
- * differ by.
- */
-type RichTextProfile = {
-	/** Human label used in error messages, for example "comment". */
-	label: string;
-	allowedBlocks: ReadonlySet<string>;
-	allowedMarks: ReadonlySet<string>;
-	indentableBlocks: ReadonlySet<string>;
-	maxNodes: number;
-	maxDepth: number;
-	maxLeafLength: number;
-	maxJson: number;
-	maxText: number;
-};
-
-/** A milestone description: structure, tables, images, attachments and bookmarks. */
-const MILESTONE_PROFILE: RichTextProfile = {
-	label: "milestone description",
-	allowedBlocks: ALLOWED_BLOCK_TYPES,
-	allowedMarks: ALLOWED_MARKS,
-	indentableBlocks: INDENTABLE_BLOCK_TYPES,
-	// A real description is far below all three.
-	maxNodes: 10_000,
-	maxDepth: 12,
-	maxLeafLength: 20_000,
-	maxJson: MILESTONE_DESCRIPTION_MAX,
-	maxText: MILESTONE_TEXT_MAX,
-};
-
-/**
- * A comment: paragraphs, quotes, lists and marks.
- *
- * No headings, tables, images or bookmarks. A comment is a message, so the
- * smaller caps are deliberate rather than an oversight.
- */
-const COMMENT_PROFILE: RichTextProfile = {
-	label: "comment",
-	allowedBlocks: COMMENT_BLOCK_TYPES,
-	allowedMarks: ALLOWED_MARKS,
-	indentableBlocks: INDENTABLE_BLOCK_TYPES,
-	maxNodes: 3_000,
-	maxDepth: 10,
-	maxLeafLength: 5_000,
-	maxJson: COMMENT_BODY_MAX,
-	maxText: COMMENT_TEXT_MAX,
-};
-
-/** Mutable state threaded through the walk. */
-type SanitizeState = {
-	nodes: number;
-	text: string[];
-	/**
-	 * Checklist ids already used in this document.
-	 *
-	 * A checklist item needs a stable id so any reader can toggle it without
-	 * editing the comment. The set keeps a crafted duplicate from making two
-	 * items share one id.
-	 */
-	itemIds: Set<string>;
-};
-
-/** The sanitised value plus its plain text mirror. */
-export type SanitizedRichText = {
-	value: unknown[];
-	text: string;
-};
-
-/** True for a plain object, not an array or null. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Keep a link URL only when it is absolute and uses a safe protocol.
- *
- * A relative URL is dropped rather than kept: the editor always writes
- * absolute links, so a relative one means the value did not come from the
- * editor.
- */
-function safeUrl(url: unknown): string | undefined {
-	if (typeof url !== "string") return undefined;
-
-	const trimmed = url.trim();
-	if (trimmed.length === 0) return undefined;
-
-	try {
-		return ALLOWED_PROTOCOLS.has(new URL(trimmed).protocol)
-			? trimmed
-			: undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * Keep an image source only when it is one of our own uploads.
- *
- * Why stricter than `safeAssetUrl`: an external image is fetched by every
- * reader's browser, which turns a pasted URL into a tracking pixel. Images are
- * always uploaded through the editor, so a stored image is always a relative
- * `/files/...` path. Anything else is dropped.
- */
-function safeImageUrl(url: unknown): string | undefined {
-	const value = safeAssetUrl(url);
-
-	return value?.startsWith("/files/") ? value : undefined;
-}
-
-/**
- * Keep an image source or attachment URL only when it is safe to render.
- *
- * Uploaded objects are served from our own origin through `/files/...`, which
- * the editor stores as a relative URL, so that form is allowed alongside an
- * absolute http or https URL. Anything else, including `data:`, `blob:` and
- * protocol relative values, is dropped.
- */
-function safeAssetUrl(url: unknown): string | undefined {
-	if (typeof url !== "string") return undefined;
-
-	const trimmed = url.trim();
-	if (trimmed.length === 0) return undefined;
-
-	// Uploaded objects are the only relative form the editor produces. Reject
-	// traversal, whitespace and a protocol relative value up front.
-	if (trimmed.startsWith("/files/")) {
-		if (
-			trimmed.includes("..") ||
-			trimmed.includes("\\") ||
-			/\s/.test(trimmed)
-		) {
-			return undefined;
-		}
-
-		return trimmed;
-	}
-
-	try {
-		const protocol = new URL(trimmed).protocol;
-
-		return protocol === "http:" || protocol === "https:" ? trimmed : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * Read a span from a number or a pasted HTML attribute.
- *
- * A span of one is the default and is not stored. Anything outside the allowed
- * range is capped instead of rejected, so a slightly odd table still saves.
- */
-function readSpan(value: unknown): number | undefined {
-	const numeric = typeof value === "string" ? Number(value) : value;
-
-	if (
-		typeof numeric !== "number" ||
-		!Number.isInteger(numeric) ||
-		numeric < 2
-	) {
-		return undefined;
-	}
-
-	return Math.min(numeric, MAX_TABLE_SPAN);
-}
+} from "../mentions";
+import { MAX_ATTACHMENT_BYTES } from "../storage/config";
+import type {
+	RichTextProfile,
+	SanitizedRichText,
+	SanitizeState,
+} from "./constants";
+import {
+	MAX_FILE_MIME_LENGTH,
+	MAX_FILE_NAME_LENGTH,
+	MAX_IMAGE_ALT_LENGTH,
+	MAX_IMAGE_CAPTION_LENGTH,
+	MAX_IMAGE_WIDTH,
+	MAX_INDENT,
+	MAX_TABLE_COLUMN_WIDTH,
+	MAX_TABLE_COLUMNS,
+	MILESTONE_PROFILE,
+	MIN_IMAGE_WIDTH,
+	TABLE_CELL_TYPES,
+} from "./constants";
+import {
+	isRecord,
+	readSpan,
+	safeAssetUrl,
+	safeImageUrl,
+	safeUrl,
+} from "./urls";
 
 /**
  * Sanitise one node and append its text to the mirror.
@@ -646,7 +375,7 @@ function normalizeText(parts: string[], maxText: number): string {
  * too large. Anything structurally odd inside the array is cleaned instead,
  * because a slightly unusual node should not stop somebody from saving.
  */
-function sanitizeProfile(
+export function sanitizeProfile(
 	value: unknown,
 	profile: RichTextProfile,
 ): SanitizedRichText {
@@ -701,76 +430,4 @@ function sanitizeProfile(
  */
 export function sanitizeRichText(value: unknown): SanitizedRichText {
 	return sanitizeProfile(value, MILESTONE_PROFILE);
-}
-
-/**
- * Block types that count as content even with no text of their own.
- *
- * An image, an attachment, a bookmark card and a mention are complete messages.
- * A table or an empty list is structural, so it still needs a word to be worth
- * sending.
- */
-const COMMENT_EMBED_TYPES = new Set(["img", "file", "bookmark", "mention"]);
-
-/**
- * True when a cleaned comment has text or a self-contained embed.
- *
- * Why not only the text mirror: an image with no caption and a file card have no
- * text leaf, but they are exactly the cases a reader expects to be able to post.
- */
-function hasCommentContent(value: unknown[]): boolean {
-	let found = false;
-
-	const walk = (node: unknown): void => {
-		if (found || !isRecord(node)) return;
-
-		if (typeof node.text === "string" && node.text.trim().length > 0) {
-			found = true;
-			return;
-		}
-
-		if (typeof node.type === "string" && COMMENT_EMBED_TYPES.has(node.type)) {
-			found = true;
-			return;
-		}
-
-		if (Array.isArray(node.children)) {
-			for (const child of node.children) walk(child);
-		}
-	};
-
-	for (const node of value) walk(node);
-
-	return found;
-}
-
-/**
- * Validate and clean a comment body.
- *
- * The content check is here and not only in the service because the sanitizer
- * has already removed anything the editor cannot render. A comment is valid when
- * it has text or a self-contained embed, so an image or a file with no caption
- * can still be posted.
- */
-export function sanitizeCommentBody(value: unknown): SanitizedRichText {
-	const sanitized = sanitizeProfile(value, COMMENT_PROFILE);
-
-	if (!hasCommentContent(sanitized.value)) {
-		throw new APIError("BAD_REQUEST", {
-			message: "Write something before posting your comment.",
-		});
-	}
-
-	return sanitized;
-}
-
-/**
- * Validate and clean an optional rich text body.
- *
- * Why a variant: a change request is titled, and the detail is optional. The
- * title carries the ask, so an empty body is a complete request rather than a
- * mistake. The profile and the limits are the same as a comment.
- */
-export function sanitizeOptionalCommentBody(value: unknown): SanitizedRichText {
-	return sanitizeProfile(value, COMMENT_PROFILE);
 }

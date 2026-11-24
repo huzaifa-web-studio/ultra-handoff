@@ -11,7 +11,7 @@
  * The type allowlist is deliberately closed. An unknown type is dropped rather
  * than rendered, so a crafted body cannot invent a new kind of chip.
  *
- * Used by: src/lib/rich-text.ts and src/services/mention.service.ts.
+ * Used by: src/lib/rich-text/ and src/services/mention.service.ts.
  */
 
 /** The entities a comment may mention. */
