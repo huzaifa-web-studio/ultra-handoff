@@ -28,7 +28,7 @@ import { assertProjectActive } from "../../auth/project-permissions";
 import { milestone } from "../../db/schema";
 import type { TenantTx } from "../../db/tenant";
 import type { TenantContext } from "../../middleware/tenant";
-import { loadProjectAccess, type ProjectAccess } from "../project.service";
+import { loadProjectAccess, type ProjectAccess } from "../project";
 import type { MilestoneRecord, MilestoneViewer } from "./types";
 
 /** Build the viewer capabilities from the project access the caller has. */

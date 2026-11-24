@@ -36,7 +36,7 @@ import { type TenantTx, withTenant } from "../db/tenant";
 import { COMMENT_NOTIFICATION_TYPES } from "../lib/notification-types";
 import type { TenantContext } from "../middleware/tenant";
 import { requireMilestoneAccess } from "./milestone";
-import { loadProjectAccess } from "./project.service";
+import { loadProjectAccess } from "./project";
 
 /** The unread state of one thread. */
 export type CommentUnread = {

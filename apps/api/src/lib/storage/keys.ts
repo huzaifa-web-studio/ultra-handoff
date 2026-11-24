@@ -7,7 +7,7 @@
  * The same walk is reused by the reconciliation script, which means cleanup on
  * write and cleanup after the fact cannot disagree about what a reference is.
  *
- * Used by: comment.service.ts, milestone/, project.service.ts,
+ * Used by: comment.service.ts, milestone/, project/,
  * routes/files.ts and scripts/reconcile-orphan-objects.ts.
  */
 

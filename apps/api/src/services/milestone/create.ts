@@ -39,7 +39,7 @@ import {
 	createNotifications,
 	type NotificationCandidate,
 } from "../notification.service";
-import type { ProjectAccess } from "../project.service";
+import type { ProjectAccess } from "../project";
 import { assertWritable, requireProject } from "./access";
 import {
 	loadAssignees,

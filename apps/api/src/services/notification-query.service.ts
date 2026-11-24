@@ -36,7 +36,7 @@ import {
 	renderNotification,
 } from "../lib/notifications";
 import type { TenantContext } from "../middleware/tenant";
-import { projectVisibility } from "./project.service";
+import { projectVisibility } from "./project";
 import { loadUserMap } from "./user.service";
 
 /** One notification as the bell and the list render it. */

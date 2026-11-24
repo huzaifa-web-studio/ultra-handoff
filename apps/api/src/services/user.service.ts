@@ -9,7 +9,7 @@
  *
  * Read only. Nothing in this file grants access to workspace data.
  *
- * Used by: services/project.service.ts (re-exported for existing callers),
+ * Used by: services/project/ (re-exported for existing callers),
  * services/notification.service.ts and services/reminder.service.ts.
  */
 

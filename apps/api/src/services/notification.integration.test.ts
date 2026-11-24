@@ -1717,7 +1717,7 @@ suite("notification system", () => {
 				createdAt: now,
 			});
 
-			const { addProjectMember } = await import("./project.service");
+			const { addProjectMember } = await import("./project");
 
 			const result = await addProjectMember(
 				tOwner(),
@@ -1741,7 +1741,7 @@ suite("notification system", () => {
 		test("changing a project role notifies that person", async () => {
 			await clearNotifications();
 
-			const { updateProjectMemberRole } = await import("./project.service");
+			const { updateProjectMemberRole } = await import("./project");
 
 			const result = await updateProjectMemberRole(
 				tOwner(),
@@ -1764,7 +1764,7 @@ suite("notification system", () => {
 		test("archive notifies managers only; restore notifies every member", async () => {
 			await clearNotifications();
 
-			const { setProjectArchived } = await import("./project.service");
+			const { setProjectArchived } = await import("./project");
 
 			const restored = await setProjectArchived(tOwner(), ids.pArchived, false);
 

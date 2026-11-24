@@ -19,7 +19,7 @@ import { milestoneAssignee, projectMember } from "../../db/schema";
 import type { TenantTx } from "../../db/tenant";
 import type { TenantContext } from "../../middleware/tenant";
 import { listOrganizationOwners } from "../organization.service";
-import { loadUserMap } from "../project.service";
+import { loadUserMap } from "../project";
 import type { MilestoneAssigneeRow } from "./types";
 
 /**

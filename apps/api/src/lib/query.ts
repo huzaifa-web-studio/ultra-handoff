@@ -5,7 +5,7 @@
  * same escape is needed by the projects list and the milestones list, so it
  * lives here instead of being copied into both services.
  *
- * Used by: src/services/project.service.ts, src/services/milestone/.
+ * Used by: src/services/project/, src/services/milestone/.
  */
 
 /**

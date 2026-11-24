@@ -35,7 +35,7 @@ import {
 	setProjectPinned,
 	updateProject,
 	updateProjectMemberRole,
-} from "../services/project.service";
+} from "../services/project";
 
 /**
  * Both parameters must be declared. Elysia validates the whole params object

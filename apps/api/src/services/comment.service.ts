@@ -66,7 +66,7 @@ import {
 	loadProjectMemberUserIds,
 	type NotificationDelivery,
 } from "./notification.service";
-import { loadUserMap } from "./project.service";
+import { loadUserMap } from "./project";
 import { deleteObjectsBestEffort } from "./upload.service";
 
 /** The person who wrote a comment, as the thread renders it. */

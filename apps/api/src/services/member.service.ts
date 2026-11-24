@@ -17,7 +17,7 @@ import { authErrorMessage, readAuthErrorCode } from "../lib/auth-error";
 import type { BulkItemResult, BulkResult } from "../lib/bulk-result";
 import type { TenantContext } from "../middleware/tenant";
 import { publishMemberRevocation } from "../realtime/bus";
-import { syncOrganizationOwnerToProjects } from "./project.service";
+import { syncOrganizationOwnerToProjects } from "./project";
 
 /**
  * Member reads and writes for the Members page.

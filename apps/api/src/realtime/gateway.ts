@@ -26,7 +26,7 @@ import { withTenant } from "../db/tenant";
 import { realtimeEnv, serverEnv } from "../lib/env";
 import { resolveTenantScope, type TenantContext } from "../middleware/tenant";
 import { milestoneExistsInProject } from "../services/milestone";
-import { loadProjectAccess } from "../services/project.service";
+import { loadProjectAccess } from "../services/project";
 import {
 	createRealtimeEnvelope,
 	createUserRealtimeEnvelope,

@@ -45,7 +45,7 @@ import {
 	deleteNotificationsForRecipient,
 	type NotificationDelivery,
 } from "./notification.service";
-import { loadProjectAccess, loadUserMap } from "./project.service";
+import { loadProjectAccess, loadUserMap } from "./project";
 
 /** The three kinds of scope addition. */
 export type MilestoneScopeKind = "change" | "test" | "review";

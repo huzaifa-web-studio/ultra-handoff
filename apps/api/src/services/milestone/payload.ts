@@ -23,8 +23,8 @@ import { collectMentionKeys } from "../../lib/mentions";
 import type { TenantContext } from "../../middleware/tenant";
 import { loadPhaseSummary } from "../milestone-phase.service";
 import { loadScopeEntries } from "../milestone-scope.service";
-import type { ProjectAccess } from "../project.service";
-import { loadUserMap } from "../project.service";
+import type { ProjectAccess } from "../project";
+import { loadUserMap } from "../project";
 import { requireMilestoneRecord, toViewer } from "./access";
 import { loadAssignees } from "./assignees";
 import type {

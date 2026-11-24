@@ -19,7 +19,7 @@ import {
 	type MilestoneEventDraft,
 } from "../../lib/milestone-events";
 import type { TenantContext } from "../../middleware/tenant";
-import { loadUserMap } from "../project.service";
+import { loadUserMap } from "../project";
 import type { CommentRecord, MilestoneTimelineComment } from "./types";
 
 /**

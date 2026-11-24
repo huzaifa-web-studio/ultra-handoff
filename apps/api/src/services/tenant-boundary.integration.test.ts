@@ -67,7 +67,7 @@ import {
 	setProjectArchived,
 	setProjectArchiveVisibility,
 	updateProject,
-} from "./project.service";
+} from "./project";
 
 /** The suite only runs against the throwaway test database. */
 const enabled =

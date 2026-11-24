@@ -10,7 +10,7 @@
  * the unprivileged `app_tenant` role through `withTenant`, so the policy is
  * what enforces the workspace boundary.
  *
- * Used by: src/db/schema-bundle.ts, src/services/project.service.ts.
+ * Used by: src/db/schema-bundle.ts, src/services/project/.
  */
 
 import { sql } from "drizzle-orm";

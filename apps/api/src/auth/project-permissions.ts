@@ -8,7 +8,7 @@
  * The browser copy in apps/web is cosmetic only. This module is authoritative
  * and every write runs through it.
  *
- * Used by: src/services/project.service.ts, src/routes/projects.ts and the
+ * Used by: src/services/project/, src/routes/projects.ts and the
  * organization owner promotion hook.
  */
 

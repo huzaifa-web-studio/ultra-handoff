@@ -31,7 +31,7 @@ import {
 	loadProjectAccess,
 	projectVisibility,
 	searchUserProfiles,
-} from "./project.service";
+} from "./project";
 
 /** One person the writer may mention. */
 export type MentionPerson = {

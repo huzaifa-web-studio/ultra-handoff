@@ -63,7 +63,7 @@ import {
 	type NotificationCandidate,
 	type NotificationDelivery,
 } from "./notification.service";
-import { loadUserMap } from "./project.service";
+import { loadUserMap } from "./project";
 
 /** A database row, before it is mapped to the wire shape. */
 export type ChangeRequestRecord = typeof changeRequest.$inferSelect;
