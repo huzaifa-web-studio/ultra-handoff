@@ -15,7 +15,7 @@
  * src/index.ts (which the web app imports as a type only).
  */
 
-import type { ChangeRequestRow } from "../services/change-request.service";
+import type { ChangeRequestRow } from "../services/change-request";
 import type { CommentRow } from "../services/comment";
 import type { MilestoneSummary } from "../services/milestone";
 import type { NotificationDelivery } from "../services/notification.service";

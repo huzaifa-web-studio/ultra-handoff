@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "bun:test";
 
-import type { ChangeRequestRow } from "../services/change-request.service";
+import type { ChangeRequestRow } from "../services/change-request";
 import type { CommentRow } from "../services/comment";
 import type { MilestoneSummary } from "../services/milestone";
 import {

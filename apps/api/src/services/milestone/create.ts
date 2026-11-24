@@ -10,7 +10,7 @@
  * the same transaction. Both paths therefore validate and write a milestone the
  * same way.
  *
- * Used by: `routes/milestones.ts` and `change-request.service.ts`.
+ * Used by: `routes/milestones.ts` and `change-request/`.
  */
 
 import { randomUUID } from "node:crypto";

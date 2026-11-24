@@ -6,7 +6,7 @@
  * files apart means either can be read on its own, exactly like `comments.ts`.
  *
  * The routes only parse input, translate failures and publish the transport
- * side effect. Every rule lives in `change-request.service.ts`, and the tenant
+ * side effect. Every rule lives in `change-request/`, and the tenant
  * macro guarantees `:orgSlug` was resolved from a verified membership before a
  * handler runs.
  *
@@ -43,7 +43,7 @@ import {
 	listChangeRequests,
 	moveChangeRequestToMilestone,
 	updateChangeRequest,
-} from "../services/change-request.service";
+} from "../services/change-request";
 import type { MilestoneTimelineComment } from "../services/milestone";
 import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
 

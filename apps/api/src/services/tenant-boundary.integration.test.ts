@@ -33,7 +33,7 @@ import {
 	listChangeRequests,
 	moveChangeRequestToMilestone,
 	updateChangeRequest,
-} from "./change-request.service";
+} from "./change-request";
 import {
 	createMilestoneComment,
 	deleteMilestoneComment,

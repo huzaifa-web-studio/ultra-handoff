@@ -13,7 +13,7 @@
  *   - a decision is final, so an accepted, declined, moved or withdrawn request
  *     cannot be decided again
  *
- * Used by: src/services/change-request.service.ts and
+ * Used by: src/services/change-request/ and
  * src/routes/change-requests.ts.
  */
 
