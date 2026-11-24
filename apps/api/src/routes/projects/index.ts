@@ -9,12 +9,10 @@
  */
 
 import { Elysia, t } from "elysia";
-
-import { BULK_SELECTION_MAX } from "../auth/permissions";
-import type { ProjectRole } from "../auth/project-permissions";
-import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
-import { tenantPlugin } from "../middleware/tenant";
-import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
+import type { ProjectRole } from "../../auth/project-permissions";
+import { authErrorMessage, authErrorStatus } from "../../lib/auth-error";
+import { tenantPlugin } from "../../middleware/tenant";
+import { dispatchNotificationDeliveries } from "../../services/notification-dispatch.service";
 import {
 	addProjectMember,
 	bulkAddProjectMembers,
@@ -27,98 +25,21 @@ import {
 	getProjectDetailBySlug,
 	getSidebarProjects,
 	listProjects,
-	type ProjectListQuery,
-	type ProjectSort,
 	removeProjectMember,
 	setProjectArchived,
 	setProjectArchiveVisibility,
 	setProjectPinned,
 	updateProject,
 	updateProjectMemberRole,
-} from "../services/project";
-
-/**
- * Both parameters must be declared. Elysia validates the whole params object
- * and treats an undeclared key as an unexpected property, so omitting
- * `orgSlug` (which the tenant macro reads) would reject every request.
- */
-const projectParams = t.Object({
-	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
-	projectId: t.String({ minLength: 1, maxLength: 64 }),
-});
-
-/**
- * A slug is the readable public identifier, so it lives in the URL.
- * The length matches the create and update validation.
- */
-const projectSlugParams = t.Object({
-	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
-	projectSlug: t.String({ minLength: 1, maxLength: 100 }),
-});
-
-const projectMemberParams = t.Object({
-	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
-	projectId: t.String({ minLength: 1, maxLength: 64 }),
-	userId: t.String({ minLength: 1, maxLength: 64 }),
-});
-
-const projectQuery = t.Object({
-	search: t.Optional(t.String({ maxLength: 100 })),
-	status: t.Optional(t.String()),
-	sort: t.Optional(t.String()),
-	direction: t.Optional(t.String()),
-	page: t.Optional(t.String()),
-	pageSize: t.Optional(t.String()),
-});
-
-const PROJECT_STATUSES = ["all", "active", "archived"] as const;
-const PROJECT_SORTS = ["name", "createdAt", "updatedAt"] as const;
-
-/**
- * A batch of ids in one request.
- *
- * Capped at the same limit the members bulk routes use, so no single request
- * can turn into an unbounded loop.
- */
-const idList = t.Array(t.String({ minLength: 1, maxLength: 64 }), {
-	minItems: 1,
-	maxItems: BULK_SELECTION_MAX,
-});
-
-/** Clamp query strings instead of trusting the browser. */
-function parseProjectQuery(query: {
-	search?: string;
-	status?: string;
-	sort?: string;
-	direction?: string;
-	page?: string;
-	pageSize?: string;
-}): ProjectListQuery {
-	const status = (PROJECT_STATUSES as readonly string[]).includes(
-		query.status ?? "",
-	)
-		? (query.status as "all" | "active" | "archived")
-		: "active";
-
-	const sort = (PROJECT_SORTS as readonly string[]).includes(query.sort ?? "")
-		? (query.sort as ProjectSort)
-		: "createdAt";
-
-	const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
-	const pageSize = Math.min(
-		50,
-		Math.max(10, Number.parseInt(query.pageSize ?? "20", 10) || 20),
-	);
-
-	return {
-		search: query.search ?? "",
-		status,
-		sort,
-		direction: query.direction === "asc" ? "asc" : "desc",
-		page,
-		pageSize,
-	};
-}
+} from "../../services/project";
+import { parseProjectQuery } from "./query";
+import {
+	idList,
+	projectMemberParams,
+	projectParams,
+	projectQuery,
+	projectSlugParams,
+} from "./schemas";
 
 export const projectRoutes = new Elysia({ name: "projects" })
 	.use(tenantPlugin)
