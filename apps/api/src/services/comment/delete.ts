@@ -17,10 +17,7 @@ import { comment } from "../../db/schema";
 import { withTenant } from "../../db/tenant";
 import { keyFromRichText } from "../../lib/storage";
 import type { TenantContext } from "../../middleware/tenant";
-import {
-	countMilestoneUnread,
-	loadUnreadBaseline,
-} from "../comment-read.service";
+import { countMilestoneUnread, loadUnreadBaseline } from "../comment-read";
 import { requireMilestoneAccess } from "../milestone";
 import { deleteCommentNotifications } from "../notification.service";
 import { deleteObjectsBestEffort } from "../upload.service";

@@ -34,7 +34,7 @@ import {
 import {
 	getProjectUnreadSummary,
 	markCommentsRead,
-} from "../services/comment-read.service";
+} from "../services/comment-read";
 import {
 	dispatchCommentRead,
 	dispatchNotificationDeliveries,

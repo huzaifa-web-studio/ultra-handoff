@@ -5,15 +5,12 @@
  * microseconds and JavaScript keeps milliseconds. These cases pin that rule and
  * the exclusions for own messages, events and deleted rows.
  *
- * Used by: services/comment-read.service.ts.
+ * Used by: services/comment-read/.
  */
 
 import { describe, expect, test } from "bun:test";
 
-import {
-	computeThreadUnread,
-	type ReadableComment,
-} from "./comment-read.service";
+import { computeThreadUnread, type ReadableComment } from "./comment-read";
 
 const baseline = new Date("2026-11-01T00:00:00Z");
 

@@ -23,7 +23,7 @@ import {
 	countMilestoneUnread,
 	loadUnreadBaseline,
 	threadRootId,
-} from "../comment-read.service";
+} from "../comment-read";
 import { assertCommentMentions } from "../mention.service";
 import { requireMilestoneAccess } from "../milestone";
 import {

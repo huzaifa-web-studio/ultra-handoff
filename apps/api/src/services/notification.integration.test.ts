@@ -30,10 +30,7 @@ import {
 import { withTenant } from "../db/tenant";
 import type { TenantContext } from "../middleware/tenant";
 import { createMilestoneComment } from "./comment";
-import {
-	getProjectUnreadSummary,
-	markCommentsRead,
-} from "./comment-read.service";
+import { getProjectUnreadSummary, markCommentsRead } from "./comment-read";
 import { updateMilestoneScopeEntry } from "./milestone/scope";
 import { createNotifications } from "./notification.service";
 import {

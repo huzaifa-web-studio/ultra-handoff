@@ -16,7 +16,7 @@ import {
 	countMilestoneUnread,
 	loadUnreadBaseline,
 	threadUnreadState,
-} from "../comment-read.service";
+} from "../comment-read";
 import { requireMilestoneAccess } from "../milestone";
 import { loadCommentRecord, loadPeople, toCommentRow } from "./access";
 import type { CommentThreadResult } from "./types";

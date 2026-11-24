@@ -9,7 +9,7 @@
 
 import type { comment } from "../../db/schema";
 import type { MilestoneEventType } from "../../lib/milestone-events";
-import type { CommentUnread } from "../comment-read.service";
+import type { CommentUnread } from "../comment-read";
 import type { NotificationDelivery } from "../notification.service";
 
 export type CommentAuthor = {

@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	computeThreadUnread,
 	type ReadableComment,
-} from "../services/comment-read.service";
+} from "../services/comment-read";
 import {
 	COMMENT_NOTIFICATION_TYPES,
 	isCommentNotificationType,

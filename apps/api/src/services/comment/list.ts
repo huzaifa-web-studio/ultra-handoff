@@ -18,7 +18,7 @@ import {
 	countMilestoneUnread,
 	loadThreadReadCursors,
 	loadUnreadBaseline,
-} from "../comment-read.service";
+} from "../comment-read";
 import { requireMilestoneAccess } from "../milestone";
 import {
 	countComments,
