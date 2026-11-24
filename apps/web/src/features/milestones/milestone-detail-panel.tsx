@@ -21,40 +21,24 @@
  */
 
 import { Button } from "@org/ui/components/button";
-import { Input } from "@org/ui/components/input";
-import { ScrollArea } from "@org/ui/components/scroll-area";
-import {
-	Tabs,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-} from "@org/ui/components/tabs";
-import { cn } from "cn";
-import {
-	AlertTriangleIcon,
-	LockIcon,
-	LockOpenIcon,
-	RefreshCwIcon,
-	Trash2Icon,
-	XIcon,
-} from "lucide-react";
+
+import { Tabs, TabsContent } from "@org/ui/components/tabs";
+
+import { RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { UserAvatar } from "#/components/user-avatar";
+
 import { useProjectUnread } from "#/features/notifications/hooks";
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import { useDebouncedCallback } from "#/hooks/use-debounced-callback";
-import { formatDate, formatRelativeTime } from "#/lib/date";
 import type {
 	MilestoneDetail,
 	MilestoneScopeEntrySummary,
 	MilestoneViewer,
 } from "./api";
-import { ChangesTab } from "./changes/changes-tab";
-import { OverviewChanges } from "./changes/overview-changes";
+
 import { useRealtimeChangeRequests } from "./changes/realtime";
 import type { Comment } from "./comments/api";
-import { CommentTab } from "./comments/comment-tab";
-import { CommentThreadTab } from "./comments/comment-thread-tab";
+
 import { useRealtimeComments } from "./comments/realtime";
 import {
 	commentTabsStorageKey,
@@ -63,6 +47,12 @@ import {
 	toOpenCommentTab,
 	writeCommentTabs,
 } from "./comments/tabs-storage";
+import type { SaveState } from "./detail/atoms";
+import { MilestoneFixedTabs } from "./detail/fixed-tabs";
+import { MilestoneDetailHeader } from "./detail/header";
+import { MilestoneOverviewTab } from "./detail/overview-tab";
+import { MilestoneReaderTabs } from "./detail/reader-tabs";
+import { MilestoneTabStrip } from "./detail/tab-strip";
 import {
 	useMilestoneDetail,
 	useSetMilestoneAssignees,
@@ -70,31 +60,14 @@ import {
 	useToggleMilestoneChecklist,
 	useUpdateMilestone,
 } from "./hooks";
-import {
-	type AssignableMember,
-	MilestoneAssigneeField,
-} from "./milestone-assignee-field";
-import { MilestoneDateRangeField } from "./milestone-date-range-field";
+import type { AssignableMember } from "./milestone-assignee-field";
 import { MilestoneDeleteDialog } from "./milestone-delete-dialog";
-import { MilestoneEstimateField } from "./milestone-estimate-field";
-import { MilestonePhaseCard } from "./milestone-phase-card";
-import { MilestoneStatusBadge } from "./milestone-status-badge";
 import {
 	type MilestoneReasonStatus,
 	MilestoneStatusReasonDialog,
 } from "./milestone-status-reason-dialog";
-import { MilestoneStatusSelect } from "./milestone-status-select";
 import { readMilestonePayload, useRealtimeScopeEntries } from "./realtime";
-import {
-	MILESTONE_TITLE_MAX,
-	type MilestoneStatus,
-	normalizeDay,
-} from "./schema";
-import { BaselineScopeTab } from "./scope/baseline-scope-tab";
-import { canWriteScopeEntry, isCurrentScopeEntry } from "./scope/permissions";
-import { ScopeEntryTab } from "./scope/scope-entry-tab";
-import { ScopeIndexRow } from "./scope/scope-index-row";
-import { ScopeTab } from "./scope/scope-tab";
+import { type MilestoneStatus, normalizeDay } from "./schema";
 import {
 	baselineScopeTab,
 	type OpenScopeTab,
@@ -116,142 +89,7 @@ import {
 	scopeTabId,
 	scopeTabKey,
 } from "./tabs";
-
 /** Save indicator states. */
-type SaveState = "idle" | "saving" | "saved" | "error";
-
-/** A small labelled cell in the metadata grid. */
-function MetaField({
-	label,
-	className,
-	children,
-}: {
-	label: string;
-	className?: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<div className={cn("flex flex-col gap-1", className)}>
-			<span className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
-				{label}
-			</span>
-			{children}
-		</div>
-	);
-}
-
-/**
- * The save state as text, so it can sit in a footer or beside a hint without
- * repeating the same live region in two places.
- */
-function SaveStateText({
-	saveState,
-	saveError,
-	className,
-}: {
-	saveState: SaveState;
-	saveError: string | null;
-	className?: string;
-}) {
-	return (
-		<span
-			aria-live="polite"
-			className={cn(
-				saveState === "error" ? "text-danger" : "text-app-text-muted",
-				className,
-			)}
-		>
-			{saveState === "saving" && "Saving..."}
-			{saveState === "saved" && "Saved"}
-			{saveState === "error" && (saveError ?? "Could not save.")}
-		</span>
-	);
-}
-
-/**
- * The save indicator for the fields that autosave.
- *
- * Why its own component: the metadata form and the scope document both need it,
- * and repeating the live region in two tabs is how the two copies drift.
- */
-function SaveStatus({
-	saveState,
-	saveError,
-	onRetry,
-}: {
-	saveState: SaveState;
-	saveError: string | null;
-	onRetry: () => void;
-}) {
-	return (
-		<div className="flex min-h-9 items-center justify-between gap-2 border-t border-app-border px-4 py-1.5 text-xs">
-			<SaveStateText saveState={saveState} saveError={saveError} />
-
-			{saveState === "error" && (
-				<Button size="xs" variant="outline" onPress={onRetry}>
-					Retry
-				</Button>
-			)}
-		</div>
-	);
-}
-
-/**
- * One reader opened tab in the strip.
- *
- * Why its own component: scope tabs and comment tabs share one strip, and two
- * copies of the close button is how the keyboard behaviour drifts. The first
- * reader tab carries the vertical rule that separates the fixed sections from
- * the reader's own tabs.
- */
-function ReaderTabTrigger({
-	tabKey,
-	label,
-	ariaLabel,
-	first,
-	onClose,
-	registerRef,
-}: {
-	tabKey: string;
-	label: string;
-	ariaLabel?: string;
-	first: boolean;
-	onClose: () => void;
-	registerRef: (element: HTMLDivElement | null) => void;
-}) {
-	return (
-		<TabsTrigger
-			id={tabKey}
-			aria-label={ariaLabel}
-			ref={registerRef}
-			className={cn(
-				"max-w-48 flex-none cursor-pointer gap-1.5 pr-1.5 normal-case tracking-normal",
-				first &&
-					"ml-2 pl-3 before:absolute before:inset-y-1.5 before:left-0 before:w-px before:bg-app-border before:content-['']",
-			)}
-		>
-			<span className="min-w-0 truncate">{label}</span>
-
-			{/*
-			 * A quick close on the tab itself. It stops the press from selecting
-			 * the tab and stays a real focus stop so keyboard users can close a
-			 * tab without leaving the strip.
-			 */}
-			<button
-				type="button"
-				aria-label={`Close ${label}`}
-				className="flex size-6 shrink-0 cursor-pointer items-center justify-center text-app-text-muted transition-colors hover:bg-app-panel-subtle hover:text-app-text"
-				onPointerDown={(event) => event.stopPropagation()}
-				onClick={(event) => {
-					event.stopPropagation();
-					onClose();
-				}}
-			>
-				<XIcon className="size-3.5" aria-hidden />
-			</button>
-		</TabsTrigger>
-	);
-}
 
 /**
  * The pane with the query states folded in.
@@ -989,113 +827,22 @@ function MilestoneDetailContent({
 	return (
 		<section className="flex h-full min-h-0 flex-col border border-app-border bg-app-panel">
 			{/* Header */}
-			<header className="flex items-start gap-2 border-b border-app-border p-4">
-				<div className="flex min-w-0 flex-1 flex-col gap-1">
-					{canEditFields ? (
-						<Input
-							value={title}
-							maxLength={MILESTONE_TITLE_MAX}
-							aria-label="Milestone title"
-							onChange={(event) => {
-								setTitle(event.target.value);
-								saveTitle.schedule(event.target.value);
-							}}
-							onFocus={() => {
-								titleFocused.current = true;
-							}}
-							onBlur={() => {
-								titleFocused.current = false;
-
-								// An empty title is never saved, so the field must snap
-								// back instead of showing a value the server does not have.
-								if (title.trim().length === 0) {
-									setTitle(lastSavedTitle.current);
-									return;
-								}
-
-								saveTitle.flush();
-							}}
-							onKeyDown={(event) => {
-								if (event.key === "Enter") {
-									event.preventDefault();
-									saveTitle.flush();
-								}
-							}}
-							className="h-auto border-b-transparent px-0 py-0 font-display text-xl font-bold tracking-normal normal-case focus-visible:border-b-app-focus"
-						/>
-					) : (
-						<h2 className="font-display text-xl font-bold text-app-text">
-							{milestone.title}
-						</h2>
-					)}
-
-					<div className="flex flex-wrap items-center gap-2 text-xs text-app-text-muted">
-						<MilestoneStatusBadge status={status} />
-						{locked && (
-							<span className="inline-flex items-center gap-1 bg-app-selected px-1.5 py-0.5 font-semibold text-app-text uppercase tracking-widest text-[0.6rem]">
-								<LockIcon className="size-3" aria-hidden />
-								Locked
-							</span>
-						)}
-						{milestone.updatedByName && (
-							<span>
-								Edited {formatRelativeTime(milestone.updatedAt)} by{" "}
-								{milestone.updatedByName}
-							</span>
-						)}
-						{milestone.completedAt && (
-							<span>Completed {formatRelativeTime(milestone.completedAt)}</span>
-						)}
-					</div>
-				</div>
-
-				<div className="flex shrink-0 items-center gap-1">
-					{viewer.canLock && (
-						<Button
-							variant="ghost"
-							size="sm"
-							loading={setLock.isPending}
-							onPress={toggleLock}
-						>
-							{locked ? <LockOpenIcon aria-hidden /> : <LockIcon aria-hidden />}
-							{locked ? "Unlock" : "Lock"}
-						</Button>
-					)}
-					{canEditFields && (
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							aria-label="Delete milestone"
-							onPress={() => setDeleteOpen(true)}
-						>
-							<Trash2Icon aria-hidden />
-						</Button>
-					)}
-					{onClose && (
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							aria-label="Close milestone details"
-							onPress={onClose}
-						>
-							<XIcon aria-hidden />
-						</Button>
-					)}
-				</div>
-			</header>
-
-			{locked && (
-				<div className="flex flex-wrap items-center gap-2 border-b border-warning bg-warning-bg px-4 py-2 text-xs text-warning">
-					<LockIcon className="size-3.5 shrink-0" aria-hidden />
-					<span>
-						Locked by {milestone.lockedByName ?? "an owner"} on{" "}
-						{formatDate(milestone.lockedAt ?? milestone.updatedAt)}. The initial
-						scope, title, dates and estimate are read-only. Status, assignees,
-						checklist progress and active phase notes can still change, and a
-						change request can still be accepted into a new section.
-					</span>
-				</div>
-			)}
+			<MilestoneDetailHeader
+				canEditFields={canEditFields}
+				title={title}
+				setTitle={setTitle}
+				saveTitle={saveTitle}
+				titleFocused={titleFocused}
+				lastSavedTitle={lastSavedTitle}
+				milestone={milestone}
+				status={status}
+				locked={locked}
+				viewer={viewer}
+				lockPending={setLock.isPending}
+				onToggleLock={toggleLock}
+				onDelete={() => setDeleteOpen(true)}
+				onClose={onClose}
+			/>
 
 			{/*
 			 * Both panels are force mounted. Switching to Comments must not
@@ -1112,461 +859,96 @@ function MilestoneDetailContent({
 				}}
 				className="flex min-h-0 flex-1 flex-col gap-0"
 			>
-				<TabsList
-					variant="line"
-					aria-label="Milestone sections"
-					className="w-full justify-start overflow-x-auto overflow-y-hidden border-b border-app-border px-2"
-				>
-					<TabsTrigger id="overview" className="flex-none cursor-pointer">
-						Overview
-					</TabsTrigger>
-					<TabsTrigger id="scope" className="flex-none cursor-pointer">
-						Scope
-					</TabsTrigger>
-					<TabsTrigger
-						id="changes"
-						className="flex-none cursor-pointer gap-1.5"
-					>
-						Changes
-						{milestone.openChangeRequestCount > 0 && (
-							<span className="bg-app-selected px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-app-text">
-								{milestone.openChangeRequestCount}
-							</span>
-						)}
-					</TabsTrigger>
-					<TabsTrigger
-						id="comments"
-						className="flex-none cursor-pointer gap-1.5"
-					>
-						Comments
-						{unreadComments > 0 ? (
-							<span className="bg-app-attention px-1.5 py-0.5 text-[0.6rem] font-semibold text-app-attention-text tabular-nums">
-								{unreadComments}
-							</span>
-						) : null}
-					</TabsTrigger>
-
-					{/*
-					 * Reader opened tabs. Scope tabs come first, then focused
-					 * discussions, so the strip groups by what the tab shows. The
-					 * first one carries the vertical rule that separates the fixed
-					 * sections from the reader's own tabs. The list scrolls
-					 * horizontally, so opening many stays usable.
-					 */}
-					{scopeTabs.map((tab, index) => {
-						const key = scopeTabKey(tab.id);
-
-						return (
-							<ReaderTabTrigger
-								key={key}
-								tabKey={key}
-								label={tab.label}
-								ariaLabel={tab.label}
-								first={index === 0}
-								onClose={() => closeScopeTab(tab.id)}
-								registerRef={(element) => {
-									if (element) {
-										tabRefs.current.set(key, element);
-									} else {
-										tabRefs.current.delete(key);
-									}
-								}}
-							/>
-						);
-					})}
-
-					{commentTabs.map((tab, index) => {
-						const key = commentTabKey(tab.id);
-
-						return (
-							<ReaderTabTrigger
-								key={key}
-								tabKey={key}
-								label={tab.label}
-								ariaLabel={tab.title}
-								first={scopeTabs.length === 0 && index === 0}
-								onClose={() => closeCommentTab(tab.id)}
-								registerRef={(element) => {
-									if (element) {
-										tabRefs.current.set(key, element);
-									} else {
-										tabRefs.current.delete(key);
-									}
-								}}
-							/>
-						);
-					})}
-				</TabsList>
+				<MilestoneTabStrip
+					openChangeRequestCount={milestone.openChangeRequestCount}
+					unreadComments={unreadComments}
+					scopeTabs={scopeTabs}
+					commentTabs={commentTabs}
+					closeScopeTab={closeScopeTab}
+					closeCommentTab={closeCommentTab}
+					tabRefs={tabRefs}
+				/>
 
 				<TabsContent
 					id="overview"
 					shouldForceMount
 					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
 				>
-					<ScrollArea className="min-h-0 flex-1">
-						<div className="flex flex-col gap-6 p-4">
-							{externalUpdate && (
-								<div
-									aria-live="polite"
-									className="flex flex-wrap items-center gap-2 border border-warning bg-warning-bg p-3 text-xs text-warning"
-								>
-									<AlertTriangleIcon className="size-4 shrink-0" aria-hidden />
-									<span className="flex-1">
-										Someone else edited the milestone details. Reload to see
-										their changes.
-									</span>
-									<Button size="xs" variant="surface" onPress={onReload}>
-										Reload
-									</Button>
-								</div>
-							)}
-
-							{/* Metadata */}
-							<div className="grid gap-4 sm:grid-cols-2">
-								<MetaField label="Status">
-									<MilestoneStatusSelect
-										status={status}
-										onChange={changeStatus}
-										readOnly={!canEditLifecycle}
-									/>
-								</MetaField>
-
-								<MetaField label="Estimate">
-									<MilestoneEstimateField
-										minutes={milestone.estimateMinutes}
-										onCommit={changeEstimate}
-										readOnly={!canEditFields}
-									/>
-								</MetaField>
-
-								<MetaField label="Dates" className="sm:col-span-2">
-									<MilestoneDateRangeField
-										startDate={dates.startDate}
-										dueDate={dates.dueDate}
-										onChange={changeDates}
-										readOnly={!canEditFields}
-									/>
-								</MetaField>
-
-								<MetaField label="Assignees" className="sm:col-span-2">
-									<MilestoneAssigneeField
-										members={members}
-										selected={assigneeIds}
-										assignees={milestone.assignees}
-										onChange={changeAssignees}
-										readOnly={!canEditLifecycle}
-									/>
-								</MetaField>
-							</div>
-
-							{/*
-							 * Scope summary. No document is rendered here: every card
-							 * opens its own tab, where the section gets the full pane.
-							 */}
-							<section className="flex flex-col gap-2">
-								<div className="flex flex-wrap items-center justify-between gap-2">
-									<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
-										Scope
-										{scopeEntries.length > 0 && (
-											<span className="ml-2 bg-app-selected px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-app-text">
-												{scopeEntries.length} added
-											</span>
-										)}
-									</h3>
-									<Button
-										size="xs"
-										variant="outline"
-										onPress={() => onTabChange("scope")}
-									>
-										Open scope
-									</Button>
-								</div>
-
-								<ScopeIndexRow
-									kind="baseline"
-									title="Initial scope"
-									meta={
-										locked
-											? "Locked baseline"
-											: milestone.description.length === 0
-												? "No scope written yet."
-												: "The agreed baseline"
-									}
-									onOpen={openBaselineScopeTab}
-								/>
-
-								{latestScopeEntries.map((entry) => (
-									<ScopeIndexRow
-										key={entry.id}
-										kind={entry.kind}
-										title={entry.title}
-										meta={`${entry.createdByName ?? "Former member"} · ${formatDate(
-											entry.createdAt,
-										)}`}
-										badge={
-											isCurrentScopeEntry(
-												entry,
-												milestone.phase?.currentPeriodId ?? null,
-											)
-												? "Current"
-												: undefined
-										}
-										onOpen={() => openEntryScopeTab(entry)}
-									/>
-								))}
-
-								{scopeEntries.length > latestScopeEntries.length && (
-									<Button
-										size="xs"
-										variant="ghost"
-										className="self-start"
-										onPress={() => onTabChange("scope")}
-									>
-										View all {scopeEntries.length} additions
-									</Button>
-								)}
-							</section>
-
-							{/* Changes summary. Every request is a card, and the tab holds the detail. */}
-							<section className="flex flex-col gap-2">
-								<div className="flex items-center justify-between gap-2">
-									<h3 className="text-[0.65rem] font-semibold tracking-widest text-app-text-muted uppercase">
-										Changes
-										{milestone.openChangeRequestCount > 0 && (
-											<span className="ml-2 bg-info-bg px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-info">
-												{milestone.openChangeRequestCount} open
-											</span>
-										)}
-									</h3>
-									<Button
-										size="xs"
-										variant="outline"
-										onPress={() => onTabChange("changes")}
-									>
-										Open changes
-									</Button>
-								</div>
-
-								<OverviewChanges
-									orgSlug={orgSlug}
-									projectId={projectId}
-									milestoneId={milestone.id}
-									active={effectiveSelectedTab === "overview"}
-									onOpen={() => onTabChange("changes")}
-								/>
-							</section>
-
-							{/* Phase timing. Hidden until the backfill or a transition gives it data. */}
-							{milestone.phase && (
-								<MilestonePhaseCard phase={milestone.phase} />
-							)}
-
-							{/* Authorship */}
-							<div className="flex flex-wrap items-center gap-2 text-xs text-app-text-muted">
-								{milestone.createdByName && (
-									<>
-										<UserAvatar
-											size="sm"
-											name={milestone.createdByName}
-											className="size-5"
-										/>
-										<span>Created by {milestone.createdByName}</span>
-									</>
-								)}
-							</div>
-						</div>
-					</ScrollArea>
-
-					<SaveStatus
+					<MilestoneOverviewTab
+						externalUpdate={externalUpdate}
+						onReload={onReload}
+						status={status}
+						canEditLifecycle={canEditLifecycle}
+						changeStatus={changeStatus}
+						milestone={milestone}
+						canEditFields={canEditFields}
+						changeEstimate={changeEstimate}
+						dates={dates}
+						changeDates={changeDates}
+						members={members}
+						assigneeIds={assigneeIds}
+						changeAssignees={changeAssignees}
+						scopeEntries={scopeEntries}
+						latestScopeEntries={latestScopeEntries}
+						locked={locked}
+						openBaselineScopeTab={openBaselineScopeTab}
+						openEntryScopeTab={openEntryScopeTab}
+						onTabChange={onTabChange}
+						orgSlug={orgSlug}
+						projectId={projectId}
+						effectiveSelectedTab={effectiveSelectedTab}
 						saveState={saveState}
 						saveError={saveError}
-						onRetry={() => void retryFailedSave()}
+						retryFailedSave={retryFailedSave}
 					/>
 				</TabsContent>
 
-				<TabsContent
-					id="scope"
-					shouldForceMount
-					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
-				>
-					{effectiveSelectedTab === "scope" && (
-						<ScopeTab
-							milestone={milestone}
-							phase={milestone.phase}
-							viewer={viewer}
-							locked={locked}
-							canEditFields={canEditFields}
-							onOpenBaseline={openBaselineScopeTab}
-							onOpenEntry={openEntryScopeTab}
-						/>
-					)}
-				</TabsContent>
-
-				<TabsContent
-					id="changes"
-					shouldForceMount
-					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
-				>
-					<ChangesTab
-						orgSlug={orgSlug}
-						organizationId={organizationId}
-						projectSlug={projectSlug}
-						projectId={projectId}
-						milestoneId={milestone.id}
-						archived={viewer.archived}
-						canCreate={viewer.canComment}
-						canDecide={viewer.canWrite}
-						members={members}
-						active={effectiveSelectedTab === "changes"}
-						onOpenScope={(scopeEntryId) => {
-							if (!scopeEntryId) {
-								onTabChange("scope");
-								return;
-							}
-
-							const entry = scopeEntries.find(
-								(item) => item.id === scopeEntryId,
-							);
-
-							if (entry) openEntryScopeTab(entry);
-							else onTabChange("scope");
-						}}
-					/>
-				</TabsContent>
-
-				<TabsContent
-					id="comments"
-					shouldForceMount
-					className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
-				>
-					{commentsOpened && (
-						<CommentTab
-							orgSlug={orgSlug}
-							organizationId={organizationId}
-							projectId={projectId}
-							milestoneId={milestone.id}
-							viewerId={viewer.userId}
-							canComment={viewer.canComment}
-							archived={viewer.archived}
-							active={effectiveSelectedTab === "comments"}
-							onOpenCommentTab={openCommentTab}
-						/>
-					)}
-				</TabsContent>
+				<MilestoneFixedTabs
+					orgSlug={orgSlug}
+					organizationId={organizationId}
+					projectSlug={projectSlug}
+					projectId={projectId}
+					milestone={milestone}
+					viewer={viewer}
+					members={members}
+					locked={locked}
+					canEditFields={canEditFields}
+					scopeEntries={scopeEntries}
+					effectiveSelectedTab={effectiveSelectedTab}
+					commentsOpened={commentsOpened}
+					openBaselineScopeTab={openBaselineScopeTab}
+					openEntryScopeTab={openEntryScopeTab}
+					openCommentTab={openCommentTab}
+					onTabChange={onTabChange}
+				/>
 
 				{/*
 				 * Focused scope tabs. The baseline is not an entry, so it has its
 				 * own component; every other tab resolves the entry from the
 				 * detail metadata and shows a close action if it has vanished.
 				 */}
-				{scopeTabs.map((tab) => {
-					const key = scopeTabKey(tab.id);
-
-					if (tab.id === BASELINE_SCOPE_TAB_ID) {
-						return (
-							<TabsContent
-								key={key}
-								id={key}
-								shouldForceMount
-								className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
-							>
-								<BaselineScopeTab
-									milestone={milestone}
-									orgSlug={orgSlug}
-									organizationId={organizationId}
-									projectId={projectId}
-									canEdit={canEditFields}
-									locked={locked}
-									canTickChecklist={viewer.canTickChecklist}
-									scopeDraftRef={scopeDraftRef}
-									onScopeChange={changeScope}
-									saveState={saveState}
-									saveError={saveError}
-									toggleChecklist={toggleScopeChecklistItem}
-									togglePending={toggleChecklist.isPending}
-								/>
-							</TabsContent>
-						);
-					}
-
-					const entry = scopeEntries.find((item) => item.id === tab.id);
-
-					if (!entry) {
-						return (
-							<TabsContent
-								key={key}
-								id={key}
-								shouldForceMount
-								className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
-							>
-								<div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-									<p className="text-sm text-app-text-muted">
-										This section no longer exists.
-									</p>
-									<Button
-										size="sm"
-										variant="outline"
-										onPress={() => closeScopeTab(tab.id)}
-									>
-										Close tab
-									</Button>
-								</div>
-							</TabsContent>
-						);
-					}
-
-					const current = isCurrentScopeEntry(
-						entry,
-						milestone.phase?.currentPeriodId ?? null,
-					);
-
-					return (
-						<TabsContent
-							key={key}
-							id={key}
-							shouldForceMount
-							className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
-						>
-							<ScopeEntryTab
-								orgSlug={orgSlug}
-								organizationId={organizationId}
-								projectId={projectId}
-								milestoneId={milestone.id}
-								entry={entry}
-								active={effectiveSelectedTab === key}
-								current={current}
-								canWrite={canWriteScopeEntry(entry, viewer, {
-									locked,
-									current,
-								})}
-								onClose={() => closeScopeTab(tab.id)}
-							/>
-						</TabsContent>
-					);
-				})}
-
-				{commentTabs.map((tab) => (
-					<TabsContent
-						key={tab.id}
-						id={commentTabKey(tab.id)}
-						shouldForceMount
-						className="flex min-h-0 flex-1 flex-col data-[inert]:hidden"
-					>
-						<CommentThreadTab
-							orgSlug={orgSlug}
-							organizationId={organizationId}
-							projectId={projectId}
-							milestoneId={milestone.id}
-							viewerId={viewer.userId}
-							commentId={tab.id}
-							canComment={viewer.canComment}
-							archived={viewer.archived}
-							active={effectiveSelectedTab === commentTabKey(tab.id)}
-							onClose={() => closeCommentTab(tab.id)}
-							onLoaded={handleCommentLoaded}
-						/>
-					</TabsContent>
-				))}
+				<MilestoneReaderTabs
+					orgSlug={orgSlug}
+					organizationId={organizationId}
+					projectId={projectId}
+					milestone={milestone}
+					viewer={viewer}
+					locked={locked}
+					canEditFields={canEditFields}
+					scopeTabs={scopeTabs}
+					commentTabs={commentTabs}
+					scopeEntries={scopeEntries}
+					effectiveSelectedTab={effectiveSelectedTab}
+					scopeDraftRef={scopeDraftRef}
+					changeScope={changeScope}
+					saveState={saveState}
+					saveError={saveError}
+					toggleScopeChecklistItem={toggleScopeChecklistItem}
+					togglePending={toggleChecklist.isPending}
+					closeScopeTab={closeScopeTab}
+					closeCommentTab={closeCommentTab}
+					handleCommentLoaded={handleCommentLoaded}
+				/>
 			</Tabs>
 
 			{canEditFields && (
