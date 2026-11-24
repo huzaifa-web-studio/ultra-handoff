@@ -14,247 +14,48 @@
  */
 
 import { Elysia, t } from "elysia";
-
 import {
 	MILESTONE_ASSIGNEE_MAX,
-	MILESTONE_ESTIMATE_MAX,
-	MILESTONE_NOTE_MAX,
 	MILESTONE_SCOPE_TITLE_MAX,
-	MILESTONE_STATUSES,
 	MILESTONE_TITLE_MAX,
-} from "../auth/milestone-permissions";
-import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
-import { tenantPlugin } from "../middleware/tenant";
-import { publishRealtimeEvent } from "../realtime";
-import {
-	type CommentRealtimePayload,
-	type MilestoneChangedField,
-	type MilestoneCreatedPayload,
-	type MilestoneDeletedPayload,
-	type MilestoneScopeChangedPayload,
-	type MilestoneUpdatedPayload,
-	toRealtimeMilestone,
-} from "../realtime/events";
+} from "../../auth/milestone-permissions";
+import { authErrorMessage, authErrorStatus } from "../../lib/auth-error";
+import { tenantPlugin } from "../../middleware/tenant";
 import {
 	createMilestone,
 	deleteMilestone,
 	getMilestone,
 	listMilestones,
 	lockMilestone,
-	type MilestoneListQuery,
-	type MilestoneSummary,
-	type MilestoneTimelineComment,
 	setMilestoneAssignees,
 	toggleMilestoneChecklist,
 	unlockMilestone,
 	updateMilestone,
-} from "../services/milestone";
+} from "../../services/milestone";
 import {
 	getMilestoneScopeEntry,
 	updateMilestoneScopeEntry,
-} from "../services/milestone/scope";
-import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
-
-/** Every milestone route lives under one project. */
-const milestoneParams = t.Object({
-	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
-	projectId: t.String({ minLength: 1, maxLength: 64 }),
-	milestoneId: t.String({ minLength: 1, maxLength: 64 }),
-});
-
-/** Params for the collection routes, which have no milestone id yet. */
-const projectParams = t.Object({
-	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
-	projectId: t.String({ minLength: 1, maxLength: 64 }),
-});
-
-/** One scope section inside a milestone. */
-const scopeEntryParams = t.Object({
-	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
-	projectId: t.String({ minLength: 1, maxLength: 64 }),
-	milestoneId: t.String({ minLength: 1, maxLength: 64 }),
-	entryId: t.String({ minLength: 1, maxLength: 64 }),
-});
-
-const milestoneQuery = t.Object({
-	search: t.Optional(t.String({ maxLength: 100 })),
-	status: t.Optional(t.String()),
-	sort: t.Optional(t.String()),
-	direction: t.Optional(t.String()),
-	page: t.Optional(t.String()),
-	pageSize: t.Optional(t.String()),
-});
-
-/**
- * A date arrives as `YYYY-MM-DD`, an empty string or null.
- *
- * The empty string is how the client clears a field through PATCH, matching
- * the convention the project routes already use for descriptions and logos.
- */
-const dateField = t.Optional(t.Union([t.String({ maxLength: 10 }), t.Null()]));
-
-const estimateField = t.Optional(
-	t.Union([
-		t.Integer({ minimum: 1, maximum: MILESTONE_ESTIMATE_MAX }),
-		t.Null(),
-	]),
-);
-
-/**
- * The editor value.
- *
- * Deliberately untyped at the HTTP layer: the shape is a Plate document, and
- * the sanitizer in the service is the authority on what is accepted. A schema
- * here would have to be duplicated and kept in sync with the editor.
- */
-const descriptionField = t.Optional(t.Unknown());
-
-const assigneeField = t.Optional(
-	t.Array(t.String({ minLength: 1, maxLength: 64 }), {
-		maxItems: MILESTONE_ASSIGNEE_MAX,
-	}),
-);
-
-/** An optional prose note attached to a timeline event. */
-const noteField = t.Optional(
-	t.Union([t.String({ maxLength: MILESTONE_NOTE_MAX }), t.Null()]),
-);
-
-/**
- * One optional status value.
- *
- * Why the explicit `default: undefined`: `t.UnionEnum` normally injects the
- * first enum value when the property is missing, so a PATCH that only changed a
- * date silently reset the status to "todo". Overriding the helper's default
- * keeps a missing status missing while preserving the inferred union type.
- */
-const statusField = t.UnionEnum(MILESTONE_STATUSES, { default: undefined });
-
-const MILESTONE_SORTS = ["dueDate", "createdAt", "title"] as const;
-
-const MILESTONE_FILTERS = ["all", "active", ...MILESTONE_STATUSES] as const;
-
-/** Clamp the query strings instead of trusting the browser. */
-function parseMilestoneQuery(query: {
-	search?: string;
-	status?: string;
-	sort?: string;
-	direction?: string;
-	page?: string;
-	pageSize?: string;
-}): MilestoneListQuery {
-	const status = (MILESTONE_FILTERS as readonly string[]).includes(
-		query.status ?? "",
-	)
-		? (query.status as MilestoneListQuery["status"])
-		: "active";
-
-	const sort = (MILESTONE_SORTS as readonly string[]).includes(query.sort ?? "")
-		? (query.sort as MilestoneListQuery["sort"])
-		: "dueDate";
-
-	const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
-	const pageSize = Math.min(
-		50,
-		Math.max(10, Number.parseInt(query.pageSize ?? "25", 10) || 25),
-	);
-
-	return {
-		search: query.search ?? "",
-		status,
-		sort,
-		direction: query.direction === "desc" ? "desc" : "asc",
-		page,
-		pageSize,
-	};
-}
-
-/**
- * Publish a milestone change.
- *
- * Why the routes and not the service: each helper needs the project id from the
- * URL, and a realtime failure must never turn a successful save into an error.
- * `publishRealtimeEvent` never rejects, so these are fire and forget.
- */
-function publishMilestoneCreated(
-	projectId: string,
-	milestone: MilestoneSummary,
-): void {
-	const payload: MilestoneCreatedPayload = {
-		milestone: toRealtimeMilestone(milestone),
-	};
-
-	void publishRealtimeEvent(projectId, "milestone.created", payload).catch(
-		() => undefined,
-	);
-}
-
-function publishMilestoneUpdated(
-	projectId: string,
-	milestone: MilestoneSummary,
-	changed: MilestoneChangedField[],
-	timeline: MilestoneTimelineComment[],
-): void {
-	const payload: MilestoneUpdatedPayload = {
-		milestone: toRealtimeMilestone(milestone),
-		changed,
-	};
-
-	void publishRealtimeEvent(projectId, "milestone.updated", payload).catch(
-		() => undefined,
-	);
-
-	// Activity rows ride the comment channel, so the discussion shows the status
-	// and date changes without a refetch. An event is not a message, so the
-	// visible comment count is left alone.
-	for (const comment of timeline) {
-		const commentPayload: CommentRealtimePayload = {
-			milestoneId: milestone.id,
-			comment,
-			total: null,
-		};
-
-		void publishRealtimeEvent(
-			projectId,
-			"comment.created",
-			commentPayload,
-		).catch(() => undefined);
-	}
-}
-
-function publishMilestoneDeleted(projectId: string, milestoneId: string): void {
-	const payload: MilestoneDeletedPayload = { milestoneId };
-
-	void publishRealtimeEvent(projectId, "milestone.deleted", payload).catch(
-		() => undefined,
-	);
-}
-
-/**
- * Tell open panes that one scope section changed.
- *
- * Deliberately lighter than a milestone update: the payload carries ids only,
- * so a reader fetches the one body it is looking at instead of the whole
- * detail. The section body never travels on the realtime channel.
- */
-function publishScopeChanged(
-	projectId: string,
-	milestoneId: string,
-	entryId: string,
-	updatedBy: string,
-): void {
-	const payload: MilestoneScopeChangedPayload = {
-		milestoneId,
-		entryId,
-		updatedBy,
-	};
-
-	void publishRealtimeEvent(
-		projectId,
-		"milestone.scope.changed",
-		payload,
-	).catch(() => undefined);
-}
+} from "../../services/milestone/scope";
+import { dispatchNotificationDeliveries } from "../../services/notification-dispatch.service";
+import {
+	parseMilestoneQuery,
+	publishMilestoneCreated,
+	publishMilestoneDeleted,
+	publishMilestoneUpdated,
+	publishScopeChanged,
+} from "./events";
+import {
+	assigneeField,
+	dateField,
+	descriptionField,
+	estimateField,
+	milestoneParams,
+	milestoneQuery,
+	noteField,
+	projectParams,
+	scopeEntryParams,
+	statusField,
+} from "./schemas";
 
 export const milestoneRoutes = new Elysia({ name: "milestones" })
 	.use(tenantPlugin)
