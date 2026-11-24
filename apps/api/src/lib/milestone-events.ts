@@ -10,7 +10,7 @@
  * values. Adding a type here without updating that check is a runtime failure,
  * not a type error.
  *
- * Used by: services/milestone/ and services/comment.service.ts.
+ * Used by: services/milestone/ and services/comment/.
  */
 
 /** Every change the milestone timeline can record. */

@@ -15,7 +15,7 @@
  *   - Better Auth tables are read through `loadUserMap`, never joined into a
  *     tenant query
  *
- * Used by: src/routes/mentions.ts and src/services/comment.service.ts.
+ * Used by: src/routes/mentions.ts and src/services/comment/.
  */
 
 import { APIError } from "better-auth/api";

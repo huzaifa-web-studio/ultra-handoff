@@ -9,7 +9,7 @@
  * callers only change their import path.
  *
  * Used by: `routes/milestones.ts`, `routes/change-requests.ts`,
- * `change-request.service.ts`, `comment.service.ts`, `comment-read.service.ts`,
+ * `change-request.service.ts`, `comment/`, `comment-read.service.ts`,
  * the realtime gateway and the integration suites.
  */
 

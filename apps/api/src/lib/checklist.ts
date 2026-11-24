@@ -7,7 +7,7 @@
  * `checked` on the list item itself and the sanitizer guarantees every item has
  * a stable `id`, so a targeted toggle never has to rewrite the text.
  *
- * Used by: src/services/comment.service.ts and src/services/milestone/.
+ * Used by: src/services/comment/ and src/services/milestone/.
  */
 
 /** One checklist item inside a sanitized body. */

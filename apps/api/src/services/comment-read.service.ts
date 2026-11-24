@@ -17,7 +17,7 @@
  * open the app to a backlog they were never part of. The effective start is the
  * later of the organization membership and the project membership.
  *
- * Used by: services/comment.service.ts, services/milestone/ and
+ * Used by: services/comment/, services/milestone/ and
  * src/routes/comments.ts.
  */
 

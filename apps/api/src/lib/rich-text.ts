@@ -22,7 +22,7 @@
  * empty body checks. Keeping both in one pass means they can never disagree.
  *
  * Used by: src/services/milestone/ and
- * src/services/comment.service.ts.
+ * src/services/comment/.
  */
 
 import { randomUUID } from "node:crypto";

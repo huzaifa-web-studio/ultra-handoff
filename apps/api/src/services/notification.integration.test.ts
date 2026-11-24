@@ -29,7 +29,7 @@ import {
 } from "../db/schema";
 import { withTenant } from "../db/tenant";
 import type { TenantContext } from "../middleware/tenant";
-import { createMilestoneComment } from "./comment.service";
+import { createMilestoneComment } from "./comment";
 import {
 	getProjectUnreadSummary,
 	markCommentsRead,
@@ -956,7 +956,7 @@ suite("notification system", () => {
 
 			expect((await rowsFor(ids.dev)).length).toBe(1);
 
-			const { updateMilestoneComment } = await import("./comment.service");
+			const { updateMilestoneComment } = await import("./comment");
 
 			await updateMilestoneComment(
 				tOwner(),
@@ -981,7 +981,7 @@ suite("notification system", () => {
 
 			expect((await rowsFor(ids.dev)).length).toBe(1);
 
-			const { updateMilestoneComment } = await import("./comment.service");
+			const { updateMilestoneComment } = await import("./comment");
 
 			await updateMilestoneComment(
 				tOwner(),
@@ -1030,7 +1030,7 @@ suite("notification system", () => {
 			expect((await rowsFor(ids.dev)).length).toBe(1);
 			expect((await rowsFor(ids.client)).length).toBe(1);
 
-			const { updateMilestoneComment } = await import("./comment.service");
+			const { updateMilestoneComment } = await import("./comment");
 
 			// Keep only the client mention, so only dev should lose the row.
 			await updateMilestoneComment(
@@ -1048,7 +1048,7 @@ suite("notification system", () => {
 		test("deleting a comment removes its notifications for every recipient", async () => {
 			await clearNotifications();
 
-			const { deleteMilestoneComment } = await import("./comment.service");
+			const { deleteMilestoneComment } = await import("./comment");
 
 			const body = [
 				{
@@ -1788,7 +1788,7 @@ suite("notification system", () => {
 		test("a soft deleted comment hides its notification without deleting the row", async () => {
 			await clearNotifications();
 
-			const { deleteMilestoneComment } = await import("./comment.service");
+			const { deleteMilestoneComment } = await import("./comment");
 
 			const created = await createMilestoneComment(
 				tOwner(),

@@ -6,7 +6,7 @@
  * surfaces. Keeping them here means either file can be read on its own.
  *
  * The routes only parse input and translate failures. Every rule lives in
- * `comment.service.ts`, and the tenant macro guarantees `:orgSlug` was resolved
+ * `comment/`, and the tenant macro guarantees `:orgSlug` was resolved
  * from a verified membership before a handler runs.
  *
  * Used by: src/index.ts.
@@ -30,7 +30,7 @@ import {
 	listMilestoneComments,
 	toggleMilestoneChecklistItem,
 	updateMilestoneComment,
-} from "../services/comment.service";
+} from "../services/comment";
 import {
 	getProjectUnreadSummary,
 	markCommentsRead,

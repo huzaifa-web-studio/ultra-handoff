@@ -9,7 +9,7 @@
  * never leak through a project the caller cannot open.
  *
  * Used by: all read and write modules in `services/milestone/`, plus
- * `services/comment.service.ts` and `services/comment-read.service.ts` through
+ * `services/comment/` and `services/comment-read.service.ts` through
  * `requireMilestoneAccess`.
  */
 

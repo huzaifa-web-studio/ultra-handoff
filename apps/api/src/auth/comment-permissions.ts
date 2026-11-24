@@ -9,7 +9,7 @@
  * The browser copy of the limits is cosmetic. Every write is validated here,
  * on the server, before it reaches Postgres.
  *
- * Used by: src/lib/rich-text.ts, src/services/comment.service.ts and
+ * Used by: src/lib/rich-text.ts, src/services/comment/ and
  * src/routes/comments.ts.
  */
 

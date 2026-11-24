@@ -39,7 +39,7 @@ import {
 	deleteMilestoneComment,
 	listMilestoneComments,
 	updateMilestoneComment,
-} from "./comment.service";
+} from "./comment";
 import { listInvitationHistory } from "./invitation.service";
 import {
 	createMilestone,
