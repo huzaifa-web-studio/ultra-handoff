@@ -24,6 +24,7 @@ import { mentionRoutes } from "./routes/mentions";
 import { milestoneRoutes } from "./routes/milestones";
 import { notificationRoutes } from "./routes/notifications";
 import { organizationRoutes } from "./routes/organization";
+import { peopleRoutes } from "./routes/people";
 import { projectRoutes } from "./routes/projects";
 import { pushRoutes } from "./routes/push";
 import { uploadRoutes } from "./routes/uploads";
@@ -64,6 +65,8 @@ async function buildApp() {
 		.use(organizationRoutes)
 		// Workspace member and invitation management (tenant scoped).
 		.use(memberRoutes)
+		// One member's profile, read by hover cards and the profile page.
+		.use(peopleRoutes)
 		// Project list, lifecycle and project membership (tenant scoped).
 		.use(projectRoutes)
 		// Milestones inside a project (tenant scoped).
