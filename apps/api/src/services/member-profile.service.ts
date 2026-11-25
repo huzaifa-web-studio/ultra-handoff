@@ -72,6 +72,14 @@ export type MemberProfile = {
 	projects: MemberProfileProject[];
 	assignments: MemberProfileAssignment[];
 	counts: { projects: number; assignments: number };
+	/**
+	 * True when the assignment list was cut at the cap.
+	 *
+	 * The page shows a plus sign beside the count so a person with more than
+	 * `ASSIGNMENT_LIMIT` live items is not presented with a complete looking
+	 * list that is actually partial.
+	 */
+	hasMoreAssignments: boolean;
 };
 
 /**
@@ -163,7 +171,7 @@ export async function getMemberProfile(
 
 	const projectMap = new Map<string, MemberProfileProject>();
 
-	const assignments = await withTenant(
+	const assignmentResult = await withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			// Explicit project memberships. Organization owners are handled
@@ -259,17 +267,25 @@ export async function getMemberProfile(
 					),
 				)
 				.orderBy(asc(milestone.dueDate), asc(milestone.title))
-				.limit(ASSIGNMENT_LIMIT);
+				// One extra row only answers "was there more". It is never sent
+				// to the client, so the page can label the count honestly.
+				.limit(ASSIGNMENT_LIMIT + 1);
 
-			return assignmentRows.map((row) => ({
-				id: row.id,
-				title: row.title,
-				status: row.status as MilestoneStatus,
-				dueDate: row.dueDate,
-				projectId: row.projectId,
-				projectName: row.projectName,
-				projectSlug: row.projectSlug,
-			}));
+			const hasMoreAssignments = assignmentRows.length > ASSIGNMENT_LIMIT;
+
+			const assignments = assignmentRows
+				.slice(0, ASSIGNMENT_LIMIT)
+				.map((row) => ({
+					id: row.id,
+					title: row.title,
+					status: row.status as MilestoneStatus,
+					dueDate: row.dueDate,
+					projectId: row.projectId,
+					projectName: row.projectName,
+					projectSlug: row.projectSlug,
+				}));
+
+			return { assignments, hasMoreAssignments };
 		},
 	);
 
@@ -287,10 +303,11 @@ export async function getMemberProfile(
 		joinedAt: identity.joinedAt.toISOString(),
 		isSelf: identity.userId === tenant.userId,
 		projects,
-		assignments,
+		assignments: assignmentResult.assignments,
+		hasMoreAssignments: assignmentResult.hasMoreAssignments,
 		counts: {
 			projects: projects.length,
-			assignments: assignments.length,
+			assignments: assignmentResult.assignments.length,
 		},
 	};
 }

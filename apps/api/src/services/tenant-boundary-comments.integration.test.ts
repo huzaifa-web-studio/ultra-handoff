@@ -6,7 +6,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-
+import { sql } from "drizzle-orm";
+import { adminDb } from "../db";
 import {
 	createMilestoneComment,
 	deleteMilestoneComment,
@@ -168,6 +169,32 @@ suite("tenant boundary comments", () => {
 					limit: 20,
 				}),
 			).rejects.toThrow(/no longer exists/);
+		});
+
+		test("marks a comment author who left the workspace", async () => {
+			const created = await createMilestoneComment(
+				tenantClientA(),
+				ids.pVisibleA,
+				ids.mVisible,
+				{ body: paragraph("Left behind") },
+			);
+
+			// The membership goes; the comment stays. The author id is on the
+			// user row, so the read can still name the person but must not link
+			// to a profile that now answers 404.
+			await adminDb.execute(sql`delete from member where id = ${ids.mClientA}`);
+
+			const result = await listMilestoneComments(
+				tenantOwnerA(),
+				ids.pVisibleA,
+				ids.mVisible,
+				{ cursor: null, limit: 20 },
+			);
+			const row = result.threads
+				.flatMap((thread) => [thread.comment, ...thread.replies])
+				.find((comment) => comment.id === created.comment.id);
+
+			expect(row?.author?.isMember).toBe(false);
 		});
 	});
 

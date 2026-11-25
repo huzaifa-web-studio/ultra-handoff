@@ -193,7 +193,7 @@ export function CommentItem({
 			<Message align="start" className={cn(isReply ? "gap-2" : "gap-3")}>
 				<MessageAvatar className="self-start">
 					<MemberAvatar
-						userId={comment.author?.id}
+						userId={comment.author?.isMember ? comment.author.id : null}
 						src={comment.author?.image}
 						name={authorName}
 						size={isReply ? "sm" : "default"}

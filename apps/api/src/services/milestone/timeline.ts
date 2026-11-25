@@ -81,6 +81,7 @@ export async function toMilestoneTimeline(
 		id: tenant.userId,
 		name: person?.name || person?.email || "Someone",
 		image: person?.image ?? null,
+		isMember: true,
 	};
 
 	return rows.flatMap((row) => {

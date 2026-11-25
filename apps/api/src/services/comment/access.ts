@@ -18,6 +18,7 @@ import { comment } from "../../db/schema";
 import type { TenantTx } from "../../db/tenant";
 import { consumeRateLimit } from "../../lib/rate-limit";
 import type { TenantContext } from "../../middleware/tenant";
+import { loadOrganizationMemberUserIds } from "../organization.service";
 import { loadUserMap } from "../project";
 import type { CommentEventType, CommentRecord, CommentRow } from "./types";
 
@@ -166,7 +167,10 @@ export async function loadCommentRecordForUpdate(
  */
 export function toCommentRow(
 	record: CommentRecord,
-	people: Map<string, { name: string; email: string; image: string | null }>,
+	people: Map<
+		string,
+		{ name: string; email: string; image: string | null; isMember: boolean }
+	>,
 	viewerId: string,
 	locked: boolean,
 ): CommentRow {
@@ -202,6 +206,7 @@ export function toCommentRow(
 					id: record.authorId,
 					name: person?.name || person?.email || "Former member",
 					image: person?.image ?? null,
+					isMember: person?.isMember ?? false,
 				}
 			: null,
 		createdAt: record.createdAt.toISOString(),
@@ -213,10 +218,15 @@ export function toCommentRow(
 	};
 }
 
-/** Load the display names for every author in one page. */
+/** Load the display names and membership state for every author in one page. */
 export async function loadPeople(
 	records: CommentRecord[],
-): Promise<Map<string, { name: string; email: string; image: string | null }>> {
+): Promise<
+	Map<
+		string,
+		{ name: string; email: string; image: string | null; isMember: boolean }
+	>
+> {
 	const ids = [
 		...new Set(
 			records
@@ -225,5 +235,32 @@ export async function loadPeople(
 		),
 	];
 
-	return loadUserMap(ids);
+	// One page always belongs to one workspace, so the first record names it.
+	const organizationId = records[0]?.organizationId;
+
+	const [people, memberIds] = await Promise.all([
+		loadUserMap(ids),
+		organizationId
+			? loadOrganizationMemberUserIds(organizationId, ids)
+			: Promise.resolve(new Set<string>()),
+	]);
+
+	// Every id gets an entry, even when the user row is gone. That lets the
+	// mapper distinguish "former member" from "missing author" without a
+	// second lookup.
+	return new Map(
+		ids.map((id) => {
+			const person = people.get(id);
+
+			return [
+				id,
+				{
+					name: person?.name ?? "",
+					email: person?.email ?? "",
+					image: person?.image ?? null,
+					isMember: memberIds.has(id),
+				},
+			];
+		}),
+	);
 }

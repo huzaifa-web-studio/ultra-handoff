@@ -28,9 +28,12 @@ import type { MemberProfileAssignment } from "./api";
 export function ProfileAssignments({
 	orgSlug,
 	assignments,
+	hasMore = false,
 }: {
 	orgSlug: string;
 	assignments: MemberProfileAssignment[];
+	/** True when the API capped the list, so the count needs a plus sign. */
+	hasMore?: boolean;
 }) {
 	return (
 		<Card>
@@ -39,6 +42,7 @@ export function ProfileAssignments({
 					Assigned work
 					<span className="text-sm font-normal text-app-text-muted">
 						{assignments.length}
+						{hasMore ? "+" : ""}
 					</span>
 				</CardTitle>
 			</CardHeader>
@@ -52,50 +56,68 @@ export function ProfileAssignments({
 						</p>
 					</div>
 				) : (
-					<ul className="flex flex-col divide-y divide-app-border">
-						{assignments.map((assignment) => {
-							const overdue = isMilestoneOverdue(
-								assignment.dueDate,
-								assignment.status,
-							);
+					<>
+						<ul className="flex flex-col divide-y divide-app-border">
+							{assignments.map((assignment) => {
+								const overdue = isMilestoneOverdue(
+									assignment.dueDate,
+									assignment.status,
+								);
 
-							return (
-								<li key={assignment.id}>
-									<Link
-										to="/$orgSlug/projects/$projectSlug/milestones"
-										params={{
-											orgSlug,
-											projectSlug: assignment.projectSlug,
-										}}
-										search={{ milestone: assignment.id }}
-										className="flex flex-col gap-1.5 py-3 hover:bg-app-panel-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-focus"
-									>
-										<div className="flex items-start justify-between gap-3">
-											<div className="min-w-0">
-												<p className="truncate text-sm font-medium text-app-text">
-													{assignment.title}
-												</p>
-												<p className="truncate text-xs text-app-text-muted">
-													{assignment.projectName}
-												</p>
-											</div>
-											<MilestoneStatusBadge status={assignment.status} />
-										</div>
-
-										<p
-											className={cn(
-												"inline-flex items-center gap-1.5 text-xs",
-												overdue ? "text-danger" : "text-app-text-muted",
-											)}
+								return (
+									<li key={assignment.id}>
+										<Link
+											to="/$orgSlug/projects/$projectSlug/milestones"
+											params={{
+												orgSlug,
+												projectSlug: assignment.projectSlug,
+											}}
+											search={{ milestone: assignment.id }}
+											className="flex flex-col gap-1.5 py-3 hover:bg-app-panel-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-focus"
 										>
-											<CalendarIcon aria-hidden className="size-3" />
-											{describeDueDate(assignment.dueDate, assignment.status)}
-										</p>
-									</Link>
-								</li>
-							);
-						})}
-					</ul>
+											<div className="flex items-start justify-between gap-3">
+												<div className="min-w-0">
+													<p className="truncate text-sm font-medium text-app-text">
+														{assignment.title}
+													</p>
+													<p className="truncate text-xs text-app-text-muted">
+														{assignment.projectName}
+													</p>
+												</div>
+												<MilestoneStatusBadge status={assignment.status} />
+											</div>
+
+											{/*
+											 * A date line only when there is a date. "No due
+											 * date" on every row added noise without helping
+											 * the reader decide what needs attention.
+											 */}
+											{assignment.dueDate && (
+												<p
+													className={cn(
+														"inline-flex items-center gap-1.5 text-xs",
+														overdue ? "text-danger" : "text-app-text-muted",
+													)}
+												>
+													<CalendarIcon aria-hidden className="size-3" />
+													{describeDueDate(
+														assignment.dueDate,
+														assignment.status,
+													)}
+												</p>
+											)}
+										</Link>
+									</li>
+								);
+							})}
+						</ul>
+
+						{hasMore && (
+							<p className="pt-3 text-xs text-app-text-muted">
+								Showing the first {assignments.length} open assignments.
+							</p>
+						)}
+					</>
 				)}
 			</CardContent>
 		</Card>

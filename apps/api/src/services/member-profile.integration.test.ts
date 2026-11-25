@@ -84,6 +84,7 @@ suite("member profile", () => {
 		expect(profile.bio).toBe("Designs calm interfaces.");
 		expect(profile.location).toBe("Lahore, Pakistan");
 		expect(profile.isSelf).toBe(true);
+		expect(profile.hasMoreAssignments).toBe(false);
 		expect(typeof profile.joinedAt).toBe("string");
 	});
 
@@ -111,6 +112,42 @@ suite("member profile", () => {
 		expect(profile.assignments.map((item) => item.id)).toEqual([ids.mVisible]);
 		expect(profile.assignments[0]?.projectId).toBe(ids.pVisibleA);
 		expect(profile.counts.assignments).toBe(1);
+	});
+
+	test("flags an assignment list that hit the cap", async () => {
+		// The owner already has one live assignment, so 51 more push the total
+		// past the 50 row cap and the extra row answers "was there more".
+		const bulkIds = Array.from(
+			{ length: 51 },
+			(_, index) => `qa-profile-bulk-ms-${suffix}-${index}`,
+		);
+
+		await adminDb.insert(milestone).values(
+			bulkIds.map((id, index) => ({
+				id,
+				organizationId: ids.orgA,
+				projectId: ids.pVisibleA,
+				title: `Bulk assignment ${index}`,
+				status: "todo",
+				createdBy: ids.ownerA,
+				updatedBy: ids.ownerA,
+			})),
+		);
+
+		await adminDb.insert(milestoneAssignee).values(
+			bulkIds.map((id, index) => ({
+				id: `qa-profile-bulk-assignee-${suffix}-${index}`,
+				organizationId: ids.orgA,
+				milestoneId: id,
+				projectMemberId: `qa-pm-owner-a-${suffix}`,
+			})),
+		);
+
+		const profile = await getMemberProfile(tenantMemberA(), ids.ownerA);
+
+		expect(profile.assignments).toHaveLength(50);
+		expect(profile.counts.assignments).toBe(50);
+		expect(profile.hasMoreAssignments).toBe(true);
 	});
 
 	test("answers 404 for a user outside the workspace", async () => {

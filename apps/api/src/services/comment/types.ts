@@ -16,6 +16,13 @@ export type CommentAuthor = {
 	id: string;
 	name: string;
 	image: string | null;
+	/**
+	 * True while the author still belongs to the workspace.
+	 *
+	 * A former member keeps their comment, but the avatar must not link to a
+	 * profile that now answers 404.
+	 */
+	isMember: boolean;
 };
 
 /** One field change recorded in the milestone timeline. */

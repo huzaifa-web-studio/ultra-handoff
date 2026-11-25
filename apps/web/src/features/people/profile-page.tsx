@@ -114,6 +114,7 @@ export function ProfilePage({
 				<ProfileAssignments
 					orgSlug={orgSlug}
 					assignments={profile.assignments}
+					hasMore={profile.hasMoreAssignments}
 				/>
 			</div>
 		</div>

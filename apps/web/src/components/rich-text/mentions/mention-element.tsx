@@ -23,7 +23,7 @@ import {
 	type PlateElementProps,
 	useSelected,
 } from "platejs/react";
-import { MemberProfileHover } from "#/components/member-hover-card";
+import { MemberProfileTrigger } from "#/components/member-hover-card";
 import { useEditorStatic } from "#/components/rich-text/editor-view-context";
 import { useMentionContext } from "./mention-context";
 import {
@@ -100,20 +100,15 @@ export function MentionElement(props: PlateElementProps) {
 		const displayName = value || "this person";
 
 		return (
-			<MemberProfileHover
+			<MemberProfileTrigger
 				orgSlug={context.orgSlug}
 				userId={target.id}
 				name={displayName}
+				className="cursor-pointer no-underline"
+				ariaLabel={`View profile for ${displayName}`}
 			>
-				<Link
-					to="/$orgSlug/people/$userId"
-					params={{ orgSlug: context.orgSlug, userId: target.id }}
-					className="cursor-pointer no-underline"
-					aria-label={`View profile for ${displayName}`}
-				>
-					{chip}
-				</Link>
-			</MemberProfileHover>
+				{chip}
+			</MemberProfileTrigger>
 		);
 	}
 

@@ -176,6 +176,33 @@ export async function getOrganizationMembers(
 }
 
 /**
+ * The subset of user ids that still belong to one organization.
+ *
+ * Why: a comment author can leave the workspace while their comment stays. The
+ * comment payload marks that author as a former member, so the avatar is not a
+ * link to a profile that no longer resolves. Read only, on the privileged
+ * client, because `member` belongs to Better Auth.
+ */
+export async function loadOrganizationMemberUserIds(
+	organizationId: string,
+	userIds: string[],
+): Promise<Set<string>> {
+	if (userIds.length === 0) return new Set();
+
+	const rows = await adminDb
+		.select({ userId: member.userId })
+		.from(member)
+		.where(
+			and(
+				eq(member.organizationId, organizationId),
+				inArray(member.userId, userIds),
+			),
+		);
+
+	return new Set(rows.map((row) => row.userId));
+}
+
+/**
  * Every owner of an organization.
  *
  * Why: organization owners are automatically owners of every project. The

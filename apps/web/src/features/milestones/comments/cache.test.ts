@@ -24,7 +24,7 @@ function makeComment(overrides: Partial<Comment> = {}): Comment {
 		kind: "comment",
 		event: null,
 		body: [{ type: "p", children: [{ text: "hello" }] }],
-		author: { id: "user-1", name: "Ayesha", image: null },
+		author: { id: "user-1", name: "Ayesha", image: null, isMember: true },
 		createdAt: "2026-01-01T00:00:00.000Z",
 		updatedAt: "2026-01-01T00:00:00.000Z",
 		editedAt: null,

@@ -29,7 +29,13 @@ import { Skeleton } from "@org/ui/components/skeleton";
 import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
 import { CalendarIcon, MapPinIcon } from "lucide-react";
-import type { ComponentProps } from "react";
+import {
+	type ComponentProps,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useState,
+} from "react";
 import { Focusable } from "react-aria-components";
 
 import { RoleChip } from "#/components/role-chip";
@@ -86,19 +92,67 @@ export function MemberAvatar({
 	);
 
 	return (
-		<MemberProfileHover
+		<MemberProfileTrigger
 			orgSlug={orgSlug}
 			userId={userId}
 			name={name}
 			image={src}
+			className={linkClass}
+			ariaLabel={`View profile for ${name}`}
+		>
+			{avatar}
+		</MemberProfileTrigger>
+	);
+}
+
+/**
+ * The profile link and its preview, with a disabled state once the person is
+ * known to have left.
+ *
+ * Why the state lives here: the trigger must stay the same element while the
+ * card is open. TanStack's `Link` supports `disabled`, which removes the href
+ * and keeps the anchor in place, so the popover does not remount when a 404
+ * turns the trigger into a non-navigating element. A person who left still gets
+ * the card explaining the state, but no click into a 404 page.
+ */
+export function MemberProfileTrigger({
+	orgSlug,
+	userId,
+	name,
+	image,
+	className,
+	ariaLabel,
+	children,
+}: {
+	orgSlug: string;
+	userId: string;
+	name: string;
+	image?: string | null;
+	className: string;
+	ariaLabel: string;
+	children: ReactNode;
+}) {
+	const [missing, setMissing] = useState(false);
+	const handleMissing = useCallback(() => setMissing(true), []);
+
+	return (
+		<MemberProfileHover
+			orgSlug={orgSlug}
+			userId={userId}
+			name={name}
+			image={image}
+			onMissing={handleMissing}
 		>
 			<Link
 				to="/$orgSlug/people/$userId"
 				params={{ orgSlug, userId }}
-				aria-label={`View profile for ${name}`}
-				className={linkClass}
+				disabled={missing}
+				aria-label={
+					missing ? `${name} is no longer in this workspace` : ariaLabel
+				}
+				className={cn(className, missing && "cursor-default")}
 			>
-				{avatar}
+				{children}
 			</Link>
 		</MemberProfileHover>
 	);
@@ -116,12 +170,15 @@ export function MemberProfileHover({
 	userId,
 	name,
 	image,
+	onMissing,
 	children,
 }: {
 	orgSlug: string;
 	userId: string;
 	name: string;
 	image?: string | null;
+	/** Called once a 404 proves the person is no longer in the workspace. */
+	onMissing?: () => void;
 	children: ComponentProps<typeof Focusable>["children"];
 }) {
 	return (
@@ -134,6 +191,7 @@ export function MemberProfileHover({
 					userId={userId}
 					fallbackName={name}
 					fallbackImage={image}
+					onMissing={onMissing}
 				/>
 			</HoverCard>
 		</HoverCardTrigger>
@@ -152,13 +210,25 @@ function MemberProfileCard({
 	userId,
 	fallbackName,
 	fallbackImage,
+	onMissing,
 }: {
 	orgSlug: string;
 	userId: string;
 	fallbackName: string;
 	fallbackImage?: string | null;
+	onMissing?: () => void;
 }) {
 	const query = useMemberProfile(orgSlug, userId);
+	const missing =
+		query.isError &&
+		query.error instanceof ApiRequestError &&
+		query.error.status === 404;
+
+	// Tell the trigger that this person left, so it can stop being a link.
+	// The card stays open and keeps explaining the state.
+	useEffect(() => {
+		if (missing) onMissing?.();
+	}, [missing, onMissing]);
 
 	if (query.isPending) {
 		return (
@@ -178,9 +248,6 @@ function MemberProfileCard({
 	}
 
 	if (query.isError) {
-		const formerMember =
-			query.error instanceof ApiRequestError && query.error.status === 404;
-
 		return (
 			<div className="flex flex-col gap-3">
 				<div className="flex items-center gap-3">
@@ -190,13 +257,11 @@ function MemberProfileCard({
 							{fallbackName}
 						</p>
 						<p className="text-xs text-app-text-muted">
-							{formerMember
-								? "No longer in this workspace"
-								: "Profile unavailable"}
+							{missing ? "No longer in this workspace" : "Profile unavailable"}
 						</p>
 					</div>
 				</div>
-				{!formerMember && (
+				{!missing && (
 					<Link
 						to="/$orgSlug/people/$userId"
 						params={{ orgSlug, userId }}

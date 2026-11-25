@@ -147,7 +147,13 @@ export type MilestoneTimelineComment = {
 		note: string | null;
 	};
 	body: unknown[];
-	author: { id: string; name: string; image: string | null };
+	author: {
+		id: string;
+		name: string;
+		image: string | null;
+		/** The actor is the signed-in member, so an event author is current. */
+		isMember: boolean;
+	};
 	createdAt: string;
 	updatedAt: string;
 	editedAt: null;

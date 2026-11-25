@@ -31,11 +31,11 @@ import {
 	loadMilestoneAssigneeUserIds,
 	loadProjectMemberUserIds,
 } from "../notification.service";
-import { loadUserMap } from "../project";
 import {
 	allowCommentRate,
 	countComments,
 	loadCommentRecord,
+	loadPeople,
 	toCommentRow,
 } from "./access";
 import type { CommentWriteResult, CreateCommentInput } from "./types";
@@ -144,7 +144,7 @@ export async function createMilestoneComment(
 				});
 			}
 
-			const people = await loadUserMap([tenant.userId]);
+			const people = await loadPeople([record]);
 
 			// The author's own message can never be unread to them.
 			await advanceThreadCursor(tx, tenant, {
