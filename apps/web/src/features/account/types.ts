@@ -13,4 +13,8 @@ export type AccountUser = {
 	email: string;
 	emailVerified: boolean;
 	image?: string | null;
+	/** Optional profile details, editable in the Profile card. */
+	jobTitle?: string | null;
+	bio?: string | null;
+	location?: string | null;
 };

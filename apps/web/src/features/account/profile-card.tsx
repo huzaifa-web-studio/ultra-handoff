@@ -15,13 +15,19 @@ import {
 } from "@org/ui/components/field";
 import { Input } from "@org/ui/components/input";
 import { Separator } from "@org/ui/components/separator";
+import { Textarea } from "@org/ui/components/textarea";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
 import { FieldMeta } from "#/components/field-meta";
 import { useVerificationResend } from "#/features/auth/use-verification-resend";
 import { useAutoDismiss } from "#/hooks/use-auto-dismiss";
 import { toFieldErrors } from "#/lib/form-errors";
-import { USER_NAME_MAX } from "#/lib/limits";
+import {
+	USER_BIO_MAX,
+	USER_JOB_TITLE_MAX,
+	USER_LOCATION_MAX,
+	USER_NAME_MAX,
+} from "#/lib/limits";
 import { AvatarUploader } from "./avatar-uploader";
 import { useUpdateProfile } from "./hooks";
 import { profileSchema } from "./schema";
@@ -41,7 +47,12 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 	useAutoDismiss(saved, () => setSaved(null));
 
 	const form = useForm({
-		defaultValues: { name: user.name },
+		defaultValues: {
+			name: user.name,
+			jobTitle: user.jobTitle ?? "",
+			bio: user.bio ?? "",
+			location: user.location ?? "",
+		},
 		// Validate the whole object on submit only. Live feedback comes from
 		// the field's own onChange validator, so the input is only flagged
 		// once the user has edited it.
@@ -52,12 +63,17 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 
 			try {
 				// Trim before saving so a trailing space never becomes part of
-				// the display name.
-				const name = value.name.trim();
-				await updateProfile.mutateAsync(name);
+				// the display name. The API trims the optional fields too.
+				const update = {
+					name: value.name.trim(),
+					jobTitle: value.jobTitle.trim(),
+					bio: value.bio.trim(),
+					location: value.location.trim(),
+				};
+				await updateProfile.mutateAsync(update);
 				await onUpdated();
 				// Reset to the saved value so the form is not "dirty" afterwards.
-				form.reset({ name });
+				form.reset(update);
 				setSaved("Profile updated.");
 			} catch (submitError) {
 				setError(
@@ -83,7 +99,8 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 			<CardHeader>
 				<CardTitle>Profile</CardTitle>
 				<CardDescription>
-					Your photo and the name shown to the people you work with.
+					Your photo, name and the details people see on your profile in every
+					workspace.
 				</CardDescription>
 			</CardHeader>
 
@@ -129,6 +146,95 @@ export function ProfileCard({ user, onUpdated }: ProfileCardProps) {
 									}}
 								>
 									The name your team and clients see.
+								</FieldMeta>
+							</Field>
+						)}
+					</form.Field>
+
+					<form.Field
+						name="jobTitle"
+						validators={{ onChange: profileSchema.shape.jobTitle }}
+					>
+						{(field) => (
+							<Field>
+								<FieldLabel htmlFor="account-job-title">Job title</FieldLabel>
+								<Input
+									id="account-job-title"
+									type="text"
+									autoComplete="organization-title"
+									maxLength={USER_JOB_TITLE_MAX}
+									placeholder="Product designer"
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(event) => field.handleChange(event.target.value)}
+								/>
+								<FieldError errors={toFieldErrors(field.state.meta.errors)} />
+								<FieldMeta
+									counter={{
+										current: field.state.value.length,
+										max: USER_JOB_TITLE_MAX,
+									}}
+								>
+									Optional. Shown under your name on your profile.
+								</FieldMeta>
+							</Field>
+						)}
+					</form.Field>
+
+					<form.Field
+						name="location"
+						validators={{ onChange: profileSchema.shape.location }}
+					>
+						{(field) => (
+							<Field>
+								<FieldLabel htmlFor="account-location">Location</FieldLabel>
+								<Input
+									id="account-location"
+									type="text"
+									autoComplete="address-level2"
+									maxLength={USER_LOCATION_MAX}
+									placeholder="Lahore, Pakistan"
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(event) => field.handleChange(event.target.value)}
+								/>
+								<FieldError errors={toFieldErrors(field.state.meta.errors)} />
+								<FieldMeta
+									counter={{
+										current: field.state.value.length,
+										max: USER_LOCATION_MAX,
+									}}
+								>
+									Optional. A city and country is enough.
+								</FieldMeta>
+							</Field>
+						)}
+					</form.Field>
+
+					<form.Field
+						name="bio"
+						validators={{ onChange: profileSchema.shape.bio }}
+					>
+						{(field) => (
+							<Field>
+								<FieldLabel htmlFor="account-bio">Bio</FieldLabel>
+								<Textarea
+									id="account-bio"
+									maxLength={USER_BIO_MAX}
+									rows={4}
+									placeholder="What you work on and how you like to collaborate."
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(event) => field.handleChange(event.target.value)}
+								/>
+								<FieldError errors={toFieldErrors(field.state.meta.errors)} />
+								<FieldMeta
+									counter={{
+										current: field.state.value.length,
+										max: USER_BIO_MAX,
+									}}
+								>
+									Optional. Plain text, visible to everyone in your workspaces.
 								</FieldMeta>
 							</Field>
 						)}

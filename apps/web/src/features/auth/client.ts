@@ -1,4 +1,7 @@
-import { organizationClient } from "better-auth/client/plugins";
+import {
+	inferAdditionalFields,
+	organizationClient,
+} from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
 import { API_ORIGIN } from "#/lib/api-base";
@@ -20,5 +23,24 @@ import { API_ORIGIN } from "#/lib/api-base";
  */
 export const authClient = createAuthClient({
 	baseURL: API_ORIGIN,
-	plugins: [organizationClient()],
+	plugins: [
+		organizationClient(),
+		/**
+		 * The fields the API declares in `user.additionalFields`.
+		 *
+		 * Why listed here: importing the server `auth` instance just for type
+		 * inference would pull the API module graph into the web type check. The
+		 * list is small and the API validators remain authoritative, so the
+		 * documented separate-project form is the safer trade. Keep it in sync
+		 * with `apps/api/src/auth/auth.ts`.
+		 */
+		inferAdditionalFields({
+			user: {
+				timezone: { type: "string", required: false },
+				jobTitle: { type: "string", required: false },
+				bio: { type: "string", required: false },
+				location: { type: "string", required: false },
+			},
+		}),
+	],
 });

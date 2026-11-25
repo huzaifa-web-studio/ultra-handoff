@@ -40,11 +40,30 @@ export function useLinkedAccounts() {
 	});
 }
 
-/** Update the display name. */
+/** Everything the Profile card can change. */
+export type ProfileUpdate = {
+	name: string;
+	jobTitle?: string;
+	bio?: string;
+	location?: string;
+};
+
+/**
+ * Update the profile.
+ *
+ * Empty optional fields are sent as an empty string on purpose. The API
+ * validator trims the value and stores empty as null, which is how clearing a
+ * field removes it instead of leaving the previous value in place.
+ */
 export function useUpdateProfile() {
 	return useMutation({
-		mutationFn: async (name: string) => {
-			const { error } = await authClient.updateUser({ name });
+		mutationFn: async (update: ProfileUpdate) => {
+			const { error } = await authClient.updateUser({
+				name: update.name.trim(),
+				jobTitle: update.jobTitle?.trim() ?? "",
+				bio: update.bio?.trim() ?? "",
+				location: update.location?.trim() ?? "",
+			});
 
 			if (error) {
 				throw new Error(error.message ?? "Could not update your profile.");

@@ -17,6 +17,17 @@ export const user = pgTable(
 		 * client has never reported one, and every reminder falls back to UTC.
 		 */
 		timezone: text("timezone"),
+		/**
+		 * Optional profile fields shown to the rest of the workspace.
+		 *
+		 * Why on `user` and not on `member`: a person describes themselves once,
+		 * not once per workspace. Better Auth validates and trims these through
+		 * `user.additionalFields`; see `src/auth/profile-fields.ts` for the
+		 * limits. All three are nullable so existing accounts need no backfill.
+		 */
+		jobTitle: text("job_title"),
+		bio: text("bio"),
+		location: text("location"),
 		createdAt: timestamp("created_at").defaultNow().notNull(),
 		updatedAt: timestamp("updated_at")
 			.defaultNow()

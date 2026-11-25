@@ -15,6 +15,17 @@ export const EMAIL_MAX = 254;
 /** Longest display name accepted by the profile form. */
 export const USER_NAME_MAX = 64;
 
+/**
+ * Optional profile field limits.
+ *
+ * These mirror `apps/api/src/auth/profile-fields.ts`, which is authoritative.
+ * The values are repeated here because the form needs `maxLength` and a visible
+ * counter before a request is made.
+ */
+export const USER_JOB_TITLE_MAX = 80;
+export const USER_BIO_MAX = 500;
+export const USER_LOCATION_MAX = 80;
+
 /** Largest batch accepted by a bulk action route. */
 export const BULK_SELECTION_MAX = 100;
 

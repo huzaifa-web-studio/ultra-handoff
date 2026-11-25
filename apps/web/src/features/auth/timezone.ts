@@ -23,14 +23,9 @@ export function detectedTimezone(): string {
 /**
  * Send the browser's timezone to the account.
  *
- * Why the cast is here and nowhere else: Better Auth's client type only covers
- * the fields it knows about, while `timezone` is an additional field declared
- * on the server. Widening the call site with `as never` erased the contract and
- * hid a silent failure that breaks reminders, so the single cast lives at this
- * library boundary instead.
+ * The auth client's `inferAdditionalFields` plugin now declares `timezone`, so
+ * it is part of the `updateUser` input type and no cast is needed.
  */
 export async function reportTimezone(timezone: string): Promise<void> {
-	await authClient.updateUser({
-		timezone,
-	} as Parameters<typeof authClient.updateUser>[0]);
+	await authClient.updateUser({ timezone });
 }

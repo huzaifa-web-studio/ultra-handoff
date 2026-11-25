@@ -10,7 +10,12 @@
 
 import { z } from "zod";
 
-import { USER_NAME_MAX } from "#/lib/limits";
+import {
+	USER_BIO_MAX,
+	USER_JOB_TITLE_MAX,
+	USER_LOCATION_MAX,
+	USER_NAME_MAX,
+} from "#/lib/limits";
 import { passwordRule, passwordRuleMessage } from "#/lib/password";
 
 export const profileSchema = z.object({
@@ -19,6 +24,21 @@ export const profileSchema = z.object({
 		.trim()
 		.min(1, "Name is required")
 		.max(USER_NAME_MAX, `Name must be ${USER_NAME_MAX} characters or fewer`),
+	jobTitle: z
+		.string()
+		.max(
+			USER_JOB_TITLE_MAX,
+			`Job title must be ${USER_JOB_TITLE_MAX} characters or fewer`,
+		),
+	bio: z
+		.string()
+		.max(USER_BIO_MAX, `Bio must be ${USER_BIO_MAX} characters or fewer`),
+	location: z
+		.string()
+		.max(
+			USER_LOCATION_MAX,
+			`Location must be ${USER_LOCATION_MAX} characters or fewer`,
+		),
 });
 
 export const changePasswordSchema = z.object({

@@ -40,6 +40,7 @@ import {
 	validateOrganizationName,
 	validateOrganizationSlug,
 } from "./permissions";
+import { bioField, jobTitleField, locationField } from "./profile-fields";
 import { authSecondaryStorage } from "./secondary-storage";
 
 /**
@@ -116,6 +117,35 @@ export const auth = betterAuth({
 				required: false,
 				input: true,
 				returned: true,
+			},
+			/**
+			 * Optional profile details, editable from Account and shown on a
+			 * member's profile and hover card.
+			 *
+			 * The validator trims the value, stores an empty string as null and
+			 * enforces the length limit. `returned: true` makes them part of the
+			 * session response, so the account form does not need a second read.
+			 */
+			jobTitle: {
+				type: "string",
+				required: false,
+				input: true,
+				returned: true,
+				validator: { input: jobTitleField },
+			},
+			bio: {
+				type: "string",
+				required: false,
+				input: true,
+				returned: true,
+				validator: { input: bioField },
+			},
+			location: {
+				type: "string",
+				required: false,
+				input: true,
+				returned: true,
+				validator: { input: locationField },
 			},
 		},
 		deleteUser: {
