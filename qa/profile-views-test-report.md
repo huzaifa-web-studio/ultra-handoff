@@ -3,6 +3,8 @@
 **Date:** 25 Nov 2026
 **Branch:** `feature/profile-views`
 **Feature commits:** `5a3c566`, `80bfcb7`, `0bc2282`, `424e846`
+**Fix commit:** `2afd4ea`
+**QA report commit:** `b7053ae`
 **Test cases:** `qa/profile-views-test-cases.md`
 **Environment:** live dev stack, web `http://localhost:3000`, API `http://localhost:3001`
 **Workspace:** Retest B (`retest-b-brtmwt2gq2z`)
@@ -14,17 +16,46 @@
 
 The feature works as designed on the happy path, on the security boundaries that
 matter, and on the accessibility checks. No critical or high severity defect was
-found.
+found in the first pass.
 
-Two real issues should be fixed before merge:
+All four actionable findings from that pass are now fixed and retested:
 
-1. A 404 profile is retried three times, so a former member's hover card sits on
-   the loading skeleton for about seven seconds before it shows the correct
-   state.
-2. The profile assignment list is capped at 50 rows with no indication that it
-   was truncated. A busy person could see a partial list presented as complete.
+1. A 404 profile is no longer retried. A former member's card shows the correct
+   state immediately and the trigger stops being a link.
+2. A capped assignment list now returns `hasMoreAssignments`, and the page shows
+   a plus sign and a "Showing the first 50" note instead of a complete looking
+   partial list.
+3. A former member's comment avatar is plain from the start, and a mention chip
+   becomes a disabled link once the 404 is known.
+4. Assignments without a due date no longer render a "No due date" line.
 
-Three low severity observations and one tooling note follow in section 6.
+The only remaining item is F5, which is expected behaviour for a private,
+`noindex` application and is not a defect.
+
+---
+
+## 1a. Retest after fixes
+
+The fixes were retested on 25 Nov 2026 against the live dev stack and the test
+database.
+
+| Check | Result |
+|---|---|
+| Former member profile request | One 404, no retries (was four) |
+| Former member mention card | Shows "No longer in this workspace" in about one second; chip becomes `aria-disabled` with no `href`; card stays open |
+| Former member comment avatar | Rendered as a plain avatar with no link |
+| 51 live assignments | API returns 50 rows and `hasMoreAssignments: true`; page shows `50+` and "Showing the first 50 open assignments." |
+| Assignment without a due date | No date line is rendered |
+| Valid mention card | Still opens with the profile data and an active profile link |
+| API unit tests | 503 pass, 150 skip, 0 fail |
+| Integration suite | 624 pass, 0 fail |
+| Web tests | 115 pass, 0 fail |
+| Type check, Biome, web build | Pass |
+
+Two regression tests were added: a 51 assignment truncation test in
+`member-profile.integration.test.ts`, and a former comment author test in
+`tenant-boundary-comments.integration.test.ts` that removes the membership and
+asserts `author.isMember` is false.
 
 ---
 
@@ -42,7 +73,9 @@ fixtures without changing application code:
 | `qa-profile-hidden-ms` (todo, hidden project) | Must not appear as assigned work |
 | `qa-profile-assignee-live` / `done` / `hidden` / `self` | Assignment filtering |
 | `qa-profile-former-user` and comment, member row deleted | Former member card and 404 |
+| `qa-profile-former-mention-comment` | Former member mention chip, disabled link after 404 |
 | `qa-profile-empty-user` and member row | Empty states |
+| 51 `qa-profile-bulk-ms-*` milestones and assignments | Assignment cap and `hasMoreAssignments` |
 
 The XSS payload used as a bio during the test was `"<script>window.__profileXss=1</script><img src=x onerror=\"window.__profileXss=2\">Plain text bio"`. The bio was restored to `"Runs client delivery for the studio."` after the test.
 
@@ -182,16 +215,12 @@ background.
 **Reproduction:** hover the avatar of `QA Former Member` in the milestone
 comments.
 
-**Suggested fix:** add a retry policy to `useMemberProfile` that does not retry
-4xx responses, for example:
+**Status:** Fixed on 25 Nov 2026.
 
-```ts
-retry: (failureCount, error) =>
-  !(error instanceof ApiRequestError && error.status < 500) && failureCount < 2
-```
-
-This removes four pointless 404 requests and makes the former member state
-appear immediately.
+**Fix:** `useMemberProfile` now refuses to retry 4xx responses and caps 5xx at
+two retries. A former member profile makes one request and the card renders the
+former state immediately. The retest confirmed one 404 request and no retry
+burst.
 
 ### F2. Assignment list truncates at 50 with no "more" signal
 
@@ -205,10 +234,12 @@ open assignments sees a list and a count of 50, presented as complete. The same
 is true for the card, which slices to three and shows "+N more", but the total
 is already capped.
 
-**Suggested fix:** return a `hasMoreAssignments` flag or a separate total
-count, and show "Showing 50 of N" on the page. A workspace rarely has a person
-with more than 50 live assignments, so this is not blocking, but the count is
-currently misleading.
+**Status:** Fixed on 25 Nov 2026.
+
+**Fix:** the query reads `ASSIGNMENT_LIMIT + 1` rows, returns at most 50, and
+sets `hasMoreAssignments` when the extra row exists. The page shows `50+` and
+"Showing the first 50 open assignments." A 51 assignment integration test now
+pins the behaviour.
 
 ### F3. Former member avatars still link to a 404 profile
 
@@ -222,8 +253,14 @@ friendly not-found card, and the hover card shows the correct state after F1 is
 fixed. A full fix would need the member list to include a "still a member" flag,
 which is a larger change.
 
-**Suggested fix:** leave as is for now, or disable the link for comment authors
-whose profile fetch 404s once the card has loaded.
+**Status:** Fixed on 25 Nov 2026.
+
+**Fix:** the comment payload now carries `author.isMember`, read from the
+membership table in the same page load. A former author gets a plain avatar with
+no link. A mention chip starts as a link, and once its profile 404s the trigger
+switches to a disabled link with no `href`, while the card stays open and
+explains the state. A comment integration test removes a membership and asserts
+`isMember` is false.
 
 ### F4. "No due date" appears under every assignment without a due date
 
@@ -231,10 +268,12 @@ whose profile fetch 404s once the card has loaded.
 **Type:** Design
 **Where:** `profile-assignments.tsx`
 
-`describeDueDate` returns "No due date" for a null value, so the card shows a
-calendar icon and that text for every such assignment. It is informative and
-consistent with the milestone list, but it adds a line per row. A design choice,
-not a defect.
+`describeDueDate` returns "No due date" for a null value, so the card showed a
+calendar icon and that text for every such assignment. It was informative but
+added a line per row.
+
+**Status:** Fixed on 25 Nov 2026. The date line renders only when a due date
+exists. Assignments without one now show just the title, project and status.
 
 ### F5. SEO and Agentic Lighthouse scores are not full marks
 
@@ -272,7 +311,7 @@ the auth endpoint, which is the same path the form uses.
 | Touch long press on a real device | Not run | RAC handles it; needs a touch device or emulation with touch events. |
 | Archived project with a live assignment | Not run live | Covered by the `isNull(project.archivedAt)` filter in code review. |
 | Organization owner viewing their own implicit projects | Integration test only | Not repeated live because the fixture had explicit rows. |
-| Very large workspace (many projects or assignments) | Not run | The 50 assignment cap is the only known bound. The projects list is unbounded by design. |
+| Very large workspace (many projects or assignments) | Not run | The 50 assignment cap is now labelled with a plus sign. The projects list is unbounded by design. |
 | Rate limiting on profile reads | Not applicable | Authenticated workspace read; hover cards are cached and only fetch on open. |
 | Screen reader announcements for the hover card | Partial | Lighthouse 100 and the a11y tree exposes the card as a described dialog with a Dismiss button. A manual NVDA or VoiceOver pass is still worth doing. |
 
@@ -280,14 +319,12 @@ the auth endpoint, which is the same path the form uses.
 
 ## 9. Recommendation
 
-Fix F1 before merge. It is a small change to `useMemberProfile` and it removes
-four futile requests per removed member, which is both a UX and a load
-improvement. Consider F2 as a follow-up in the same release, because the count
-is presented as authoritative.
+All actionable findings are fixed and covered by automated tests. F5 is expected
+for a private, `noindex` application and should stay as it is.
 
-The rest of the feature matches the plan: tenant scoping, project visibility,
-plain text rendering, keyboard access, day month year dates, and a single
-cached profile read shared by the card and the page.
+The feature matches the plan: tenant scoping, project visibility, plain text
+rendering, keyboard access, day month year dates, a single cached profile read
+shared by the card and the page, and honest signalling when a list is capped.
 
 ---
 
@@ -296,11 +333,16 @@ cached profile read shared by the card and the page.
 The fixtures live only in the `Retest B` QA workspace. To remove them:
 
 ```sql
-delete from comment where id = 'qa-profile-former-comment';
+delete from comment where id in (
+  'qa-profile-former-comment',
+  'qa-profile-former-mention-comment'
+);
 delete from "user" where id = 'qa-profile-former-user';
 delete from member where id = 'qa-profile-empty-member';
 delete from "user" where id = 'qa-profile-empty-user';
 delete from milestone_assignee where id like 'qa-profile-assignee-%';
+delete from milestone_assignee where id like 'qa-profile-bulk-assignee-%';
+delete from milestone where id like 'qa-profile-bulk-ms-%';
 delete from project where id = 'qa-profile-hidden-project';
 delete from milestone where id in ('qa-profile-done-ms', 'qa-profile-hidden-ms');
 ```
