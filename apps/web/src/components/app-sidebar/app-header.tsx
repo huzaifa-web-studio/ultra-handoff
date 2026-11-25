@@ -10,22 +10,23 @@ import { useMatches, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { authClient } from "#/features/auth/client";
 import { NotificationBell } from "#/features/notifications/notification-bell";
-import { projectBreadcrumbStore } from "./project-breadcrumb";
+import { dynamicBreadcrumbStore } from "./dynamic-breadcrumb";
 import { ThemeToggle } from "./theme-toggle";
 
 export function AppHeader() {
 	const navigate = useNavigate();
 	const matches = useMatches();
 	const { data: activeOrg } = authClient.useActiveOrganization();
-	const projectLabel = useStore(projectBreadcrumbStore).label;
+	const dynamicCrumb = useStore(dynamicBreadcrumbStore).current;
 	const crumbs = matches
 		.map((m) => {
 			const label = (m.staticData as { breadcrumb?: string } | undefined)
 				?.breadcrumb;
-			// The project page publishes its name while it is mounted, so the
-			// last crumb reads the real project instead of "Project".
+			// A page with a dynamic name (a project, a person) publishes it while
+			// it is mounted, so the crumb reads the real name instead of the
+			// generic route label.
 			const resolved =
-				label === "Project" && projectLabel ? projectLabel : label;
+				dynamicCrumb && label === dynamicCrumb.key ? dynamicCrumb.label : label;
 
 			return {
 				label:

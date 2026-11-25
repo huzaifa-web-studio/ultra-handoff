@@ -14,7 +14,7 @@ import { cn } from "cn";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { setProjectBreadcrumbLabel } from "#/components/app-sidebar/project-breadcrumb";
+import { setDynamicBreadcrumbLabel } from "#/components/app-sidebar/dynamic-breadcrumb";
 import { RealtimeProvider } from "#/features/realtime/provider";
 import {
 	useProjectDetailBySlug,
@@ -97,9 +97,9 @@ export function ProjectWorkspace({
 	// The header renders its breadcrumb from static route data, so the real
 	// project name is published here while any tab is mounted.
 	useEffect(() => {
-		setProjectBreadcrumbLabel(project?.name ?? null);
+		setDynamicBreadcrumbLabel("Project", project?.name ?? null);
 
-		return () => setProjectBreadcrumbLabel(null);
+		return () => setDynamicBreadcrumbLabel("Project", null);
 	}, [project?.name]);
 
 	if (query.isPending) {
