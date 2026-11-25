@@ -8,7 +8,7 @@
  * Used by: project-workspace-header.tsx.
  */
 
-import { UserAvatar } from "#/components/user-avatar";
+import { MemberAvatar } from "#/components/member-hover-card";
 import type { ProjectMemberRow } from "./api";
 
 /** Avatars shown before the +N badge. */
@@ -27,10 +27,19 @@ export function ProjectMemberStack({
 
 	return (
 		<div className="flex items-center" title={label}>
-			<div className="flex -space-x-2" aria-hidden>
+			{/*
+			 * No `aria-hidden` here. Each avatar is a link to a profile now, so
+			 * hiding the group would remove three real controls from the
+			 * accessibility tree. The group label keeps the count available.
+			 */}
+			<fieldset
+				className="m-0 flex min-w-0 -space-x-2 border-0 p-0"
+				aria-label={label}
+			>
 				{visible.map((member) => (
-					<UserAvatar
+					<MemberAvatar
 						key={member.userId}
+						userId={member.userId}
 						size="sm"
 						name={member.name}
 						src={member.image}
@@ -42,8 +51,7 @@ export function ProjectMemberStack({
 						+{remaining}
 					</span>
 				)}
-			</div>
-			<span className="sr-only">{label}</span>
+			</fieldset>
 		</div>
 	);
 }

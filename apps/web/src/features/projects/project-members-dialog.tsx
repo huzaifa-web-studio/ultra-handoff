@@ -37,6 +37,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { BulkResultList } from "#/components/bulk-result-list";
+import { MemberAvatar } from "#/components/member-hover-card";
 import { UserAvatar } from "#/components/user-avatar";
 import { useMembers } from "#/features/members/hooks";
 import type {
@@ -471,7 +472,8 @@ export function ProjectMembersDialog({
 													<span className="size-4.5 shrink-0" aria-hidden />
 												)}
 
-												<UserAvatar
+												<MemberAvatar
+													userId={member.userId}
 													size="sm"
 													name={member.name}
 													src={member.image}

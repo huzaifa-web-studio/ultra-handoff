@@ -11,7 +11,7 @@
 import { Badge } from "@org/ui/components/badge";
 import { Button } from "@org/ui/components/button";
 
-import { UserAvatar } from "#/components/user-avatar";
+import { MemberAvatar } from "#/components/member-hover-card";
 import type { ProjectMemberRow } from "./api";
 import { ProjectRoleChip } from "./project-role-chip";
 
@@ -55,7 +55,12 @@ export function ProjectMembersCard({
 							className="flex flex-wrap items-center justify-between gap-3 p-3"
 						>
 							<div className="flex min-w-0 items-center gap-2.5">
-								<UserAvatar size="sm" name={member.name} src={member.image} />
+								<MemberAvatar
+									userId={member.userId}
+									size="sm"
+									name={member.name}
+									src={member.image}
+								/>
 								<div className="flex min-w-0 flex-col">
 									<span className="truncate text-sm font-medium text-app-text">
 										{member.name}

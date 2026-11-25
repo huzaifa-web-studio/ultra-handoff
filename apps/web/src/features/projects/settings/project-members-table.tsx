@@ -33,7 +33,7 @@ import { LockIcon, Trash2Icon } from "lucide-react";
 import type { Selection, SortDescriptor } from "react-aria-components";
 
 import { SortIndicator } from "#/components/data-table/sort-indicator";
-import { UserAvatar } from "#/components/user-avatar";
+import { MemberAvatar } from "#/components/member-hover-card";
 import { formatDate, formatDateTime } from "#/lib/date";
 import type { ProjectMemberRow, ProjectViewer } from "../api";
 import {
@@ -204,7 +204,12 @@ export function ProjectMembersTable({
 
 							<TableCell>
 								<div className="flex min-w-0 items-center gap-2.5">
-									<UserAvatar size="sm" name={member.name} src={member.image} />
+									<MemberAvatar
+										userId={member.userId}
+										size="sm"
+										name={member.name}
+										src={member.image}
+									/>
 									<div className="flex min-w-0 flex-col">
 										<span className="flex items-center gap-1.5 truncate font-medium text-app-text">
 											{member.name}

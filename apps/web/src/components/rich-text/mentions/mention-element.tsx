@@ -23,7 +23,7 @@ import {
 	type PlateElementProps,
 	useSelected,
 } from "platejs/react";
-
+import { MemberProfileHover } from "#/components/member-hover-card";
 import { useEditorStatic } from "#/components/rich-text/editor-view-context";
 import { useMentionContext } from "./mention-context";
 import {
@@ -90,6 +90,32 @@ export function MentionElement(props: PlateElementProps) {
 			{props.children}
 		</PlateElement>
 	);
+
+	// A person mention opens their profile in a posted comment. Inside the
+	// composer it stays a plain chip: a hover card there would compete with the
+	// mention picker for focus while the writer is still typing.
+	if (target.type === "user") {
+		if (!staticRender || !context) return chip;
+
+		const displayName = value || "this person";
+
+		return (
+			<MemberProfileHover
+				orgSlug={context.orgSlug}
+				userId={target.id}
+				name={displayName}
+			>
+				<Link
+					to="/$orgSlug/people/$userId"
+					params={{ orgSlug: context.orgSlug, userId: target.id }}
+					className="cursor-pointer no-underline"
+					aria-label={`View profile for ${displayName}`}
+				>
+					{chip}
+				</Link>
+			</MemberProfileHover>
+		);
+	}
 
 	// A project or milestone chip is clickable in both the composer and a posted
 	// comment. In the composer it opens a new tab, so checking where a mention

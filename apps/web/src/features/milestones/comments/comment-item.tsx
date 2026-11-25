@@ -32,7 +32,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { UserAvatar } from "#/components/user-avatar";
+import { MemberAvatar } from "#/components/member-hover-card";
 import { formatCommentTime, formatDateTime } from "#/lib/date";
 import type { Comment } from "./api";
 import {
@@ -192,7 +192,8 @@ export function CommentItem({
 		<div className={cn(isOwn && "border-l-2 border-app-focus pl-3")}>
 			<Message align="start" className={cn(isReply ? "gap-2" : "gap-3")}>
 				<MessageAvatar className="self-start">
-					<UserAvatar
+					<MemberAvatar
+						userId={comment.author?.id}
 						src={comment.author?.image}
 						name={authorName}
 						size={isReply ? "sm" : "default"}

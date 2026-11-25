@@ -11,7 +11,7 @@
 
 import { cn } from "cn";
 
-import { UserAvatar } from "#/components/user-avatar";
+import { MemberAvatar } from "#/components/member-hover-card";
 import type { MilestoneAssignee } from "./api";
 
 /** How many avatars fit before the overflow counter takes over. */
@@ -41,8 +41,9 @@ export function MilestoneAssigneeStack({
 			title={assignees.map((assignee) => assignee.name).join(", ")}
 		>
 			{visible.map((assignee, index) => (
-				<UserAvatar
+				<MemberAvatar
 					key={assignee.userId}
+					userId={assignee.userId}
 					size="sm"
 					name={assignee.name}
 					src={assignee.image}

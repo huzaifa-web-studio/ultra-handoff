@@ -39,8 +39,8 @@ import { memo, useMemo } from "react";
 import type { Selection, SortDescriptor } from "react-aria-components";
 import { toast } from "sonner";
 import { SortIndicator } from "#/components/data-table/sort-indicator";
+import { MemberAvatar } from "#/components/member-hover-card";
 import { RoleChip } from "#/components/role-chip";
-import { UserAvatar } from "#/components/user-avatar";
 import {
 	assignableMemberRoles,
 	canManageTarget,
@@ -221,7 +221,8 @@ export function MembersTable({
 				header: "Member",
 				cell: ({ row }) => (
 					<div className="flex min-w-0 items-center gap-2.5">
-						<UserAvatar
+						<MemberAvatar
+							userId={row.original.userId}
 							size="sm"
 							name={row.original.name}
 							src={row.original.image}
