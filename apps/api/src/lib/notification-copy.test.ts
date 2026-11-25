@@ -207,6 +207,25 @@ describe("renderNotification", () => {
 
 		expect(rendered.body).toBe("Homepage moved to brand_new.");
 	});
+
+	test("direct message copy names the sender, includes the preview and links to the conversation", () => {
+		const rendered = renderNotification({
+			...base,
+			type: "direct_message",
+			actorName: "Bilal",
+			project: null,
+			milestone: null,
+			comment: null,
+			conversation: { id: "conv-1" },
+			data: { preview: "Are we still on for tomorrow?" },
+		});
+
+		expect(rendered.title).toBe("New message");
+		expect(rendered.body).toBe(
+			'Bilal sent you a message "Are we still on for tomorrow?"',
+		);
+		expect(rendered.href).toBe("/acme/messages/conv-1");
+	});
 });
 
 describe("computeThreadUnread", () => {
