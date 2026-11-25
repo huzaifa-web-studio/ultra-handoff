@@ -22,6 +22,7 @@ import { organization, user } from "../auth-schema";
 import { notificationPolicies } from "../rls";
 import { changeRequest, milestoneScopeEntry } from "./change-request";
 import { comment } from "./comment";
+import { conversation } from "./conversation";
 import { milestone } from "./milestone";
 import { project } from "./project";
 
@@ -58,6 +59,16 @@ export const notification = pgTable(
 			() => milestoneScopeEntry.id,
 			{ onDelete: "cascade" },
 		),
+		/**
+		 * The conversation a direct message notification points at.
+		 *
+		 * A real column rather than a value inside `data`: the notification list
+		 * re-renders its href from subject columns, and a conversation row needs
+		 * the same cascade and indexing as every other subject.
+		 */
+		conversationId: text("conversation_id").references(() => conversation.id, {
+			onDelete: "cascade",
+		}),
 		data: jsonb("data")
 			.$type<Record<string, string | number | boolean | null>>()
 			.notNull()
@@ -103,6 +114,7 @@ export const notification = pgTable(
 		index("notification_comment_idx").on(table.commentId),
 		index("notification_change_request_idx").on(table.changeRequestId),
 		index("notification_scope_entry_idx").on(table.scopeEntryId),
+		index("notification_conversation_idx").on(table.conversationId),
 		check(
 			"notification_type_check",
 			sql`${table.type} in (${sql.raw(NOTIFICATION_TYPE_SQL_VALUES)})`,

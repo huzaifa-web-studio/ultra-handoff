@@ -23,8 +23,9 @@
  */
 
 import { Button } from "@org/ui/components/button";
+import { Input } from "@org/ui/components/input";
 import { ScrollArea } from "@org/ui/components/scroll-area";
-import { ArrowDownIcon, RefreshCwIcon } from "lucide-react";
+import { ArrowDownIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
 import {
 	Fragment,
 	useCallback,
@@ -38,6 +39,13 @@ import { useMarkCommentsRead } from "#/features/notifications/hooks";
 import { useRealtimeEvent } from "#/features/realtime/provider";
 import { useAtBottom } from "#/hooks/use-at-bottom";
 import { useClockTick } from "#/hooks/use-clock-tick";
+import { formatDateTime } from "#/lib/date";
+import {
+	clearTyping,
+	milestoneChannel,
+	setTyping,
+	useTypingUser,
+} from "#/lib/realtime/typing-store";
 import type { Comment } from "./api";
 import { CommentComposer } from "./comment-composer";
 import { dayMarkers } from "./comment-day";
@@ -45,7 +53,7 @@ import { CommentDayDivider } from "./comment-day-divider";
 import { CommentDeleteDialog } from "./comment-delete-dialog";
 import { CommentSkeleton } from "./comment-skeleton";
 import { CommentThread } from "./comment-thread";
-import { useMilestoneComments } from "./hooks";
+import { useCommentSearch, useMilestoneComments } from "./hooks";
 import { MilestoneEventItem } from "./milestone-event";
 import { readCommentPayload } from "./realtime";
 
@@ -104,6 +112,7 @@ export function CommentTab({
 	archived,
 	active,
 	onOpenCommentTab,
+	onOpenCommentById,
 }: {
 	orgSlug: string;
 	organizationId: string;
@@ -117,10 +126,21 @@ export function CommentTab({
 	active: boolean;
 	/** Open a root comment as its own tab. */
 	onOpenCommentTab: (comment: Comment) => void;
+	/** Open a focused tab when only the root id is known. */
+	onOpenCommentById: (id: string) => void;
 }) {
 	const query = useMilestoneComments(orgSlug, projectId, milestoneId, {
 		enabled: active,
 	});
+
+	const [searchOpen, setSearchOpen] = useState(false);
+	const [search, setSearch] = useState("");
+	const searchResults = useCommentSearch(
+		orgSlug,
+		projectId,
+		milestoneId,
+		search,
+	);
 
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const scrolledOnceRef = useRef(false);
@@ -183,6 +203,35 @@ export function CommentTab({
 		);
 	});
 
+	/*
+	 * Typing frames share the project socket. They are ephemeral and never
+	 * stored; the store expires an entry after four seconds, so a lost stop
+	 * frame cannot leave a permanent indicator.
+	 */
+	useRealtimeEvent((event) => {
+		if (event.type !== "typing.started" && event.type !== "typing.stopped") {
+			return;
+		}
+
+		const data = event.data;
+
+		if (!data || typeof data !== "object" || Array.isArray(data)) return;
+
+		const record = data as Record<string, unknown>;
+
+		if (record.milestoneId !== milestoneId) return;
+		if (typeof record.userId !== "string") return;
+		if (record.userId === viewerId) return;
+
+		const channel = milestoneChannel(projectId, milestoneId);
+
+		if (event.type === "typing.started") {
+			setTyping(channel, record.userId);
+		} else {
+			clearTyping(channel, record.userId);
+		}
+	});
+
 	// The one reply target. The composer at the bottom renders the banner and
 	// sends with this id as the parent, so a thread is one level and one draft.
 	const [replyingTo, setReplyingTo] = useState<{
@@ -209,6 +258,16 @@ export function CommentTab({
 	const threads = [...(query.data?.pages ?? [])]
 		.reverse()
 		.flatMap((page) => page.threads);
+
+	// Resolve a typing person's name from a row already on screen. A person who
+	// has never commented falls back to "Someone".
+	const typingUserId = useTypingUser(milestoneChannel(projectId, milestoneId));
+	const typingName = typingUserId
+		? ([
+				...threads.flatMap((thread) => [thread.comment, ...thread.replies]),
+			].find((comment) => comment.author?.id === typingUserId)?.author?.name ??
+			"Someone")
+		: null;
 
 	/*
 	 * Read marking.
@@ -556,6 +615,106 @@ export function CommentTab({
 					{announcement}
 				</p>
 
+				<div className="flex items-center gap-2 border-b border-app-border px-3 py-1.5">
+					{searchOpen ? (
+						<>
+							<div className="relative flex-1">
+								<SearchIcon
+									aria-hidden
+									className="pointer-events-none absolute top-1/2 left-0 size-3.5 -translate-y-1/2 text-app-text-muted"
+								/>
+								<Input
+									type="search"
+									value={search}
+									onChange={(event) => setSearch(event.target.value)}
+									placeholder="Search this discussion"
+									aria-label="Search this discussion"
+									className="h-8 pl-6"
+									autoFocus
+								/>
+								{search.length > 0 && (
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										className="absolute top-1/2 right-0 -translate-y-1/2"
+										aria-label="Clear search"
+										onPress={() => setSearch("")}
+									>
+										<XIcon aria-hidden />
+									</Button>
+								)}
+							</div>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label="Close search"
+								onPress={() => {
+									setSearchOpen(false);
+									setSearch("");
+								}}
+							>
+								<XIcon aria-hidden />
+							</Button>
+						</>
+					) : (
+						<>
+							<span className="text-xs text-app-text-muted">
+								{query.data?.pages[0]?.total ?? 0} comments
+							</span>
+							<Button
+								className="ml-auto"
+								variant="ghost"
+								size="icon-xs"
+								aria-label="Search this discussion"
+								onPress={() => setSearchOpen(true)}
+							>
+								<SearchIcon aria-hidden />
+							</Button>
+						</>
+					)}
+				</div>
+
+				{searchOpen && search.trim().length >= 2 && (
+					<div className="max-h-48 overflow-y-auto border-b border-app-border">
+						{searchResults.isPending ? (
+							<p className="p-3 text-xs text-app-text-muted">Searching...</p>
+						) : searchResults.isError ? (
+							<p role="alert" className="p-3 text-xs text-danger">
+								Could not search the discussion.
+							</p>
+						) : (searchResults.data?.results.length ?? 0) === 0 ? (
+							<p className="p-3 text-xs text-app-text-muted">
+								No comments match that search.
+							</p>
+						) : (
+							searchResults.data?.results.map((result) => (
+								<button
+									key={result.id}
+									type="button"
+									className="block w-full border-b border-app-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-app-panel-subtle focus-visible:bg-app-selected focus-visible:outline-none"
+									onClick={() => {
+										onOpenCommentById(result.rootId);
+										setSearchOpen(false);
+										setSearch("");
+									}}
+								>
+									<span className="flex items-baseline gap-2">
+										<span className="text-xs font-medium text-app-text">
+											{result.authorName}
+										</span>
+										<span className="text-[0.65rem] text-app-text-muted">
+											{formatDateTime(result.createdAt)}
+										</span>
+									</span>
+									<span className="mt-0.5 block truncate text-xs text-app-text-muted">
+										{result.snippet}
+									</span>
+								</button>
+							))
+						)}
+					</div>
+				)}
+
 				<div className="relative min-h-0 flex-1">
 					<ScrollArea
 						ref={scrollRef}
@@ -606,6 +765,11 @@ export function CommentTab({
 					</p>
 				) : canComment ? (
 					<div className="border-t border-app-border p-3">
+						{typingName && (
+							<p className="pb-2 text-xs text-app-text-muted">
+								{typingName} is typing...
+							</p>
+						)}
 						<CommentComposer
 							orgSlug={orgSlug}
 							organizationId={organizationId}

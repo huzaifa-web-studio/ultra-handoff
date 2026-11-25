@@ -216,8 +216,37 @@ export type MentionPerson = MentionCandidates["users"][number];
 export type MentionProject = MentionCandidates["projects"][number];
 export type MentionMilestone = MentionCandidates["milestones"][number];
 
-/** Soft delete your own comment. */
-export async function deleteComment(
+/** Search the visible messages of one milestone. */
+export async function searchComments(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	search: string,
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.projects({ projectId })
+		.milestones({ milestoneId })
+		.comments.search.get({ query: { q: search } });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not search the discussion."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not search the discussion.", 0);
+	}
+
+	return response.data;
+}
+
+export type CommentSearchResponse = Awaited<ReturnType<typeof searchComments>>;
+export type CommentSearchHit = CommentSearchResponse["results"][number];
+
+/** Soft delete your own comment. */ export async function deleteComment(
 	orgSlug: string,
 	projectId: string,
 	milestoneId: string,

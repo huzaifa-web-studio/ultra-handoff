@@ -10,7 +10,9 @@
 
 import { withTenant } from "../../db/tenant";
 import { realtimeEnv } from "../../lib/env";
+import { loadTypingTarget } from "../../services/conversation";
 import { milestoneExistsInProject } from "../../services/milestone";
+import { publishRealtimeEvent, publishUserEvent } from "../bus";
 import { parseInboundMessage } from "../protocol";
 import { realtimeRegistry } from "../registry";
 import { connectionFor, sendEnvelope, sendUserEnvelope } from "./connections";
@@ -118,10 +120,65 @@ export async function handleMessage(
 			realtimeRegistry.unsubscribeMilestone(connection.id, message.milestoneId);
 			break;
 		case "typing.start":
-		case "typing.stop":
-			// Reserved for the presence phase. The frame is accepted and
-			// timestamped so the protocol does not change later, but it is not
-			// broadcast until typing has a consumer.
+		case "typing.stop": {
+			// A personal socket has no milestone presence group.
+			if (!connection.projectId) break;
+
+			/*
+			 * Relay to the whole project topic rather than only this process.
+			 *
+			 * Typing is ephemeral and never stored. Publishing through Redis
+			 * reaches a reader connected to another replica, and the browser
+			 * ignores its own id. The frame is already inside the per connection
+			 * rate limit, and the client throttles to one frame per few seconds.
+			 */
+			void publishRealtimeEvent(
+				connection.projectId,
+				message.type === "typing.start" ? "typing.started" : "typing.stopped",
+				{
+					milestoneId: message.milestoneId,
+					userId: connection.userId,
+				},
+			).catch(() => undefined);
 			break;
+		}
+		case "dm.typing.start":
+		case "dm.typing.stop": {
+			// A conversation frame belongs on the personal socket only.
+			if (connection.projectId) break;
+
+			// The conversation id comes from the client, so participation is
+			// re-checked before anything is relayed. A forged id reaches nobody.
+			const target = await withTenant(
+				{
+					organizationId: connection.organizationId,
+					userId: connection.userId,
+				},
+				(tx) =>
+					loadTypingTarget(
+						tx,
+						{
+							organizationId: connection.organizationId,
+							userId: connection.userId,
+						},
+						message.conversationId,
+					),
+			).catch(() => null);
+
+			if (!target) break;
+
+			void publishUserEvent(
+				connection.organizationId,
+				target,
+				message.type === "dm.typing.start"
+					? "typing.started"
+					: "typing.stopped",
+				{
+					conversationId: message.conversationId,
+					userId: connection.userId,
+				},
+			).catch(() => undefined);
+			break;
+		}
 	}
 }

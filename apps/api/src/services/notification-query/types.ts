@@ -26,6 +26,8 @@ export type NotificationRow = RenderedNotification & {
 	threadCommentId: string | null;
 	changeRequestId: string | null;
 	scopeEntryId: string | null;
+	/** Set for a direct message notification. */
+	conversationId: string | null;
 	preview: string | null;
 	data: NotificationData;
 };

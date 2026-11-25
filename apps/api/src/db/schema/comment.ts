@@ -95,6 +95,17 @@ export const comment = pgTable(
 		index("comment_organization_idx").on(table.organizationId),
 		// Supports the author permission check and a future "my comments" view.
 		index("comment_author_idx").on(table.authorId),
+		/**
+		 * Discussion search.
+		 *
+		 * Same reason as the project name index: `ILIKE '%term%'` cannot use a
+		 * btree, so the trigram GIN keeps the contains search fast. The extension
+		 * is created by `scripts/bootstrap-db.ts`.
+		 */
+		index("comment_body_trgm_idx").using(
+			"gin",
+			sql`${table.bodyText} gin_trgm_ops`,
+		),
 		// Exactly one target. Adding the next entity extends this list.
 		check("comment_target_check", sql`num_nonnulls(${table.milestoneId}) = 1`),
 		check("comment_kind_check", sql`${table.kind} in ('comment', 'event')`),

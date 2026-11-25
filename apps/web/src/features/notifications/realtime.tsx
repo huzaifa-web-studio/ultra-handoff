@@ -25,11 +25,12 @@ import type {
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-
+import { messagesKey } from "#/features/messages/keys";
 import {
 	acquireUserRealtimeSocket,
 	type RealtimeStatus,
 } from "#/lib/realtime/socket";
+import { emitUserRealtimeEvent } from "#/lib/realtime/user-events";
 import {
 	hasDesktopOptIn,
 	isAwayFromApp,
@@ -153,6 +154,11 @@ export function NotificationRealtimeProvider({
 		});
 
 		const offEvent = lease.socket.onEvent((event) => {
+			// Every personal frame is also offered to the feature modules that
+			// share this socket (direct messages today). The provider stays the
+			// only owner of the connection.
+			emitUserRealtimeEvent(event);
+
 			const created = readCreated(event);
 
 			if (created) {
@@ -169,6 +175,14 @@ export function NotificationRealtimeProvider({
 						body: created.body,
 						href: created.href,
 						tag: created.notificationId,
+					});
+				}
+
+				if (created.type === "direct_message") {
+					// The DM stream normally patches the list. A missed frame is
+					// recovered here, because the bell row proves one exists.
+					void queryClient.invalidateQueries({
+						queryKey: messagesKey(orgSlug),
 					});
 				}
 

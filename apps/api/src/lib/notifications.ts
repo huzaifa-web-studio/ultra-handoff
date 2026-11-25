@@ -63,7 +63,14 @@ export type NotificationRenderInput = {
 	comment: NotificationCommentView | null;
 	changeRequest: NotificationChangeRequestView | null;
 	scopeEntry: NotificationScopeEntryView | null;
+	/** Set for a direct message, so the click opens the conversation. */
+	conversation?: NotificationConversationView | null;
 	data: NotificationData;
+};
+
+/** The conversation a direct message notification points at. */
+export type NotificationConversationView = {
+	id: string;
 };
 
 /** The three strings every notification surface displays. */
@@ -141,6 +148,12 @@ export function notificationHref(input: NotificationRenderInput): string {
 	const base = `/${encodeURIComponent(input.organizationSlug)}`;
 	const organizationOnly =
 		input.type === "member_joined" || input.type === "org_role_changed";
+
+	// A conversation is not project scoped, so it answers before the project
+	// branch. The messages page owns the deep link.
+	if (input.type === "direct_message" && input.conversation) {
+		return `${base}/messages/${encodeURIComponent(input.conversation.id)}`;
+	}
 
 	if (!input.project) {
 		return organizationOnly ? `${base}/settings/members` : base;
@@ -356,5 +369,18 @@ export function renderNotification(
 				body: `${actor} restored ${project}.`,
 				href: notificationHref(input),
 			};
+		case "direct_message": {
+			const preview = notificationPreview(
+				dataString(input.data, "preview") ?? null,
+			);
+
+			return {
+				title: "New message",
+				body: preview
+					? `${actor} sent you a message "${preview}"`
+					: `${actor} sent you a message.`,
+				href: notificationHref(input),
+			};
+		}
 	}
 }

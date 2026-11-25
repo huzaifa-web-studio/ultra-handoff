@@ -19,9 +19,12 @@ import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as AuthErrorRouteImport } from './routes/auth.error'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as AppOrgSlugIndexRouteImport } from './routes/_app/$orgSlug.index'
+import { Route as AppOrgSlugMessagesRouteImport } from './routes/_app/$orgSlug.messages'
 import { Route as AppOrgSlugNotificationsRouteImport } from './routes/_app/$orgSlug.notifications'
 import { Route as AppOrgSlugProjectsRouteImport } from './routes/_app/$orgSlug.projects'
 import { Route as AppOrgSlugSettingsRouteImport } from './routes/_app/$orgSlug.settings'
+import { Route as AppOrgSlugMessagesIndexRouteImport } from './routes/_app/$orgSlug.messages.index'
+import { Route as AppOrgSlugMessagesConversationIdRouteImport } from './routes/_app/$orgSlug.messages.$conversationId'
 import { Route as AppOrgSlugPeopleUserIdRouteImport } from './routes/_app/$orgSlug.people.$userId'
 import { Route as AppOrgSlugProjectsIndexRouteImport } from './routes/_app/$orgSlug.projects.index'
 import { Route as AppOrgSlugProjectsProjectSlugRouteImport } from './routes/_app/$orgSlug.projects.$projectSlug'
@@ -83,6 +86,11 @@ const AppOrgSlugIndexRoute = AppOrgSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppOrgSlugRoute,
 } as any)
+const AppOrgSlugMessagesRoute = AppOrgSlugMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => AppOrgSlugRoute,
+} as any)
 const AppOrgSlugNotificationsRoute = AppOrgSlugNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
@@ -98,6 +106,17 @@ const AppOrgSlugSettingsRoute = AppOrgSlugSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppOrgSlugRoute,
 } as any)
+const AppOrgSlugMessagesIndexRoute = AppOrgSlugMessagesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppOrgSlugMessagesRoute,
+} as any)
+const AppOrgSlugMessagesConversationIdRoute =
+  AppOrgSlugMessagesConversationIdRouteImport.update({
+    id: '/$conversationId',
+    path: '/$conversationId',
+    getParentRoute: () => AppOrgSlugMessagesRoute,
+  } as any)
 const AppOrgSlugPeopleUserIdRoute = AppOrgSlugPeopleUserIdRouteImport.update({
   id: '/people/$userId',
   path: '/people/$userId',
@@ -171,14 +190,17 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/$orgSlug/messages': typeof AppOrgSlugMessagesRouteWithChildren
   '/$orgSlug/notifications': typeof AppOrgSlugNotificationsRoute
   '/$orgSlug/projects': typeof AppOrgSlugProjectsRouteWithChildren
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/$orgSlug/': typeof AppOrgSlugIndexRoute
+  '/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRoute
   '/$orgSlug/people/$userId': typeof AppOrgSlugPeopleUserIdRoute
   '/$orgSlug/projects/$projectSlug': typeof AppOrgSlugProjectsProjectSlugRouteWithChildren
   '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
   '/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
+  '/$orgSlug/messages/': typeof AppOrgSlugMessagesIndexRoute
   '/$orgSlug/projects/': typeof AppOrgSlugProjectsIndexRoute
   '/$orgSlug/settings/': typeof AppOrgSlugSettingsIndexRoute
   '/$orgSlug/projects/$projectSlug/milestones': typeof AppOrgSlugProjectsProjectSlugMilestonesRoute
@@ -197,9 +219,11 @@ export interface FileRoutesByTo {
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/$orgSlug/notifications': typeof AppOrgSlugNotificationsRoute
   '/$orgSlug': typeof AppOrgSlugIndexRoute
+  '/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRoute
   '/$orgSlug/people/$userId': typeof AppOrgSlugPeopleUserIdRoute
   '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
   '/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
+  '/$orgSlug/messages': typeof AppOrgSlugMessagesIndexRoute
   '/$orgSlug/projects': typeof AppOrgSlugProjectsIndexRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsIndexRoute
   '/$orgSlug/projects/$projectSlug/milestones': typeof AppOrgSlugProjectsProjectSlugMilestonesRoute
@@ -218,14 +242,17 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/auth/error': typeof AuthErrorRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
+  '/_app/$orgSlug/messages': typeof AppOrgSlugMessagesRouteWithChildren
   '/_app/$orgSlug/notifications': typeof AppOrgSlugNotificationsRoute
   '/_app/$orgSlug/projects': typeof AppOrgSlugProjectsRouteWithChildren
   '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/_app/$orgSlug/': typeof AppOrgSlugIndexRoute
+  '/_app/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRoute
   '/_app/$orgSlug/people/$userId': typeof AppOrgSlugPeopleUserIdRoute
   '/_app/$orgSlug/projects/$projectSlug': typeof AppOrgSlugProjectsProjectSlugRouteWithChildren
   '/_app/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
   '/_app/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
+  '/_app/$orgSlug/messages/': typeof AppOrgSlugMessagesIndexRoute
   '/_app/$orgSlug/projects/': typeof AppOrgSlugProjectsIndexRoute
   '/_app/$orgSlug/settings/': typeof AppOrgSlugSettingsIndexRoute
   '/_app/$orgSlug/projects/$projectSlug/milestones': typeof AppOrgSlugProjectsProjectSlugMilestonesRoute
@@ -245,14 +272,17 @@ export interface FileRouteTypes {
     | '/account'
     | '/auth/error'
     | '/invite/$invitationId'
+    | '/$orgSlug/messages'
     | '/$orgSlug/notifications'
     | '/$orgSlug/projects'
     | '/$orgSlug/settings'
     | '/$orgSlug/'
+    | '/$orgSlug/messages/$conversationId'
     | '/$orgSlug/people/$userId'
     | '/$orgSlug/projects/$projectSlug'
     | '/$orgSlug/settings/invitations'
     | '/$orgSlug/settings/members'
+    | '/$orgSlug/messages/'
     | '/$orgSlug/projects/'
     | '/$orgSlug/settings/'
     | '/$orgSlug/projects/$projectSlug/milestones'
@@ -271,9 +301,11 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/$orgSlug/notifications'
     | '/$orgSlug'
+    | '/$orgSlug/messages/$conversationId'
     | '/$orgSlug/people/$userId'
     | '/$orgSlug/settings/invitations'
     | '/$orgSlug/settings/members'
+    | '/$orgSlug/messages'
     | '/$orgSlug/projects'
     | '/$orgSlug/settings'
     | '/$orgSlug/projects/$projectSlug/milestones'
@@ -291,14 +323,17 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/auth/error'
     | '/invite/$invitationId'
+    | '/_app/$orgSlug/messages'
     | '/_app/$orgSlug/notifications'
     | '/_app/$orgSlug/projects'
     | '/_app/$orgSlug/settings'
     | '/_app/$orgSlug/'
+    | '/_app/$orgSlug/messages/$conversationId'
     | '/_app/$orgSlug/people/$userId'
     | '/_app/$orgSlug/projects/$projectSlug'
     | '/_app/$orgSlug/settings/invitations'
     | '/_app/$orgSlug/settings/members'
+    | '/_app/$orgSlug/messages/'
     | '/_app/$orgSlug/projects/'
     | '/_app/$orgSlug/settings/'
     | '/_app/$orgSlug/projects/$projectSlug/milestones'
@@ -390,6 +425,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSlugIndexRouteImport
       parentRoute: typeof AppOrgSlugRoute
     }
+    '/_app/$orgSlug/messages': {
+      id: '/_app/$orgSlug/messages'
+      path: '/messages'
+      fullPath: '/$orgSlug/messages'
+      preLoaderRoute: typeof AppOrgSlugMessagesRouteImport
+      parentRoute: typeof AppOrgSlugRoute
+    }
     '/_app/$orgSlug/notifications': {
       id: '/_app/$orgSlug/notifications'
       path: '/notifications'
@@ -410,6 +452,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/$orgSlug/settings'
       preLoaderRoute: typeof AppOrgSlugSettingsRouteImport
       parentRoute: typeof AppOrgSlugRoute
+    }
+    '/_app/$orgSlug/messages/': {
+      id: '/_app/$orgSlug/messages/'
+      path: '/'
+      fullPath: '/$orgSlug/messages/'
+      preLoaderRoute: typeof AppOrgSlugMessagesIndexRouteImport
+      parentRoute: typeof AppOrgSlugMessagesRoute
+    }
+    '/_app/$orgSlug/messages/$conversationId': {
+      id: '/_app/$orgSlug/messages/$conversationId'
+      path: '/$conversationId'
+      fullPath: '/$orgSlug/messages/$conversationId'
+      preLoaderRoute: typeof AppOrgSlugMessagesConversationIdRouteImport
+      parentRoute: typeof AppOrgSlugMessagesRoute
     }
     '/_app/$orgSlug/people/$userId': {
       id: '/_app/$orgSlug/people/$userId'
@@ -491,6 +547,19 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppOrgSlugMessagesRouteChildren {
+  AppOrgSlugMessagesConversationIdRoute: typeof AppOrgSlugMessagesConversationIdRoute
+  AppOrgSlugMessagesIndexRoute: typeof AppOrgSlugMessagesIndexRoute
+}
+
+const AppOrgSlugMessagesRouteChildren: AppOrgSlugMessagesRouteChildren = {
+  AppOrgSlugMessagesConversationIdRoute: AppOrgSlugMessagesConversationIdRoute,
+  AppOrgSlugMessagesIndexRoute: AppOrgSlugMessagesIndexRoute,
+}
+
+const AppOrgSlugMessagesRouteWithChildren =
+  AppOrgSlugMessagesRoute._addFileChildren(AppOrgSlugMessagesRouteChildren)
+
 interface AppOrgSlugProjectsProjectSlugSettingsRouteChildren {
   AppOrgSlugProjectsProjectSlugSettingsMembersRoute: typeof AppOrgSlugProjectsProjectSlugSettingsMembersRoute
   AppOrgSlugProjectsProjectSlugSettingsIndexRoute: typeof AppOrgSlugProjectsProjectSlugSettingsIndexRoute
@@ -560,6 +629,7 @@ const AppOrgSlugSettingsRouteWithChildren =
   AppOrgSlugSettingsRoute._addFileChildren(AppOrgSlugSettingsRouteChildren)
 
 interface AppOrgSlugRouteChildren {
+  AppOrgSlugMessagesRoute: typeof AppOrgSlugMessagesRouteWithChildren
   AppOrgSlugNotificationsRoute: typeof AppOrgSlugNotificationsRoute
   AppOrgSlugProjectsRoute: typeof AppOrgSlugProjectsRouteWithChildren
   AppOrgSlugSettingsRoute: typeof AppOrgSlugSettingsRouteWithChildren
@@ -568,6 +638,7 @@ interface AppOrgSlugRouteChildren {
 }
 
 const AppOrgSlugRouteChildren: AppOrgSlugRouteChildren = {
+  AppOrgSlugMessagesRoute: AppOrgSlugMessagesRouteWithChildren,
   AppOrgSlugNotificationsRoute: AppOrgSlugNotificationsRoute,
   AppOrgSlugProjectsRoute: AppOrgSlugProjectsRouteWithChildren,
   AppOrgSlugSettingsRoute: AppOrgSlugSettingsRouteWithChildren,
@@ -603,12 +674,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

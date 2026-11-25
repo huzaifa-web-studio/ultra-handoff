@@ -132,6 +132,26 @@ export class RealtimeSocket {
 		};
 	}
 
+	/**
+	 * Send one application frame.
+	 *
+	 * Used by ephemeral features such as typing. The protocol version is added
+	 * here so a caller cannot forget it. A send on a closed socket is dropped:
+	 * there is nothing a typing frame could do about a reconnect, and the next
+	 * keystroke sends another one.
+	 */
+	send(frame: Record<string, unknown>): void {
+		const socket = this.socket;
+
+		if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+		try {
+			socket.send(JSON.stringify({ v: PROTOCOL_VERSION, ...frame }));
+		} catch {
+			// The close handler owns cleanup.
+		}
+	}
+
 	/** Close for good. A later `connect` would start from a clean slate. */
 	dispose(): void {
 		this.stopped = true;

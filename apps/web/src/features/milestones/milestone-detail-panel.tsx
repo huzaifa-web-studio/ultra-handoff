@@ -724,6 +724,22 @@ function MilestoneDetailContent({
 	}
 
 	/**
+	 * Open a focused tab when only the root id is known.
+	 *
+	 * Used by a discussion search hit: the hit carries the thread root, and the
+	 * thread tab fills in the author name once it loads.
+	 */
+	function openCommentTabById(id: string) {
+		setOpenCommentTabs((current) =>
+			current.some((item) => item.id === id)
+				? current
+				: [...current, { id, label: "Thread", title: "" }],
+		);
+
+		onTabChange(commentTabKey(id));
+	}
+
+	/**
 	 * Refresh a focused tab from the thread that just loaded.
 	 *
 	 * A deep link only knows the id, so the placeholder label becomes the author
@@ -919,6 +935,7 @@ function MilestoneDetailContent({
 					openBaselineScopeTab={openBaselineScopeTab}
 					openEntryScopeTab={openEntryScopeTab}
 					openCommentTab={openCommentTab}
+					openCommentTabById={openCommentTabById}
 					onTabChange={onTabChange}
 				/>
 

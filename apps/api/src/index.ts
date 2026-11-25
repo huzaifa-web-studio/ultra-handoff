@@ -15,6 +15,7 @@ import { realtimeRoutes } from "./realtime/gateway";
 import { accountRoutes } from "./routes/account";
 import { changeRequestRoutes } from "./routes/change-requests";
 import { commentRoutes } from "./routes/comments";
+import { conversationRoutes } from "./routes/conversations";
 import { fileRoutes } from "./routes/files";
 import { healthRoutes } from "./routes/health";
 import { publicInvitationRoutes } from "./routes/invitations";
@@ -73,6 +74,8 @@ async function buildApp() {
 		.use(milestoneRoutes)
 		// Discussion threads on a milestone (tenant scoped).
 		.use(commentRoutes)
+		// Direct conversations and their messages (tenant scoped).
+		.use(conversationRoutes)
 		// Client change requests on a milestone (tenant scoped).
 		.use(changeRequestRoutes)
 		// Live comment, milestone and presence stream for the project workspace.
@@ -130,14 +133,20 @@ export type {
 	ChangeRequestRealtimePayload,
 	CommentReadPayload,
 	CommentRealtimePayload,
+	ConversationActivity,
+	ConversationMessageRealtimePayload,
+	ConversationReadPayload,
+	ConversationTypingPayload,
 	MilestoneChangedField,
 	MilestoneCreatedPayload,
 	MilestoneDeletedPayload,
+	MilestoneTypingPayload,
 	MilestoneUpdatedPayload,
 	NotificationCreatedPayload,
 	NotificationReadPayload,
 	RealtimeChangeRequest,
 	RealtimeComment,
+	RealtimeConversationMessage,
 } from "./realtime/events";
 /**
  * Realtime wire types for the web app.

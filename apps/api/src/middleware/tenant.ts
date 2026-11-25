@@ -29,6 +29,14 @@ export type TenantContext = TenantScope & {
 	slug: string;
 	role: string;
 	/**
+	 * The caller's display name from the session.
+	 *
+	 * Why: a direct message notification is rendered inside the sender's
+	 * transaction, and reading the name from the session avoids a second
+	 * privileged lookup while a transaction is open.
+	 */
+	name: string;
+	/**
 	 * The caller's Better Auth membership row id.
 	 *
 	 * Why: business tables that reference a membership (project members) need
@@ -96,6 +104,7 @@ export async function resolveTenantScope(
 			memberCreatedAt: row.memberCreatedAt,
 			slug: row.slug,
 			role: row.role,
+			name: session.user.name || session.user.email,
 		},
 	};
 }

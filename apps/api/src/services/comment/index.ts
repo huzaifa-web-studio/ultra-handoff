@@ -17,6 +17,8 @@ export {
 export { createMilestoneComment } from "./create";
 export { deleteMilestoneComment } from "./delete";
 export { listMilestoneComments } from "./list";
+export type { CommentSearchResult, CommentSearchRow } from "./search";
+export { searchMilestoneComments } from "./search";
 export { getMilestoneCommentThread } from "./thread";
 export type {
 	CommentAuthor,

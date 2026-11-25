@@ -84,6 +84,10 @@ export type RealtimeEventType =
 	| "milestone.scope.changed"
 	| "change_request.created"
 	| "change_request.updated"
+	| "conversation.message.created"
+	| "conversation.message.updated"
+	| "conversation.message.deleted"
+	| "conversation.read"
 	| "presence.joined"
 	| "presence.left"
 	| "typing.started"
@@ -99,7 +103,9 @@ export type RealtimeInboundType =
 	| "presence.join"
 	| "presence.leave"
 	| "typing.start"
-	| "typing.stop";
+	| "typing.stop"
+	| "dm.typing.start"
+	| "dm.typing.stop";
 
 /**
  * The wire envelope. `data` is narrowed per event type by the consumer.
@@ -170,7 +176,9 @@ export type RealtimeInboundMessage =
 	| { type: "presence.join"; milestoneId: string }
 	| { type: "presence.leave"; milestoneId: string }
 	| { type: "typing.start"; milestoneId: string }
-	| { type: "typing.stop"; milestoneId: string };
+	| { type: "typing.stop"; milestoneId: string }
+	| { type: "dm.typing.start"; conversationId: string }
+	| { type: "dm.typing.stop"; conversationId: string };
 
 /** Milestone ids are opaque strings, matching the route param limit. */
 const MILESTONE_ID_MAX = 64;
@@ -232,6 +240,22 @@ export function parseInboundMessage(
 		}
 
 		return { type, milestoneId };
+	}
+
+	// A conversation frame names a conversation the server re-checks before it
+	// relays anything, so a forged id can only waste one lookup.
+	if (type === "dm.typing.start" || type === "dm.typing.stop") {
+		const conversationId = record.conversationId;
+
+		if (
+			typeof conversationId !== "string" ||
+			conversationId.length === 0 ||
+			conversationId.length > MILESTONE_ID_MAX
+		) {
+			return null;
+		}
+
+		return { type, conversationId };
 	}
 
 	return null;

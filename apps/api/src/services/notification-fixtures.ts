@@ -75,6 +75,7 @@ export function tenant(
 		memberCreatedAt,
 		slug,
 		role,
+		name: "QA Person",
 	};
 }
 

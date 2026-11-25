@@ -222,6 +222,7 @@ export function CommentEditor({
 	minHeightClass = "min-h-16",
 	footer,
 	onUploadingChange,
+	mentionsEnabled = true,
 }: {
 	initialValue: unknown[];
 	onChange: (value: unknown[]) => void;
@@ -250,6 +251,13 @@ export function CommentEditor({
 	footer?: React.ReactNode;
 	/** Lets the host disable Post or Save while a drop uploads. */
 	onUploadingChange?: (uploading: boolean) => void;
+	/**
+	 * Turn the `@` picker off.
+	 *
+	 * Why: mention search is scoped to a project, and a direct conversation has
+	 * no project. A stored mention still renders; only the picker is removed.
+	 */
+	mentionsEnabled?: boolean;
 }) {
 	// Created once per mounted instance. The parent uses `key` to reset it after
 	// a successful post, which is the only reliable way to clear undo history.
@@ -289,7 +297,7 @@ export function CommentEditor({
 		mentionContext?.orgSlug ?? organizationSlug,
 		mentionContext?.projectId ?? "",
 		debouncedSearch,
-		Boolean(mention) && !readOnly,
+		mentionsEnabled && Boolean(mention) && !readOnly,
 	);
 
 	/**
@@ -301,7 +309,7 @@ export function CommentEditor({
 	 * settled, which is when the caret rectangle is reliable.
 	 */
 	const refreshMention = useCallback(() => {
-		if (readOnly) {
+		if (readOnly || !mentionsEnabled) {
 			setMention(null);
 			return;
 		}
@@ -312,7 +320,7 @@ export function CommentEditor({
 				contentRef.current?.getBoundingClientRect() ?? null,
 			),
 		);
-	}, [editor, readOnly]);
+	}, [editor, readOnly, mentionsEnabled]);
 
 	// Flatten the three API groups into rows the picker can render and the
 	// keyboard handler can index into.

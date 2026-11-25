@@ -26,6 +26,7 @@ import { Button } from "@org/ui/components/button";
 import { cn } from "cn";
 import { ReplyIcon, SendIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useMilestoneTypingSender } from "#/lib/realtime/typing-sender";
 import {
 	COMMENT_TEXT_MAX,
 	commentHasContent,
@@ -63,6 +64,11 @@ export function CommentComposer({
 	onPosted?: () => void;
 }) {
 	const create = useCreateComment(orgSlug, projectId, milestoneId);
+	const notifyTyping = useMilestoneTypingSender(
+		orgSlug,
+		projectId,
+		milestoneId,
+	);
 
 	const [draft, setDraft] = useState<unknown[]>([]);
 	// Bumped after a successful post to remount the editor with an empty value.
@@ -141,7 +147,10 @@ export function CommentComposer({
 				<CommentEditor
 					key={editorVersion}
 					initialValue={[]}
-					onChange={setDraft}
+					onChange={(value) => {
+						setDraft(value);
+						notifyTyping();
+					}}
 					onSubmit={() => void submit()}
 					onCancel={onDone}
 					autoFocus={autoFocus || focusAfterPost}

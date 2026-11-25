@@ -71,6 +71,7 @@ export function CommentToolbar({
 	organizationId,
 	organizationSlug,
 	onUploadingChange,
+	mentionsEnabled = true,
 }: {
 	organizationId: string;
 	organizationSlug: string;
@@ -79,6 +80,13 @@ export function CommentToolbar({
 	 * message cannot be sent without the attachment the writer just picked.
 	 */
 	onUploadingChange?: (uploading: boolean) => void;
+	/**
+	 * Hide the mention button.
+	 *
+	 * Why: mention search is project scoped, and a direct conversation has no
+	 * project. The rest of the toolbar works unchanged.
+	 */
+	mentionsEnabled?: boolean;
 }) {
 	const editor = useEditorRef();
 	const imageInputRef = useRef<HTMLInputElement>(null);
@@ -234,14 +242,18 @@ export function CommentToolbar({
 
 				<ToolbarSeparator />
 
-				<ToolbarButton
-					label="Mention a person, project or milestone"
-					onPress={startMention}
-				>
-					<AtSignIcon aria-hidden />
-				</ToolbarButton>
+				{mentionsEnabled && (
+					<>
+						<ToolbarButton
+							label="Mention a person, project or milestone"
+							onPress={startMention}
+						>
+							<AtSignIcon aria-hidden />
+						</ToolbarButton>
 
-				<ToolbarSeparator />
+						<ToolbarSeparator />
+					</>
+				)}
 
 				<MarkButton mark="bold" label="Bold">
 					<BoldIcon aria-hidden />

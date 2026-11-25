@@ -153,6 +153,7 @@ export function notificationSelection() {
 		commentId: notification.commentId,
 		changeRequestId: notification.changeRequestId,
 		scopeEntryId: notification.scopeEntryId,
+		conversationId: notification.conversationId,
 		data: notification.data,
 		projectName: project.name,
 		projectSlug: project.slug,

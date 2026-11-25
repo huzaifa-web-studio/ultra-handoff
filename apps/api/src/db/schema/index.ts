@@ -19,6 +19,11 @@
 
 export { changeRequest, milestoneScopeEntry } from "./change-request";
 export { comment, commentThreadRead } from "./comment";
+export {
+	conversation,
+	conversationMessage,
+	conversationParticipant,
+} from "./conversation";
 export { linkPreview } from "./link-preview";
 export {
 	milestone,

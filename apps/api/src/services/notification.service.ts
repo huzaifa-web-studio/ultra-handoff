@@ -32,6 +32,7 @@ import type {
 import {
 	type NotificationChangeRequestView,
 	type NotificationCommentView,
+	type NotificationConversationView,
 	type NotificationMilestoneView,
 	type NotificationProjectView,
 	type NotificationScopeEntryView,
@@ -59,6 +60,8 @@ export type NotificationCandidate = {
 	comment?: NotificationCommentView | null;
 	changeRequest?: NotificationChangeRequestView | null;
 	scopeEntry?: NotificationScopeEntryView | null;
+	/** Set for a direct message notification. */
+	conversation?: NotificationConversationView | null;
 	data?: NotificationData;
 	/** Used by organization-level copy such as a role change or invite accept. */
 	organizationName?: string | null;
@@ -202,6 +205,7 @@ export async function createNotifications(
 						commentId: candidate.comment?.id ?? null,
 						changeRequestId: candidate.changeRequest?.id ?? null,
 						scopeEntryId: candidate.scopeEntry?.id ?? null,
+						conversationId: candidate.conversation?.id ?? null,
 						data: candidate.data ?? {},
 					})),
 				)
@@ -270,6 +274,7 @@ export async function createNotifications(
 				: null,
 			changeRequest: candidate.changeRequest ?? null,
 			scopeEntry: candidate.scopeEntry ?? null,
+			conversation: candidate.conversation ?? null,
 			data: candidate.data ?? {},
 		});
 

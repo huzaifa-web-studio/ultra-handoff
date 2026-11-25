@@ -34,6 +34,7 @@ import {
 	fetchComments,
 	fetchCommentThread,
 	fetchMentionCandidates,
+	searchComments,
 	toggleCommentChecklist,
 	updateComment,
 } from "./api";
@@ -428,6 +429,37 @@ export function useDeleteComment(
  * The previous result is kept while the next one loads, so the list does not
  * flicker on every keystroke.
  */
+/**
+ * Search the discussion.
+ *
+ * A hit points at its thread root, which is the tab the reader can open. The
+ * query is disabled below two characters, matching the server rule.
+ */
+export function useCommentSearch(
+	orgSlug: string,
+	projectId: string,
+	milestoneId: string,
+	search: string,
+) {
+	const term = search.trim();
+
+	return useQuery({
+		queryKey: [
+			...commentsKey(orgSlug, projectId, milestoneId),
+			"search",
+			term,
+		] as const,
+		queryFn: () => searchComments(orgSlug, projectId, milestoneId, term),
+		enabled:
+			Boolean(orgSlug) &&
+			Boolean(projectId) &&
+			Boolean(milestoneId) &&
+			term.length >= 2,
+		staleTime: 30_000,
+		retry: retryCommentQuery,
+	});
+}
+
 export function useMentionCandidates(
 	orgSlug: string,
 	projectId: string,

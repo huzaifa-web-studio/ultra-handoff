@@ -39,6 +39,7 @@ export function MilestoneFixedTabs({
 	openBaselineScopeTab,
 	openEntryScopeTab,
 	openCommentTab,
+	openCommentTabById,
 	onTabChange,
 }: {
 	orgSlug: string;
@@ -56,6 +57,7 @@ export function MilestoneFixedTabs({
 	openBaselineScopeTab: () => void;
 	openEntryScopeTab: (entry: MilestoneScopeEntrySummary) => void;
 	openCommentTab: (comment: Comment) => void;
+	openCommentTabById: (id: string) => void;
 	onTabChange: (tab: MilestoneTabKey) => void;
 }) {
 	return (
@@ -124,6 +126,7 @@ export function MilestoneFixedTabs({
 						archived={viewer.archived}
 						active={effectiveSelectedTab === "comments"}
 						onOpenCommentTab={openCommentTab}
+						onOpenCommentById={openCommentTabById}
 					/>
 				)}
 			</TabsContent>

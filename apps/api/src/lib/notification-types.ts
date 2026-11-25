@@ -52,6 +52,13 @@ export const NOTIFICATION_TYPES = [
 	"project_archived",
 	/** A project was restored from the archive. */
 	"project_unarchived",
+	/**
+	 * A new message in a conversation.
+	 *
+	 * Deliberately one row per conversation per recipient, refreshed on each
+	 * new message, so a busy chat cannot flood the bell.
+	 */
+	"direct_message",
 ] as const;
 
 /** One notification type. */

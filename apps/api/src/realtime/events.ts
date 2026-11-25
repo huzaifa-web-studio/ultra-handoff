@@ -17,6 +17,10 @@
 
 import type { ChangeRequestRow } from "../services/change-request";
 import type { CommentRow } from "../services/comment";
+import type {
+	ConversationMessageRow,
+	ConversationSummary,
+} from "../services/conversation";
 import type { MilestoneSummary } from "../services/milestone";
 import type { NotificationDelivery } from "../services/notification.service";
 
@@ -159,6 +163,74 @@ export type CommentReadPayload = {
 	rootCommentIds: string[];
 	unreadTotal: number;
 };
+
+/**
+ * A conversation message as it travels over the stream.
+ *
+ * `canEdit` and `canDelete` are viewer answers and are stripped, exactly like a
+ * comment. The browser recomputes them for its own viewer.
+ */
+export type RealtimeConversationMessage = Omit<
+	ConversationMessageRow,
+	"canEdit" | "canDelete"
+>;
+
+/** The activity fields the sidebar needs from a new message. */
+export type ConversationActivity = Pick<ConversationSummary, "id"> & {
+	lastMessageAt: string;
+	lastMessageId: string;
+	lastMessageAuthorId: string | null;
+	lastMessagePreview: string;
+};
+
+/** One message event. `conversation` is null for an edit or a delete. */
+export type ConversationMessageRealtimePayload = {
+	conversationId: string;
+	message: RealtimeConversationMessage;
+	conversation: ConversationActivity | null;
+	/** The author, so the recipient can decide about its unread badge. */
+	senderId: string | null;
+};
+
+/** A read cursor moved, for the other side's receipt and the same side's tabs. */
+export type ConversationReadPayload = {
+	conversationId: string;
+	userId: string;
+	lastReadAt: string;
+	lastReadMessageId: string;
+};
+
+/** A typing frame. One payload shape per scope. */
+export type ConversationTypingPayload = {
+	conversationId: string;
+	userId: string;
+};
+
+export type MilestoneTypingPayload = {
+	milestoneId: string;
+	userId: string;
+};
+
+/**
+ * Strip the viewer specific capabilities from a conversation message.
+ *
+ * Explicit field list, so a field added to the row later is a deliberate
+ * decision here instead of being broadcast by accident.
+ */
+export function toRealtimeConversationMessage(
+	message: ConversationMessageRow,
+): RealtimeConversationMessage {
+	return {
+		id: message.id,
+		conversationId: message.conversationId,
+		body: message.body,
+		author: message.author,
+		createdAt: message.createdAt,
+		updatedAt: message.updatedAt,
+		editedAt: message.editedAt,
+		deletedAt: message.deletedAt,
+	};
+}
 
 /** A change request as it travels over the stream. */
 export type RealtimeChangeRequest = Omit<

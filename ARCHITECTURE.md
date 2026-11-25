@@ -200,6 +200,62 @@ with `apps/web/public/sw.js` when the tab is closed. Push subscriptions live in
 `push_subscription`, which is personal data protected by a user-only policy and
 `withUser`, not the tenant policy.
 
+## Direct Messages
+
+Conversations are workspace scoped, not project scoped, and they are stored
+apart from milestone comments.
+
+- `conversation` holds the scope (`direct` today, `group` and `project` later),
+  an optional project, a title, the canonical `pair_key` for a direct pair, and
+  the denormalised newest message.
+- `conversation_participant` holds one row per person with their read cursor.
+  The unique `(conversation_id, user_id)` index is the participation check.
+- `conversation_message` holds the Plate body and its plain text mirror, plus a
+  `client_nonce` with a unique index. A retried send returns the original row
+  instead of posting twice.
+
+Why not reuse `comment`: a comment is a milestone timeline entry. It carries
+events, one level of replies and a required milestone id. A conversation has
+participants, a sequential read cursor and no events. Sharing the table would
+have forced a scope column, a relaxed target check and two index families on
+the hottest discussion table.
+
+Access is enforced by Postgres, not only by the service:
+
+- `conversation` insert is workspace scoped; select and update require an
+  existing participant row for the current user.
+- `conversation_participant` select is workspace scoped so a reader can see the
+  other person's cursor for the read receipt; update and delete are self only.
+  Explicit policies per command are used instead of `tenantIsolation`, because
+  a permissive `for all` policy OR-ed with the self rule would widen it.
+- `conversation_message` select and insert require participation; update and
+  delete require the author.
+
+Unread is computed, never stored. A stored counter would have to be written by
+the sender into the recipient's row, which the self-only participant update
+policy forbids. The list does a capped count over the message index, prefixed by
+`conversation.last_message_at > participant.last_read_at`, so a fully read chat
+costs no message scan.
+
+Realtime rides the existing personal socket. `conversation.message.created`,
+`.updated`, `.deleted` and `conversation.read` are published to both
+participants, so the author's other tabs stay in sync. Typing is ephemeral: an
+inbound `dm.typing.start` is validated against participation and relayed only to
+the other participant. Milestone typing uses the same event names on the project
+socket.
+
+Notifications use one bell row per conversation per recipient, dedupe key
+`dm:{conversationId}`. The writer scopes the transaction to the recipient for
+the upsert, the same cross-user pattern the comment writer uses, and bumps
+`created_at` so an active conversation rises in the bell. Reading the
+conversation clears that row when the cursor covers the newest message. Push is
+coalesced per conversation because the notification row id is stable across
+refreshes.
+
+Search uses a trigram GIN index on `body_text` for both conversations and
+milestone comments. The message list supports `before`, `after` and `around`
+cursors, so a search hit opens the page that contains it.
+
 ## Authentication Flow (Planned)
 
 When authentication is added:

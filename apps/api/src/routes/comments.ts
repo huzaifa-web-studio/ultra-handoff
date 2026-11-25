@@ -28,6 +28,7 @@ import {
 	deleteMilestoneComment,
 	getMilestoneCommentThread,
 	listMilestoneComments,
+	searchMilestoneComments,
 	toggleMilestoneChecklistItem,
 	updateMilestoneComment,
 } from "../services/comment";
@@ -129,6 +130,37 @@ export const commentRoutes = new Elysia({ name: "comments" })
 			}
 		},
 		{ tenant: true, params: milestoneParams, query: listQuery },
+	)
+	/** Search the visible messages of this milestone. */
+	.get(
+		"/orgs/:orgSlug/projects/:projectId/milestones/:milestoneId/comments/search",
+		async ({ tenant, status, params, query }) => {
+			try {
+				const parsed = Number.parseInt(query.limit ?? "", 10);
+				const limit = Number.isFinite(parsed)
+					? Math.min(25, Math.max(1, parsed))
+					: 20;
+
+				return await searchMilestoneComments(
+					tenant,
+					params.projectId,
+					params.milestoneId,
+					{ search: query.q ?? "", limit },
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not search the discussion."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: milestoneParams,
+			query: t.Object({
+				q: t.Optional(t.String({ maxLength: 100 })),
+				limit: t.Optional(t.String()),
+			}),
+		},
 	)
 	/** Post a comment, or a reply when `parentId` is set. */
 	.post(

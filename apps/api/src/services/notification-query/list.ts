@@ -188,6 +188,7 @@ export async function listNotifications(
 					comment: commentView,
 					changeRequest: changeRequestView,
 					scopeEntry: scopeEntryView,
+					conversation: row.conversationId ? { id: row.conversationId } : null,
 					data,
 				});
 
@@ -211,6 +212,7 @@ export async function listNotifications(
 						: null,
 					changeRequestId: row.changeRequestId,
 					scopeEntryId: row.scopeEntryId,
+					conversationId: row.conversationId,
 					preview: commentView?.preview ?? null,
 					data,
 					...rendered,

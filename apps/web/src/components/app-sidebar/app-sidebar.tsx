@@ -11,6 +11,7 @@ import type * as React from "react";
 import { authClient } from "#/features/auth/client";
 import { canManageMembers } from "#/features/organization/permissions";
 import { NavMain } from "./nav-main";
+import { NavMessages } from "./nav-messages";
 import { NavProjects } from "./nav-projects";
 import { NavUser } from "./nav-user";
 import { OrganizationSwitcher } from "./organization-switcher";
@@ -84,6 +85,12 @@ export function AppSidebar({
 						 * way to everything else.
 						 */}
 						<NavProjects orgSlug={orgSlug} />
+						{/*
+						 * Recent conversations live in their own section. The
+						 * full list and the person picker are one click away on
+						 * the Messages page, so the rail stays short.
+						 */}
+						<NavMessages orgSlug={orgSlug} />
 					</>
 				)}
 			</SidebarContent>

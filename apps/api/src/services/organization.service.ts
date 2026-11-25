@@ -17,11 +17,12 @@
  * src/routes/organization.ts.
  */
 
-import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, ne, or } from "drizzle-orm";
 
 import { parseRoleList } from "../auth/permissions";
 import { adminDb } from "../db";
 import { member, organization, user } from "../db/auth-schema";
+import { escapeLike } from "../lib/query";
 
 /**
  * Pick the organization a new session should start in.
@@ -173,6 +174,47 @@ export async function getOrganizationMembers(
 		);
 
 	return new Map(rows.map((row) => [row.userId, row]));
+}
+
+/**
+ * Search the people in one organization for a picker.
+ *
+ * Why this exists: the conversation contact list needs every member, filtered
+ * by name or email, in one read. The member page loads ids it already knows;
+ * a picker has no ids to start from.
+ *
+ * Read only, on the privileged client, because `member` and `user` belong to
+ * Better Auth. The caller has already proved membership through the tenant.
+ */
+export async function searchOrganizationMembers(
+	organizationId: string,
+	search: string,
+	limit: number,
+): Promise<OrganizationMemberRecord[]> {
+	const term = search.trim();
+	const pattern = term.length > 0 ? `%${escapeLike(term)}%` : null;
+
+	return adminDb
+		.select({
+			memberId: member.id,
+			userId: member.userId,
+			role: member.role,
+			name: user.name,
+			email: user.email,
+			image: user.image,
+		})
+		.from(member)
+		.innerJoin(user, eq(member.userId, user.id))
+		.where(
+			and(
+				eq(member.organizationId, organizationId),
+				...(pattern
+					? [or(ilike(user.name, pattern), ilike(user.email, pattern))]
+					: []),
+			),
+		)
+		.orderBy(asc(user.name))
+		.limit(limit);
 }
 
 /**
