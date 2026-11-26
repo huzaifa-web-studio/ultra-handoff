@@ -253,11 +253,11 @@ the message's exact `created_at` inside SQL, because a JavaScript `Date`
 round-trip truncates microseconds and leaves a message unread forever.
 
 Realtime rides the existing personal socket. `conversation.message.created`,
-`.updated`, `.deleted` and `conversation.read` are published to both
-participants, so the author's other tabs stay in sync. Typing is ephemeral: an
-inbound `dm.typing.start` is validated against participation and relayed only to
-the other participant. Milestone typing uses the same event names on the project
-socket.
+`.updated`, `.deleted` and `conversation.read` are published to every active
+participant, so the author's other tabs stay in sync. Typing is ephemeral: an
+inbound `dm.typing.start` is validated against participation and relayed to the
+other participant, or to every other member of a channel. Milestone typing uses
+the same event names on the project socket.
 
 Notifications use one bell row per conversation per recipient, dedupe key
 `dm:{conversationId}`. The writer scopes the transaction to the recipient for
@@ -270,6 +270,53 @@ refreshes.
 Search uses a trigram GIN index on `body_text` for both conversations and
 milestone comments. The message list supports `before`, `after` and `around`
 cursors, so a search hit opens the page that contains it.
+
+## Group Channels
+
+A channel is the same `conversation` row with `scope = 'group'`, so it reuses
+the message, thread, search and read cursor code without a second model. It adds
+four columns: `visibility` (`public` or `private`), `description` (the topic),
+`archived_at` and `member_count`.
+
+Membership is a `conversation_participant` row. The creator is an `owner`, the
+people they add are `member`, and `left_at` marks a row that left the channel.
+A left row keeps its read cursor, so a rejoin restores the same history position
+instead of starting over or marking everything read.
+
+Rules enforced by the service, with RLS as the backstop:
+
+- Any workspace member may create a channel. Channel members are always current
+  workspace members, never guests.
+- A public channel is readable by the whole workspace for the directory and
+  self joinable. A private channel is readable only by its participants and is
+  joinable only by being added.
+- The last active owner cannot leave or be removed. Archiving is the escape.
+- Owners manage the name, topic, visibility, members and archive state. Authors
+  alone edit or delete a message, in a channel and in a direct chat alike.
+- An archived channel is read only and leaves the rail. It is never hard
+  deleted, so the delivery record survives.
+- A channel name is unique per workspace, case insensitive, among channels that
+  are not archived. The partial unique index is the concurrency guard.
+
+The directory is two reads: `/channels` returns every joined channel including
+one with no messages yet, and `/channels/browse` returns public channels with a
+member count and a joined flag. The direct message list stays on
+`/conversations`, which now returns direct conversations only.
+
+Realtime adds `conversation.updated` for metadata changes and
+`conversation.member.changed` for an add or a removal. Message events still fan
+out to every active participant on the personal socket, and typing is relayed
+to every active participant except the sender.
+
+Notifications use type `group_message` and dedupe key
+`channel:{conversationId}`, one row per channel per recipient. A muted
+participant still accrues unread but receives no bell or push. The copy and the
+href read the channel title from the joined row, so a rename is reflected in an
+old bell entry.
+
+A channel accepts at most 100 members. That cap is the notification fan out
+boundary: the send transaction writes one bell upsert per notifiable recipient,
+so raising the cap needs a batched writer first.
 
 ## Authentication Flow (Planned)
 
