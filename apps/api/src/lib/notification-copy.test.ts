@@ -226,6 +226,25 @@ describe("renderNotification", () => {
 		);
 		expect(rendered.href).toBe("/acme/messages/conv-1");
 	});
+
+	test("group message copy names the channel and links to it", () => {
+		const rendered = renderNotification({
+			...base,
+			type: "group_message",
+			actorName: "Bilal",
+			project: null,
+			milestone: null,
+			comment: null,
+			conversation: { id: "conv-2", title: "design-review" },
+			data: { preview: "Ship the new header" },
+		});
+
+		expect(rendered.title).toBe("New message in #design-review");
+		expect(rendered.body).toBe(
+			'Bilal in #design-review: "Ship the new header"',
+		);
+		expect(rendered.href).toBe("/acme/messages/conv-2");
+	});
 });
 
 describe("computeThreadUnread", () => {

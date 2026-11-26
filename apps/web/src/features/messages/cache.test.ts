@@ -10,6 +10,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type {
+	ChannelListResponse,
 	ConversationSummary,
 	Message,
 	ThreadReply,
@@ -18,6 +19,7 @@ import type {
 import {
 	appendMessage,
 	appendThreadReply,
+	applyChannelActivity,
 	type ConversationPages,
 	flattenConversations,
 	type MessagePages,
@@ -25,6 +27,7 @@ import {
 	replaceThreadReply,
 	replaceThreadRoot,
 	type ThreadPages,
+	withChannelUnread,
 	withConversationActivity,
 	withConversationUnread,
 	withCounterpartRead,
@@ -65,6 +68,10 @@ function makeConversation(
 		id: "conversation-1",
 		scope: "direct",
 		title: null,
+		visibility: "private",
+		description: null,
+		archivedAt: null,
+		memberCount: 2,
 		counterpart: {
 			userId: "user-2",
 			name: "Bilal",
@@ -84,6 +91,7 @@ function makeConversation(
 		},
 		unread: 0,
 		muted: false,
+		canManage: false,
 		createdAt: "2026-01-01T09:00:00.000Z",
 		updatedAt: "2026-01-01T10:00:00.000Z",
 		...overrides,
@@ -302,6 +310,7 @@ describe("withConversationActivity", () => {
 			pages,
 			{
 				id: "conversation-2",
+				scope: "direct",
 				lastMessageAt: "2026-01-01T12:00:00.000Z",
 				lastMessageId: "new",
 				lastMessageAuthorId: "user-2",
@@ -324,6 +333,7 @@ describe("withConversationActivity", () => {
 			pages,
 			{
 				id: "conversation-1",
+				scope: "direct",
 				lastMessageAt: "2026-01-01T12:00:00.000Z",
 				lastMessageId: "new",
 				lastMessageAuthorId: "user-1",
@@ -341,6 +351,7 @@ describe("withConversationActivity", () => {
 			pages,
 			{
 				id: "conversation-1",
+				scope: "direct",
 				lastMessageAt: "2026-01-01T12:00:00.000Z",
 				lastMessageId: "new",
 				lastMessageAuthorId: "user-2",
@@ -358,6 +369,7 @@ describe("withConversationActivity", () => {
 			pages,
 			{
 				id: "unknown",
+				scope: "direct",
 				lastMessageAt: "2026-01-01T12:00:00.000Z",
 				lastMessageId: "new",
 				lastMessageAuthorId: "user-2",
@@ -531,5 +543,141 @@ describe("withThreadCounterpartRead", () => {
 				(page) => page.counterpartRead?.lastReadMessageId === "reply-9",
 			),
 		).toBe(true);
+	});
+});
+
+/** One channel summary with the fields the channel reducer touches. */
+function makeChannel(
+	overrides: Partial<ConversationSummary> = {},
+): ConversationSummary {
+	return makeConversation({
+		scope: "group",
+		title: "design",
+		visibility: "public",
+		counterpart: null,
+		memberCount: 5,
+		canManage: true,
+		...overrides,
+	});
+}
+
+describe("applyChannelActivity", () => {
+	it("moves the channel to the front and bumps unread for a recipient", () => {
+		const list: ChannelListResponse = {
+			channels: [
+				makeChannel({ id: "channel-2", unread: 0 }),
+				makeChannel({ id: "channel-1", unread: 2 }),
+			],
+			unreadTotal: 2,
+		};
+		const result = applyChannelActivity(
+			list,
+			{
+				id: "channel-1",
+				scope: "group",
+				lastMessageAt: "2026-01-01T12:00:00.000Z",
+				lastMessageId: "new",
+				lastMessageAuthorId: "user-2",
+				lastMessagePreview: "newest",
+			},
+			{ viewerId: "user-1", senderId: "user-2", active: false },
+		);
+
+		expect(result.found).toBe(true);
+		expect(result.list?.channels[0]?.id).toBe("channel-1");
+		expect(result.list?.channels[0]?.lastMessage.preview).toBe("newest");
+		expect(result.list?.channels[0]?.unread).toBe(3);
+		expect(result.list?.unreadTotal).toBe(3);
+	});
+
+	it("does not bump unread for the sender", () => {
+		const list: ChannelListResponse = {
+			channels: [makeChannel({ unread: 2 })],
+			unreadTotal: 2,
+		};
+		const result = applyChannelActivity(
+			list,
+			{
+				id: "conversation-1",
+				scope: "group",
+				lastMessageAt: "2026-01-01T12:00:00.000Z",
+				lastMessageId: "new",
+				lastMessageAuthorId: "user-1",
+				lastMessagePreview: "mine",
+			},
+			{ viewerId: "user-1", senderId: "user-1", active: false },
+		);
+
+		expect(result.list?.channels[0]?.unread).toBe(2);
+	});
+
+	it("clears unread while the channel is on screen", () => {
+		const list: ChannelListResponse = {
+			channels: [makeChannel({ unread: 4 })],
+			unreadTotal: 4,
+		};
+		const result = applyChannelActivity(
+			list,
+			{
+				id: "conversation-1",
+				scope: "group",
+				lastMessageAt: "2026-01-01T12:00:00.000Z",
+				lastMessageId: "new",
+				lastMessageAuthorId: "user-2",
+				lastMessagePreview: "hello",
+			},
+			{ viewerId: "user-1", senderId: "user-2", active: true },
+		);
+
+		expect(result.list?.channels[0]?.unread).toBe(0);
+		expect(result.list?.unreadTotal).toBe(0);
+	});
+
+	it("reports a channel the list did not know", () => {
+		const list: ChannelListResponse = {
+			channels: [makeChannel()],
+			unreadTotal: 0,
+		};
+		const result = applyChannelActivity(
+			list,
+			{
+				id: "unknown",
+				scope: "group",
+				lastMessageAt: "2026-01-01T12:00:00.000Z",
+				lastMessageId: "new",
+				lastMessageAuthorId: "user-2",
+				lastMessagePreview: "hello",
+			},
+			{ viewerId: "user-1", senderId: "user-2", active: false },
+		);
+
+		expect(result.found).toBe(false);
+		expect(result.list).toBe(list);
+	});
+});
+
+describe("withChannelUnread", () => {
+	it("sets one count and adjusts the section total", () => {
+		const list: ChannelListResponse = {
+			channels: [
+				makeChannel({ id: "channel-1", unread: 3 }),
+				makeChannel({ id: "channel-2", unread: 1 }),
+			],
+			unreadTotal: 4,
+		};
+		const next = withChannelUnread(list, "channel-1", 0);
+
+		expect(next?.channels[0]?.unread).toBe(0);
+		expect(next?.unreadTotal).toBe(1);
+	});
+
+	it("returns the same list when nothing changed", () => {
+		const list: ChannelListResponse = {
+			channels: [makeChannel({ unread: 2 })],
+			unreadTotal: 2,
+		};
+
+		expect(withChannelUnread(list, "conversation-1", 2)).toBe(list);
+		expect(withChannelUnread(list, "unknown", 0)).toBe(list);
 	});
 });
