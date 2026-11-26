@@ -45,10 +45,17 @@ export async function upsertDirectMessageNotification(
 		conversationId: string;
 		recipientUserId: string;
 		preview: string;
+		/** The thread root when the message being notified is a reply. */
+		threadRootId?: string | null;
 	},
 ): Promise<NotificationDelivery | null> {
 	const dedupeKey = `${DIRECT_MESSAGE_DEDUPE_PREFIX}${input.conversationId}`;
-	const data = { preview: input.preview.slice(0, PREVIEW_MAX) };
+	const data = {
+		preview: input.preview.slice(0, PREVIEW_MAX),
+		// Null on a root message, so a newer timeline message replaces a thread
+		// deep link instead of leaving a stale one behind.
+		threadRootId: input.threadRootId ?? null,
+	};
 
 	const [scopeRow] = await tx.execute<{ usr: string | null }>(
 		sql`select current_setting('app.current_user_id', true) as usr`,

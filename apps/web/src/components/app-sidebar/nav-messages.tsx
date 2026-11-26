@@ -32,7 +32,7 @@ import type * as React from "react";
 import { useState } from "react";
 import type { ConversationSummary } from "#/features/messages/api";
 import { flattenConversations } from "#/features/messages/cache";
-import { useConversations } from "#/features/messages/hooks";
+import { useConversation, useConversations } from "#/features/messages/hooks";
 import { NewConversationDialog } from "#/features/messages/new-conversation-dialog";
 import { formatCommentTime } from "#/lib/date";
 import {
@@ -45,6 +45,20 @@ function initials(name: string): string {
 	const parts = name.trim().split(/\s+/).slice(0, 2);
 
 	return parts.map((part) => part.charAt(0).toUpperCase()).join("") || "?";
+}
+
+/** Read the conversation id out of a messages path, or null. */
+function activeConversationId(pathname: string): string | null {
+	const match = /\/messages\/([^/]+)/.exec(pathname);
+	const value = match?.[1];
+
+	if (!value) return null;
+
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return value;
+	}
 }
 
 /** One conversation row in the rail. */
@@ -62,7 +76,11 @@ function SidebarConversationRow({
 	const name = conversation.counterpart?.name ?? "Conversation";
 	const href = `/${orgSlug}/messages/${conversation.id}`;
 	const time = conversation.lastMessage.createdAt;
-	const preview = conversation.lastMessage.preview || "No messages yet";
+	// An empty chat is a real chat the person just opened. Say so instead of
+	// the generic "No messages yet", which reads like the row is broken.
+	const preview = time
+		? conversation.lastMessage.preview || "No messages yet"
+		: "New conversation";
 	const unread = conversation.unread > 0;
 
 	return (
@@ -156,6 +174,23 @@ export function NavMessages({ orgSlug }: { orgSlug: string }) {
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const base = `/${orgSlug}/messages`;
 
+	/*
+	 * An empty conversation is intentionally absent from the list query, because
+	 * a list of chats with no messages is noise. The catch is the person who
+	 * just opened one from the picker: the rail said "No conversations yet"
+	 * while the chat was on screen. The open conversation is therefore shown as
+	 * a temporary row until its first message makes it a real list entry.
+	 */
+	const openId = activeConversationId(pathname);
+	const openDetail = useConversation(orgSlug, openId ?? "");
+	const openConversation = openDetail.data?.conversation ?? null;
+	const draftRow =
+		openConversation &&
+		openConversation.lastMessage.createdAt === null &&
+		!rows.some((row) => row.id === openConversation.id)
+			? openConversation
+			: null;
+
 	return (
 		<SidebarGroup>
 			<SidebarGroupLabel>
@@ -180,16 +215,24 @@ export function NavMessages({ orgSlug }: { orgSlug: string }) {
 				<MessageSquarePlusIcon aria-hidden />
 			</SidebarGroupAction>
 
-			{rows.length > 0 && (
+			{(rows.length > 0 || draftRow) && (
 				<SidebarMenu>
+					{draftRow && (
+						<SidebarConversationRow
+							key={draftRow.id}
+							orgSlug={orgSlug}
+							conversation={draftRow}
+							active
+						/>
+					)}
 					{rows.map((conversation) => (
 						<SidebarConversationRow
 							key={conversation.id}
 							orgSlug={orgSlug}
 							conversation={conversation}
 							active={
-								pathname === base ||
-								pathname.startsWith(`${base}/${conversation.id}`)
+								pathname === `${base}/${conversation.id}` ||
+								pathname.startsWith(`${base}/${conversation.id}/`)
 							}
 						/>
 					))}
@@ -200,7 +243,7 @@ export function NavMessages({ orgSlug }: { orgSlug: string }) {
 				<p className="px-3 py-2 text-xs text-sidebar-foreground/60">
 					Loading conversations...
 				</p>
-			) : rows.length === 0 ? (
+			) : rows.length === 0 && !draftRow ? (
 				<div className="flex flex-col items-start gap-1 px-3 py-2">
 					<p className="text-xs text-sidebar-foreground/60">
 						No conversations yet.

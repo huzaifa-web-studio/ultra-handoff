@@ -141,6 +141,38 @@ function unreadMessageCondition() {
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			/*
+			 * A cursor that decodes to text is not necessarily a conversation id.
+			 * Resolve it against the viewer's own conversations first, so a hand
+			 * edited or stale page link gets a clear 400 instead of an empty list
+			 * that looks like "you have no chats".
+			 */
+			if (cursorId) {
+				const [cursorConversation] = await tx
+					.select({ id: conversation.id })
+					.from(conversation)
+					.innerJoin(
+						conversationParticipant,
+						and(
+							eq(conversationParticipant.conversationId, conversation.id),
+							eq(conversationParticipant.userId, tenant.userId),
+						),
+					)
+					.where(
+						and(
+							eq(conversation.organizationId, tenant.organizationId),
+							eq(conversation.id, cursorId),
+						),
+					)
+					.limit(1);
+
+				if (!cursorConversation) {
+					throw new APIError("BAD_REQUEST", {
+						message: "That conversations page link is no longer valid.",
+					});
+				}
+			}
+
+			/*
 			 * Resolve the cursor inside Postgres so the comparison uses the stored
 			 * timestamp. A JavaScript Date would lose microseconds and could skip
 			 * or repeat a page.

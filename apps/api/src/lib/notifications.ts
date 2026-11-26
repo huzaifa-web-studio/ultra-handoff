@@ -150,9 +150,16 @@ export function notificationHref(input: NotificationRenderInput): string {
 		input.type === "member_joined" || input.type === "org_role_changed";
 
 	// A conversation is not project scoped, so it answers before the project
-	// branch. The messages page owns the deep link.
+	// branch. The messages page owns the deep link. A reply carries its root in
+	// `data`, so the bell lands on the thread that actually has the new reply
+	// instead of a timeline that cannot show it.
 	if (input.type === "direct_message" && input.conversation) {
-		return `${base}/messages/${encodeURIComponent(input.conversation.id)}`;
+		const conversationPath = `${base}/messages/${encodeURIComponent(input.conversation.id)}`;
+		const threadRootId = input.data.threadRootId;
+
+		return typeof threadRootId === "string" && threadRootId.length > 0
+			? `${conversationPath}/threads/${encodeURIComponent(threadRootId)}`
+			: conversationPath;
 	}
 
 	if (!input.project) {

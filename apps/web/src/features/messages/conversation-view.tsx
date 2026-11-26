@@ -56,6 +56,8 @@ import { MessageList } from "./message-list";
 import { ThreadPanel } from "./thread-panel";
 import {
 	addThreadTab,
+	type OpenThreadTab,
+	placeholderThreadTab,
 	threadTabsStorageKey,
 	toOpenThreadTab,
 } from "./thread-tabs";
@@ -108,6 +110,10 @@ export function ConversationView({
 	const [highlightId, setHighlightId] = useState<string | null>(null);
 	const [jumped, setJumped] = useState(false);
 	const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+	/** A reply search hit to jump to inside the panel. */
+	const [threadJumpId, setThreadJumpId] = useState<string | null>(null);
+	/** Whether opening the panel should focus its composer. */
+	const [threadFocusOnOpen, setThreadFocusOnOpen] = useState(true);
 	const [replyFocusToken, setReplyFocusToken] = useState(0);
 	const searchRef = useRef<HTMLDivElement>(null);
 
@@ -122,6 +128,8 @@ export function ConversationView({
 		if (!conversationId) return;
 
 		setActiveThreadId(null);
+		setThreadJumpId(null);
+		setReplyFocusToken(0);
 	}, [conversationId]);
 
 	// A click outside the search box closes the overlay instead of leaving it
@@ -143,21 +151,36 @@ export function ConversationView({
 	/** Open the thread panel under one root and focus its composer. */
 	const handleReply = useCallback((message: Message) => {
 		setActiveThreadId(message.id);
+		setThreadJumpId(null);
+		setThreadFocusOnOpen(true);
 		setReplyFocusToken((current) => current + 1);
 	}, []);
 
-	/** Open the dedicated thread route in a real new browser tab. */
-	const handleOpenThreadInNewTab = useCallback(
-		(message: Message) => {
-			addThreadTab(threadTabsKey, toOpenThreadTab(message));
+	/**
+	 * Open a thread in a real new browser tab.
+	 *
+	 * A panel can be showing a root that is not in the loaded timeline page, so
+	 * the tab entry is built from the thread's own root when the caller has it,
+	 * and from a placeholder otherwise.
+	 */
+	const openThreadTab = useCallback(
+		(rootId: string, tab?: OpenThreadTab) => {
+			addThreadTab(threadTabsKey, tab ?? placeholderThreadTab(rootId));
 
 			window.open(
-				`/${orgSlug}/messages/${conversationId}/threads/${message.id}`,
+				`/${orgSlug}/messages/${conversationId}/threads/${rootId}`,
 				"_blank",
 				"noopener,noreferrer",
 			);
 		},
 		[orgSlug, conversationId, threadTabsKey],
+	);
+
+	const handleOpenThreadInNewTab = useCallback(
+		(message: Message) => {
+			openThreadTab(message.id, toOpenThreadTab(message));
+		},
+		[openThreadTab],
 	);
 
 	/*
@@ -238,9 +261,27 @@ export function ConversationView({
 
 	const handleSend = useCallback(
 		async (body: unknown[]) => {
-			const nonce = crypto.randomUUID();
+			/*
+			 * A failed send keeps its row so it can be retried. If the composer
+			 * sends the same body again, reuse that row's nonce instead of adding
+			 * a second one, which would leave an orphaned "Not sent" row behind
+			 * and could store the message twice.
+			 */
+			const failed = pending.find(
+				(item) =>
+					item.failed && JSON.stringify(item.body) === JSON.stringify(body),
+			);
+			const nonce = failed?.nonce ?? crypto.randomUUID();
 
-			setPending((current) => [...current, { nonce, body, failed: false }]);
+			if (failed) {
+				setPending((current) =>
+					current.map((item) =>
+						item.nonce === nonce ? { ...item, failed: false } : item,
+					),
+				);
+			} else {
+				setPending((current) => [...current, { nonce, body, failed: false }]);
+			}
 
 			try {
 				await send.mutateAsync({ body, clientNonce: nonce });
@@ -256,7 +297,7 @@ export function ConversationView({
 				throw error;
 			}
 		},
-		[send],
+		[pending, send],
 	);
 
 	const retryPending = useCallback(
@@ -299,18 +340,23 @@ export function ConversationView({
 
 	const threadPanel = activeThreadId ? (
 		<ThreadPanel
+			key={activeThreadId}
 			orgSlug={orgSlug}
 			conversationId={conversationId}
 			organizationId={organizationId}
 			rootId={activeThreadId}
 			viewerId={viewerId}
+			jumpMessageId={threadJumpId}
 			focusToken={replyFocusToken}
-			onClose={() => setActiveThreadId(null)}
-			onOpenThread={() => {
-				const root = messages.find((message) => message.id === activeThreadId);
-
-				if (root) handleOpenThreadInNewTab(root);
+			autoFocus={threadFocusOnOpen}
+			onClose={() => {
+				setActiveThreadId(null);
+				setThreadJumpId(null);
+				setReplyFocusToken(0);
 			}}
+			onOpenThread={(root) =>
+				openThreadTab(activeThreadId, root ? toOpenThreadTab(root) : undefined)
+			}
 		/>
 	) : null;
 
@@ -356,6 +402,8 @@ export function ConversationView({
 						className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-app-text-muted"
 					/>
 					<Input
+						id="conversation-search"
+						name="conversation-search"
 						type="search"
 						value={search}
 						onChange={(event) => setSearch(event.target.value)}
@@ -410,7 +458,9 @@ export function ConversationView({
 														.catch(() => undefined);
 												} else {
 													setActiveThreadId(result.rootId);
-													setReplyFocusToken((current) => current + 1);
+													setThreadJumpId(result.id);
+													setThreadFocusOnOpen(false);
+													setReplyFocusToken(0);
 												}
 
 												setSearch("");

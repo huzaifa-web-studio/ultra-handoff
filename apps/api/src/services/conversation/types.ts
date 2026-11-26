@@ -129,6 +129,8 @@ export type ConversationThreadReadState = {
 export type ConversationThreadPage = {
 	root: ConversationMessageRow;
 	replies: ConversationMessageRow[];
+	/** Every reply in the thread, including deleted rows and older pages. */
+	replyCount: number;
 	/** Cursor for older replies, or null at the start of the thread. */
 	nextCursor: string | null;
 	/** The viewer's thread cursor. */

@@ -38,6 +38,7 @@ import {
 	type MessagePages,
 	replaceRootMessage,
 	replaceThreadReply,
+	replaceThreadRoot,
 	type ThreadPages,
 	withConversationActivity,
 	withCounterpartRead,
@@ -231,10 +232,10 @@ export function useMessagesRealtime(input: {
 					(current) => withCounterpartRead(current, cursor),
 				);
 			} else {
-				// This person read the timeline in another tab.
-				void queryClient.invalidateQueries({
-					queryKey: conversationMessagesKey(orgSlug, read.conversationId),
-				});
+				// This person read the timeline in another tab. The unread badge
+				// and the bell need the new total; the timeline itself does not.
+				// Reloading it here also threw away a search jump back to an older
+				// message, because the read echo arrived right after the jump.
 				void queryClient.invalidateQueries({
 					queryKey: conversationsKey(orgSlug),
 				});
@@ -320,6 +321,11 @@ export function useMessagesRealtime(input: {
 			queryClient.setQueryData<MessagePages>(
 				conversationMessagesKey(orgSlug, payload.conversationId),
 				(current) => replaceRootMessage(current, message),
+			);
+			// An edit or delete of the root also has to reach an open thread.
+			queryClient.setQueryData<ThreadPages>(
+				conversationThreadKey(orgSlug, payload.conversationId, message.id),
+				(current) => replaceThreadRoot(current, message),
 			);
 		}
 

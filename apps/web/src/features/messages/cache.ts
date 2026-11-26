@@ -217,6 +217,32 @@ export function replaceThreadReply(
 	return changed ? { ...pages, pages: next } : pages;
 }
 
+/**
+ * Replace the root of an open thread.
+ *
+ * Why: editing or deleting the root happens on the timeline cache, but a thread
+ * panel or the dedicated thread route holds the same row in its own page. Without
+ * this, a deleted root kept its body and its composer inside an open thread.
+ */
+export function replaceThreadRoot(
+	pages: ThreadPages | undefined,
+	message: ConversationMessage,
+): ThreadPages | undefined {
+	if (!pages) return pages;
+
+	let changed = false;
+
+	const next = pages.pages.map((page) => {
+		if (page.root.id !== message.id) return page;
+
+		changed = true;
+
+		return { ...page, root: message };
+	});
+
+	return changed ? { ...pages, pages: next } : pages;
+}
+
 /** Update the viewer's thread cursor. */
 export function withThreadRead(
 	pages: ThreadPages | undefined,

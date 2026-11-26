@@ -20,11 +20,24 @@
 
 import { Button } from "@org/ui/components/button";
 import { ScrollArea } from "@org/ui/components/scroll-area";
-import { ExternalLinkIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+	ArrowDownIcon,
+	ExternalLinkIcon,
+	RefreshCwIcon,
+	XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useConversationTypingSender } from "#/lib/realtime/typing-sender";
-import { useMarkThreadRead, useSendMessage, useThread } from "./hooks";
+import type { ConversationMessage } from "./api";
+import {
+	useJumpToThreadMessage,
+	useMarkThreadRead,
+	useSendMessage,
+	useThread,
+} from "./hooks";
+import { conversationThreadKey } from "./keys";
 import { MessageComposer } from "./message-composer";
 import { MessageItem, type PendingMessage } from "./message-item";
 
@@ -34,7 +47,9 @@ export function ThreadPanel({
 	organizationId,
 	rootId,
 	viewerId,
+	jumpMessageId,
 	focusToken,
+	autoFocus,
 	onClose,
 	onOpenThread,
 }: {
@@ -43,15 +58,21 @@ export function ThreadPanel({
 	organizationId: string;
 	rootId: string;
 	viewerId: string;
+	/** A search hit inside this thread to scroll to. */
+	jumpMessageId?: string | null;
 	/** Bumped by Reply, so an already open panel focuses its composer. */
 	focusToken: number;
+	/** Focus the composer when the panel mounts. */
+	autoFocus: boolean;
 	onClose: () => void;
 	/** Open the dedicated thread route in a new browser tab. */
-	onOpenThread: () => void;
+	onOpenThread: (root: ConversationMessage | null) => void;
 }) {
+	const queryClient = useQueryClient();
 	const thread = useThread(orgSlug, conversationId, rootId);
 	const send = useSendMessage(orgSlug, conversationId, viewerId);
 	const markRead = useMarkThreadRead(orgSlug, conversationId, rootId);
+	const jump = useJumpToThreadMessage(orgSlug, conversationId, rootId);
 	const notifyTyping = useConversationTypingSender(
 		orgSlug,
 		viewerId,
@@ -59,21 +80,55 @@ export function ThreadPanel({
 	);
 
 	const [pending, setPending] = useState<PendingMessage[]>([]);
+	const [highlightId, setHighlightId] = useState<string | null>(
+		jumpMessageId ?? null,
+	);
+	const [jumpedAway, setJumpedAway] = useState(false);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const newestRef = useRef<string | null>(null);
 	const markedRef = useRef<string | null>(null);
 	const markRef = useRef(markRead);
+	const jumpRef = useRef(jump);
+	/** The last search hit this panel jumped to, so the same id is not repeated. */
+	const lastJumpRef = useRef<string | null>(null);
 	const lastCount = useRef(0);
 	const atBottom = useRef(true);
 
 	useEffect(() => {
 		markRef.current = markRead;
-	}, [markRead]);
+		jumpRef.current = jump;
+	}, [markRead, jump]);
+
+	/*
+	 * A search hit can name a reply that is not on the newest page. Load the
+	 * page around it once, then let the highlight effect scroll to it.
+	 */
+	useEffect(() => {
+		if (!jumpMessageId || lastJumpRef.current === jumpMessageId) return;
+
+		lastJumpRef.current = jumpMessageId;
+		setHighlightId(jumpMessageId);
+
+		void jumpRef.current
+			.mutateAsync(jumpMessageId)
+			.then(() => setJumpedAway(true))
+			.catch(() => undefined);
+	}, [jumpMessageId]);
+
+	// A normal open (Reply, chip) clears any search highlight left behind.
+	useEffect(() => {
+		if (jumpMessageId) return;
+
+		setHighlightId(null);
+		setJumpedAway(false);
+	}, [jumpMessageId]);
 
 	const pages = thread.data?.pages ?? [];
 	const root = pages[0]?.root ?? null;
 	const replies = [...pages].reverse().flatMap((page) => page.replies);
 	const counterpartRead = pages[0]?.counterpartRead ?? null;
+	/** The total across every page, not only the replies currently loaded. */
+	const totalReplies = Math.max(pages[0]?.replyCount ?? 0, replies.length);
 
 	/** The last own reply the other person has read. */
 	const seenReplyId = (() => {
@@ -111,6 +166,20 @@ export function ThreadPanel({
 	useEffect(() => {
 		if (thread.isSuccess) scrollToBottom();
 	}, [thread.isSuccess, scrollToBottom]);
+
+	/*
+	 * A jumped thread lands on the hit, not on the newest reply. The scroll is
+	 * repeated on each data update so it survives the page arriving late.
+	 */
+	const dataUpdatedAt = thread.dataUpdatedAt;
+
+	useEffect(() => {
+		if (!highlightId || dataUpdatedAt === 0) return;
+
+		document
+			.getElementById(`thread-panel-message-${highlightId}`)
+			?.scrollIntoView({ block: "center", behavior: "smooth" });
+	}, [highlightId, dataUpdatedAt]);
 
 	useEffect(() => {
 		const count = replies.length + pending.length;
@@ -152,9 +221,23 @@ export function ThreadPanel({
 	}, [newestId]);
 
 	async function handleSend(body: unknown[]) {
-		const nonce = crypto.randomUUID();
+		// Resending the same body after a failure reuses that row's nonce, so the
+		// panel never shows an orphaned "Not sent" row beside a delivered one.
+		const failed = pending.find(
+			(item) =>
+				item.failed && JSON.stringify(item.body) === JSON.stringify(body),
+		);
+		const nonce = failed?.nonce ?? crypto.randomUUID();
 
-		setPending((current) => [...current, { nonce, body, failed: false }]);
+		if (failed) {
+			setPending((current) =>
+				current.map((item) =>
+					item.nonce === nonce ? { ...item, failed: false } : item,
+				),
+			);
+		} else {
+			setPending((current) => [...current, { nonce, body, failed: false }]);
+		}
 
 		try {
 			await send.mutateAsync({ body, clientNonce: nonce, parentId: rootId });
@@ -210,11 +293,32 @@ export function ThreadPanel({
 					</p>
 				</div>
 
+				{jumpedAway && (
+					<Button
+						variant="outline"
+						size="sm"
+						onPress={() => {
+							setHighlightId(null);
+							setJumpedAway(false);
+							void queryClient.resetQueries({
+								queryKey: conversationThreadKey(
+									orgSlug,
+									conversationId,
+									rootId,
+								),
+							});
+						}}
+					>
+						<ArrowDownIcon aria-hidden />
+						Latest
+					</Button>
+				)}
+
 				<Button
 					variant="ghost"
 					size="icon-sm"
 					aria-label="Open thread in new tab"
-					onPress={onOpenThread}
+					onPress={() => onOpenThread(root)}
 				>
 					<ExternalLinkIcon aria-hidden />
 				</Button>
@@ -284,6 +388,8 @@ export function ThreadPanel({
 										organizationId={organizationId}
 										organizationSlug={orgSlug}
 										showSeen={false}
+										elementId={`thread-panel-message-${root.id}`}
+										highlighted={highlightId === root.id}
 										hideReply
 									/>
 								</div>
@@ -291,10 +397,10 @@ export function ThreadPanel({
 
 							<div className="flex items-center gap-2 px-4 pt-3 pb-1">
 								<span className="text-[0.65rem] font-semibold tracking-wide text-app-text-muted uppercase">
-									{replies.length === 0
+									{totalReplies === 0
 										? "No replies yet"
-										: `${replies.length} ${
-												replies.length === 1 ? "reply" : "replies"
+										: `${totalReplies} ${
+												totalReplies === 1 ? "reply" : "replies"
 											}`}
 								</span>
 								<span className="h-px flex-1 bg-app-border" />
@@ -325,7 +431,9 @@ export function ThreadPanel({
 											organizationId={organizationId}
 											organizationSlug={orgSlug}
 											showSeen={seenReplyId === reply.id}
+											elementId={`thread-panel-message-${reply.id}`}
 											grouped={grouped}
+											highlighted={highlightId === reply.id}
 										/>
 									);
 								})
@@ -358,7 +466,7 @@ export function ThreadPanel({
 								onSend={handleSend}
 								onTyping={notifyTyping}
 								draftId={`${conversationId}:thread:${rootId}`}
-								autoFocus={focusToken > 0}
+								autoFocus={autoFocus}
 								focusToken={focusToken}
 								minHeightClass="min-h-10"
 								placeholder="Reply..."

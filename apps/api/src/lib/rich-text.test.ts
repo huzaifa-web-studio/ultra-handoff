@@ -491,3 +491,20 @@ describe("sanitizeRichText (milestone profile)", () => {
 		expect(result.text).toContain("#Website Redesign");
 	});
 });
+
+describe("sanitizeCommentBody empty body copy", () => {
+	test("keeps the comment wording by default", () => {
+		expect(() => sanitizeCommentBody([paragraph("")])).toThrow(
+			"Write something before posting your comment.",
+		);
+	});
+
+	test("accepts the wording of the surface that called it", () => {
+		expect(() =>
+			sanitizeCommentBody(
+				[paragraph("")],
+				"Write something before sending your message.",
+			),
+		).toThrow("Write something before sending your message.");
+	});
+});

@@ -57,6 +57,31 @@ describe("notificationHref", () => {
 			}),
 		).toBe("/acme/settings/members");
 	});
+
+	test("links a direct message root to the conversation", () => {
+		expect(
+			notificationHref({
+				...base,
+				type: "direct_message",
+				project: null,
+				milestone: null,
+				conversation: { id: "c1" },
+			}),
+		).toBe("/acme/messages/c1");
+	});
+
+	test("links a direct message reply to its thread", () => {
+		expect(
+			notificationHref({
+				...base,
+				type: "direct_message",
+				project: null,
+				milestone: null,
+				conversation: { id: "c1" },
+				data: { threadRootId: "r1" },
+			}),
+		).toBe("/acme/messages/c1/threads/r1");
+	});
 });
 
 describe("renderNotification", () => {

@@ -121,6 +121,7 @@ export function MessageComposer({
 				<CommentEditor
 					key={editorVersion}
 					initialValue={draft}
+					editorId={`message-editor-${draftId ?? conversationId}`}
 					onChange={handleChange}
 					onSubmit={() => void submit()}
 					autoFocus={autoFocus || focusAfterPost}

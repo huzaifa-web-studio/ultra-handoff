@@ -37,7 +37,7 @@ import {
 	UnderlineIcon,
 } from "lucide-react";
 import { useEditorRef } from "platejs/react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	canInsertInlineAt,
@@ -88,6 +88,10 @@ export function CommentToolbar({
 	 */
 	mentionsEnabled?: boolean;
 }) {
+	// Hidden file inputs are still form fields. A stable, unique id keeps the
+	// browser and assistive tools from reporting an unnamed control when two
+	// editors (the conversation and a thread) are mounted at once.
+	const uploadInputId = `comment-upload-${useId().replace(/:/g, "")}`;
 	const editor = useEditorRef();
 	const imageInputRef = useRef<HTMLInputElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -323,6 +327,8 @@ export function CommentToolbar({
 
 			<input
 				ref={imageInputRef}
+				id={`${uploadInputId}-image`}
+				name={`${uploadInputId}-image`}
 				type="file"
 				accept={FILE_POLICIES["comment-image"].accept}
 				aria-hidden
@@ -338,6 +344,8 @@ export function CommentToolbar({
 
 			<input
 				ref={fileInputRef}
+				id={`${uploadInputId}-file`}
+				name={`${uploadInputId}-file`}
 				type="file"
 				accept={FILE_POLICIES["comment-file"].accept}
 				aria-hidden

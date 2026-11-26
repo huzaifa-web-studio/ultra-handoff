@@ -47,6 +47,7 @@ import {
 	type MessagePages,
 	replaceRootMessage,
 	replaceThreadReply,
+	replaceThreadRoot,
 	type ThreadPages,
 	withConversationActivity,
 	withConversationUnread,
@@ -241,6 +242,11 @@ export function useEditMessage(orgSlug: string, conversationId: string) {
 					conversationMessagesKey(orgSlug, conversationId),
 					(current) => replaceRootMessage(current, data.message),
 				);
+				// The same root can be open in a thread panel or on its route.
+				queryClient.setQueryData<ThreadPages>(
+					conversationThreadKey(orgSlug, conversationId, data.message.id),
+					(current) => replaceThreadRoot(current, data.message),
+				);
 			}
 
 			// An edited message may be the sidebar preview.
@@ -268,6 +274,11 @@ export function useDeleteMessage(orgSlug: string, conversationId: string) {
 				queryClient.setQueryData<MessagePages>(
 					conversationMessagesKey(orgSlug, conversationId),
 					(current) => replaceRootMessage(current, data.message),
+				);
+				// A deleted root must also go read only inside an open thread.
+				queryClient.setQueryData<ThreadPages>(
+					conversationThreadKey(orgSlug, conversationId, data.message.id),
+					(current) => replaceThreadRoot(current, data.message),
 				);
 			}
 

@@ -58,7 +58,10 @@ export async function createConversationMessage(
 	conversationId: string,
 	input: CreateConversationMessageInput,
 ): Promise<CreateMessageResult> {
-	const body = sanitizeCommentBody(input.body);
+	const body = sanitizeCommentBody(
+		input.body,
+		"Write something before sending your message.",
+	);
 	const clientNonce = input.clientNonce.trim();
 	const parentId = input.parentId?.trim() || null;
 
@@ -218,6 +221,7 @@ export async function createConversationMessage(
 						conversationId,
 						recipientUserId: recipient.userId,
 						preview,
+						threadRootId: parentId,
 					})
 				: null;
 

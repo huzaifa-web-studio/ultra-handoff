@@ -62,13 +62,19 @@ function hasCommentContent(value: unknown[]): boolean {
  * has already removed anything the editor cannot render. A comment is valid when
  * it has text or a self-contained embed, so an image or a file with no caption
  * can still be posted.
+ *
+ * The empty body copy is caller supplied because a direct message is not a
+ * comment. The sanitizer stays shared, only the wording changes.
  */
-export function sanitizeCommentBody(value: unknown): SanitizedRichText {
+export function sanitizeCommentBody(
+	value: unknown,
+	emptyMessage = "Write something before posting your comment.",
+): SanitizedRichText {
 	const sanitized = sanitizeProfile(value, COMMENT_PROFILE);
 
 	if (!hasCommentContent(sanitized.value)) {
 		throw new APIError("BAD_REQUEST", {
-			message: "Write something before posting your comment.",
+			message: emptyMessage,
 		});
 	}
 

@@ -248,6 +248,7 @@ export function CommentEditor({
 	onSubmit,
 	onCancel,
 	ariaLabel,
+	editorId,
 	placeholder,
 	organizationId,
 	organizationSlug,
@@ -265,6 +266,8 @@ export function CommentEditor({
 	onSubmit?: () => void;
 	onCancel?: () => void;
 	ariaLabel: string;
+	/** Stable DOM id, so the editable is a named form field. */
+	editorId?: string;
 	placeholder: string;
 	/** Tenant that owns a dropped or picked upload. */
 	organizationId: string;
@@ -640,6 +643,7 @@ export function CommentEditor({
 				>
 					<div ref={contentRef} className="relative">
 						<PlateContent
+							id={editorId}
 							aria-label={ariaLabel}
 							aria-expanded={mention !== null}
 							aria-controls={mention ? MENTION_PICKER_ID : undefined}
@@ -716,11 +720,23 @@ export function CommentBody({
 	onToggleChecklist: (itemId: string, checked: boolean) => Promise<void>;
 }) {
 	const [initialValue] = useState(() => toEditorValue(value));
-	const [previewUrls] = useState(() => extractLinkUrls(value));
+	const [previewUrls, setPreviewUrls] = useState(() => extractLinkUrls(value));
 	const editor = usePlateEditor({
 		plugins: commentStaticEditorPlugins,
 		value: initialValue,
 	});
+
+	/*
+	 * A message or comment can change while it stays mounted: an edit from
+	 * another tab arrives over the realtime stream, and a root rendered in a
+	 * thread is the same row as the one on the timeline. The static editor was
+	 * created from the first value, so it is updated when the value really
+	 * changes. Read only, so there is no selection to preserve.
+	 */
+	useEffect(() => {
+		editor.tf.setValue(toEditorValue(value));
+		setPreviewUrls(extractLinkUrls(value));
+	}, [editor, value]);
 
 	return (
 		<LinkPreviewProvider orgSlug={organizationSlug} urls={previewUrls}>

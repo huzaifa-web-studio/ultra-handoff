@@ -71,10 +71,13 @@ function replyScope(
  * Why not bind the anchor's `Date`: postgres.js cannot serialise a `Date`
  * inside this raw tuple comparison, and a JavaScript Date would also truncate
  * microseconds. Resolving the anchor by id keeps the stored value intact.
+ *
+ * The operator is explicit because the three page directions differ: `>` for a
+ * forward gap, `<` for an older page, and `<=` for the page around a search hit.
  */
-function anchorClause(anchorId: string, includeAnchor: boolean) {
+function anchorClause(anchorId: string, operator: "<" | "<=" | ">") {
 	return sql`(${conversationMessage.createdAt}, ${conversationMessage.id}) ${sql.raw(
-		includeAnchor ? "<=" : ">",
+		operator,
 	)} (
 		select anchor.created_at, anchor.id
 		from ${conversationMessage} as anchor
@@ -195,7 +198,7 @@ export async function listConversationRoots(
 				const rows = await tx
 					.select()
 					.from(conversationMessage)
-					.where(and(scope, anchorClause(anchor.id, false)))
+					.where(and(scope, anchorClause(anchor.id, ">")))
 					.orderBy(
 						asc(conversationMessage.createdAt),
 						asc(conversationMessage.id),
@@ -235,7 +238,13 @@ export async function listConversationRoots(
 			const rows = await tx
 				.select()
 				.from(conversationMessage)
-				.where(anchor ? and(scope, anchorClause(anchor.id, true)) : scope)
+				.where(
+					anchor
+						? // `before` pages strictly older than its cursor, so the anchor
+							// is not repeated. `around` includes the hit the reader clicked.
+							and(scope, anchorClause(anchor.id, query.around ? "<=" : "<"))
+						: scope,
+				)
 				.orderBy(
 					desc(conversationMessage.createdAt),
 					desc(conversationMessage.id),
@@ -326,7 +335,12 @@ export async function listThreadReplies(
 			const rows = await tx
 				.select()
 				.from(conversationMessage)
-				.where(anchor ? and(scope, anchorClause(anchor.id, true)) : scope)
+				.where(
+					anchor
+						? // `before` is exclusive; `around` keeps the hit in the page.
+							and(scope, anchorClause(anchor.id, query.around ? "<=" : "<"))
+						: scope,
+				)
 				.orderBy(
 					desc(conversationMessage.createdAt),
 					desc(conversationMessage.id),
@@ -337,7 +351,7 @@ export async function listThreadReplies(
 			const pageDesc = hasMore ? rows.slice(0, query.limit) : rows;
 			const oldest = pageDesc[pageDesc.length - 1];
 
-			const [people, threadRead, counterpartRead] = await Promise.all([
+			const [people, threadRead, counterpartRead, totals] = await Promise.all([
 				loadPeople(tenant.organizationId, [
 					rootRecord.authorId,
 					...pageDesc.map((record) => record.authorId),
@@ -352,6 +366,10 @@ export async function listThreadReplies(
 							access.counterpart.userId,
 						)
 					: Promise.resolve(null),
+				tx
+					.select({ count: sql<number>`count(*)`.mapWith(Number) })
+					.from(conversationMessage)
+					.where(scope),
 			]);
 
 			return {
@@ -359,6 +377,12 @@ export async function listThreadReplies(
 				replies: [...pageDesc]
 					.reverse()
 					.map((record) => toMessageRow(record, people, tenant.userId)),
+				/**
+				 * The total across every page, so a thread with more replies than
+				 * one page can still label itself honestly. Deleted replies are
+				 * counted, exactly like the timeline chip.
+				 */
+				replyCount: totals[0]?.count ?? 0,
 				nextCursor: hasMore && oldest ? encodeCursor(oldest.id) : null,
 				threadRead,
 				counterpartRead,

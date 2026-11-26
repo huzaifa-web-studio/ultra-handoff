@@ -103,6 +103,7 @@ export function MessageItem({
 	organizationId,
 	organizationSlug,
 	showSeen,
+	elementId,
 	onRetry,
 	replyCount = 0,
 	unreadReplyCount = 0,
@@ -122,6 +123,8 @@ export function MessageItem({
 	organizationSlug: string;
 	/** True when this is the last message the other person has read. */
 	showSeen: boolean;
+	/** Override the DOM id when the same message renders in two places. */
+	elementId?: string;
 	onRetry?: () => void;
 	/** Replies on the root, shown as "N replies". */
 	replyCount?: number;
@@ -167,7 +170,12 @@ export function MessageItem({
 	const avatarName = message.author?.name ?? authorName;
 	const deleted = message.deletedAt !== null;
 	const isRoot = message.parentId === null;
-	const hasThread = isRoot && !deleted && replyCount > 0;
+	/*
+	 * A deleted root keeps its thread. Hiding the chip would strand every reply
+	 * behind a row that is no longer clickable, so the chip stays and the panel
+	 * opens read only.
+	 */
+	const hasThread = isRoot && replyCount > 0;
 
 	async function save() {
 		if (!commentHasContent(draft)) return;
@@ -203,7 +211,7 @@ export function MessageItem({
 
 	return (
 		<div
-			id={`message-${message.id}`}
+			id={elementId ?? `message-${message.id}`}
 			className={cn(
 				"group/message relative flex gap-3 px-4 py-0.5 transition-colors",
 				"hover:bg-app-panel-subtle",
@@ -255,6 +263,7 @@ export function MessageItem({
 					<div className="mt-1 w-full min-w-72 border border-app-border bg-app-panel">
 						<CommentEditor
 							initialValue={message.body}
+							editorId={`message-editor-${messageId}`}
 							onChange={setDraft}
 							onSubmit={() => void save()}
 							onCancel={() => setEditing(false)}

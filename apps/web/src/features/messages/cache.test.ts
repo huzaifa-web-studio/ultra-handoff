@@ -23,6 +23,7 @@ import {
 	type MessagePages,
 	replaceMessage,
 	replaceThreadReply,
+	replaceThreadRoot,
 	type ThreadPages,
 	withConversationActivity,
 	withConversationUnread,
@@ -152,6 +153,7 @@ function threadPages(
 			{
 				root,
 				replies,
+				replyCount: replies.length,
 				nextCursor: null,
 				threadRead: { lastReadAt: null, lastReadMessageId: null },
 				counterpartRead: null,
@@ -457,6 +459,29 @@ describe("replaceThreadReply", () => {
 			"2026-01-01T11:00:00.000Z",
 		);
 		expect(next?.pages[0]?.replies[1]?.id).toBe("reply-2");
+	});
+});
+
+describe("replaceThreadRoot", () => {
+	it("replaces the root of the open thread", () => {
+		const pages = threadPages([makeThreadReply({ id: "reply-1" })]);
+		const next = replaceThreadRoot(
+			pages,
+			makeThreadRoot({
+				deletedAt: "2026-01-01T11:00:00.000Z",
+				body: [],
+			}),
+		);
+
+		expect(next?.pages[0]?.root.deletedAt).toBe("2026-01-01T11:00:00.000Z");
+		expect(next?.pages[0]?.root.body).toEqual([]);
+	});
+
+	it("leaves a thread with a different root untouched", () => {
+		const pages = threadPages([makeThreadReply({ id: "reply-1" })]);
+		const next = replaceThreadRoot(pages, makeThreadRoot({ id: "other-root" }));
+
+		expect(next).toBe(pages);
 	});
 });
 

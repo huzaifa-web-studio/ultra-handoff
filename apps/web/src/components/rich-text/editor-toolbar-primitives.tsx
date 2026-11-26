@@ -160,6 +160,10 @@ export function BlockSelect() {
 
 	return (
 		<Select
+			// React Aria renders a hidden native select for form semantics. A name
+			// gives it the same accessible identity as the visible trigger, which
+			// the browser audit otherwise reports as an unnamed form field.
+			name="block-style"
 			aria-label="Text style"
 			selectedKey={currentType}
 			onSelectionChange={(key) => {

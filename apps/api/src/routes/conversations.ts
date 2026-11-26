@@ -12,6 +12,7 @@
  * Used by: src/index.ts.
  */
 
+import { APIError } from "better-auth/api";
 import { Elysia, t } from "elysia";
 
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
@@ -27,6 +28,7 @@ import {
 	type ConversationListQuery,
 	type ConversationReadResult,
 	createConversationMessage,
+	decodeCursor,
 	deleteConversationMessage,
 	editConversationMessage,
 	getConversation,
@@ -117,6 +119,29 @@ function parseListQuery(query: {
 	};
 }
 
+/**
+ * Decode one opaque paging cursor.
+ *
+ * Why: the server hands the browser a base64url cursor, while the query needs a
+ * message id. Treating the opaque value as an id made every "Load earlier"
+ * request answer 400. `around` is different: it carries a real id from a search
+ * hit, so it is not decoded.
+ */
+function parsePagingCursor(
+	value: string | undefined,
+	message: string,
+): string | null {
+	if (!value) return null;
+
+	const decoded = decodeCursor(value);
+
+	if (!decoded) {
+		throw new APIError("BAD_REQUEST", { message });
+	}
+
+	return decoded;
+}
+
 function parsePageQuery(query: {
 	before?: string;
 	after?: string;
@@ -125,8 +150,16 @@ function parsePageQuery(query: {
 }): MessagePageQuery {
 	// Only one direction is meaningful. Precedence keeps a hand edited link
 	// deterministic instead of silently combining two cursors.
-	const before = query.before ?? null;
-	const after = before ? null : (query.after ?? null);
+	const before = parsePagingCursor(
+		query.before,
+		"That message is not part of the main conversation.",
+	);
+	const after = before
+		? null
+		: parsePagingCursor(
+				query.after,
+				"That message is not part of the main conversation.",
+			);
 	const around = before || after ? null : (query.around ?? null);
 
 	return {
@@ -143,7 +176,10 @@ function parseThreadQuery(query: {
 	around?: string;
 	limit?: string;
 }): MessagePageQuery {
-	const before = query.before ?? null;
+	const before = parsePagingCursor(
+		query.before,
+		"That message is not part of this thread.",
+	);
 	const around = before ? null : (query.around ?? null);
 
 	return {

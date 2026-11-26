@@ -150,7 +150,29 @@ export function MessageList({
 		onLoadOlder();
 	}
 
-	const lastMessage = messages[messages.length - 1];
+	const [announcement, setAnnouncement] = useState("");
+	const announcedRef = useRef<string | null>(null);
+	const firstRenderRef = useRef(true);
+
+	/*
+	 * The live region is for arrivals, not for the whole transcript. Opening a
+	 * conversation is silent, a message this person sent is silent, and only a
+	 * new incoming row is announced once.
+	 */
+	useEffect(() => {
+		const newest = messages[messages.length - 1];
+
+		if (!newest || announcedRef.current === newest.id) return;
+
+		const firstRender = firstRenderRef.current;
+
+		firstRenderRef.current = false;
+		announcedRef.current = newest.id;
+
+		if (firstRender || newest.author?.id === viewerId) return;
+
+		setAnnouncement(`New message from ${newest.author?.name ?? "someone"}`);
+	}, [messages, viewerId]);
 
 	return (
 		<div className="relative min-h-0 flex-1">
@@ -258,11 +280,9 @@ export function MessageList({
 				</div>
 			</ScrollArea>
 
-			{/* New messages are announced, not read out as a live region per row. */}
+			{/* Only an incoming arrival reaches the live region, and only once. */}
 			<output aria-live="polite" className="sr-only">
-				{lastMessage
-					? `New message from ${lastMessage.author?.name ?? "someone"}`
-					: ""}
+				{announcement}
 			</output>
 
 			{unseen && (

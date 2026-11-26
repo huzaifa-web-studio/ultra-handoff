@@ -54,7 +54,10 @@ export async function editConversationMessage(
 	messageId: string,
 	input: { body: unknown },
 ): Promise<ConversationMessageMutationResult> {
-	const body = sanitizeCommentBody(input.body);
+	const body = sanitizeCommentBody(
+		input.body,
+		"Write something before sending your message.",
+	);
 
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },

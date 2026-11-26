@@ -249,9 +249,23 @@ export function ThreadView({
 	}, [highlightId, dataUpdatedAt]);
 
 	async function handleSend(body: unknown[]) {
-		const nonce = crypto.randomUUID();
+		// Part B of the retry contract: resending the same body reuses the failed
+		// row's nonce instead of creating a second pending row.
+		const failed = pending.find(
+			(item) =>
+				item.failed && JSON.stringify(item.body) === JSON.stringify(body),
+		);
+		const nonce = failed?.nonce ?? crypto.randomUUID();
 
-		setPending((current) => [...current, { nonce, body, failed: false }]);
+		if (failed) {
+			setPending((current) =>
+				current.map((item) =>
+					item.nonce === nonce ? { ...item, failed: false } : item,
+				),
+			);
+		} else {
+			setPending((current) => [...current, { nonce, body, failed: false }]);
+		}
 
 		try {
 			await send.mutateAsync({ body, clientNonce: nonce, parentId: rootId });
