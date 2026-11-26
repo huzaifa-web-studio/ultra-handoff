@@ -452,3 +452,20 @@ Verification after the fixes:
 - Web unit suite: 142 pass, 0 fail.
 - A fresh 26 assertion live API pass: 26 pass, 0 fail.
 - Chrome UI spot check of the Archived section and the Escape behaviour.
+
+### Post-fix verification
+
+The six scenarios that were still open after the first fix pass were run
+against the live stack.
+
+| Scenario | Result |
+|---|---|
+| Add members authorization order | A non-owner got 403 before workspace validation; an owner still got the membership sentence |
+| Two user realtime | Typing start and stop, a channel message, archive metadata and a workspace removal roster event all reached the other member |
+| Account deletion | The delete mail and token flow removed the account; the channel kept its history with a null author, the remaining member became owner, the count became 1 and the deleted session was rejected |
+| Load more in the browser | The control loaded the remaining directory page and disappeared when the cursor ended |
+| Mobile after the fixes | The channel and the create dialog fit at 500x844 with no horizontal overflow; the header shows "1 members, private" |
+| Cache with no realtime | After the user socket was disposed, opening an unread channel still cleared the rail and section badges through the direct cache patch; a later message did not arrive live, proving the socket was down |
+
+Evidence: `10-archived-section.png`, `11-mobile-after-fixes.png`,
+`12-mobile-create-dialog.png`.
