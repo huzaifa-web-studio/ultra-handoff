@@ -239,6 +239,13 @@
       "when": 1795613894226,
       "tag": "0033_lovely_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795623415455,
+      "tag": "0034_bumpy_mulholland_black",
+      "breakpoints": true
     }
   ]
 }

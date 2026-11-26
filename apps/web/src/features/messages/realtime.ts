@@ -1,10 +1,10 @@
 /**
  * Realtime wiring for direct messages.
  *
- * Why one subscription at the messages layout: the sidebar list, the open
- * thread and the unread badge all read the same feature. One handler patches
- * every cache, so a message sent from another device lands everywhere without a
- * refetch.
+ * One subscription at the messages layout patches the sidebar list, the main
+ * timeline, every open thread and the unread badge. A message is routed by its
+ * parent id: a root lands in the timeline, a reply lands in its thread and
+ * increments the root's reply count.
  *
  * Viewer rule: the server strips `canEdit` and `canDelete`, because they are
  * answers for the writer. They are recomputed here, exactly like comments.
@@ -30,30 +30,40 @@ import {
 	setTyping,
 } from "#/lib/realtime/typing-store";
 import { useUserRealtimeEvent } from "#/lib/realtime/user-events";
-import type { Message } from "./api";
+import type { ConversationMessage, Message } from "./api";
 import {
 	appendMessage,
+	appendThreadReply,
 	type ConversationPages,
 	type MessagePages,
-	replaceMessage,
+	replaceRootMessage,
+	replaceThreadReply,
+	type ThreadPages,
 	withConversationActivity,
-	withConversationUnread,
 	withCounterpartRead,
+	withRootReplyCount,
+	withThreadCounterpartRead,
+	withThreadRead,
 } from "./cache";
 import {
-	conversationKey,
 	conversationMessagesKey,
 	conversationsKey,
+	conversationThreadKey,
 } from "./keys";
 
 /** Recompute the two capabilities the server strips before broadcasting. */
 export function toViewerMessage(
 	message: RealtimeConversationMessage,
 	viewerId: string,
-): Message {
+): ConversationMessage {
 	const mine = message.author?.id === viewerId && message.deletedAt === null;
 
 	return { ...message, canEdit: mine, canDelete: mine };
+}
+
+/** Add the reply summary a newly created root does not carry yet. */
+function toRootView(message: ConversationMessage): Message {
+	return { ...message, replyCount: 0, unreadReplyCount: 0 };
 }
 
 /** Validate one message event. */
@@ -105,6 +115,9 @@ export function readReadEvent(
 	if (typeof record.userId !== "string") return null;
 	if (typeof record.lastReadAt !== "string") return null;
 	if (typeof record.lastReadMessageId !== "string") return null;
+	if (record.threadRootId !== null && typeof record.threadRootId !== "string") {
+		return null;
+	}
 
 	return data as ConversationReadPayload;
 }
@@ -135,17 +148,18 @@ function readTyping(
 /**
  * Apply every personal message event to the caches.
  *
- * `activeConversationId` is the chat currently on screen. A message for that
- * chat does not bump its unread badge, and it does not raise an operating
- * system alert, because the reader is already looking at it.
+ * `activeConversationId` and `activeThreadId` describe what is actually on
+ * screen. A reply in a closed thread is unread even when the conversation pane
+ * is open, and a root in the timeline is unread while a thread is open.
  */
 export function useMessagesRealtime(input: {
 	orgSlug: string;
 	viewerId: string;
 	activeConversationId: string | null;
+	activeThreadId: string | null;
 }): void {
 	const queryClient = useQueryClient();
-	const { orgSlug, viewerId, activeConversationId } = input;
+	const { orgSlug, viewerId, activeConversationId, activeThreadId } = input;
 
 	useUserRealtimeEvent((event) => {
 		if (!orgSlug) return;
@@ -174,23 +188,56 @@ export function useMessagesRealtime(input: {
 				lastReadMessageId: read.lastReadMessageId,
 			};
 
+			if (read.threadRootId) {
+				if (read.userId !== viewerId) {
+					// The other person read this thread: show a receipt.
+					queryClient.setQueryData<ThreadPages>(
+						conversationThreadKey(
+							orgSlug,
+							read.conversationId,
+							read.threadRootId,
+						),
+						(current) => withThreadCounterpartRead(current, cursor),
+					);
+				} else {
+					// This person read it in another tab.
+					queryClient.setQueryData<ThreadPages>(
+						conversationThreadKey(
+							orgSlug,
+							read.conversationId,
+							read.threadRootId,
+						),
+						(current) => withThreadRead(current, cursor),
+					);
+					queryClient.setQueryData<MessagePages>(
+						conversationMessagesKey(orgSlug, read.conversationId),
+						(current) =>
+							withRootReplyCount(current, read.threadRootId as string, {
+								clearUnread: true,
+							}),
+					);
+					void queryClient.invalidateQueries({
+						queryKey: notificationSummaryKey(orgSlug),
+					});
+				}
+
+				return;
+			}
+
 			if (read.userId !== viewerId) {
-				// The other person read the chat: show their receipt.
+				// The other person read the main timeline.
 				queryClient.setQueryData<MessagePages>(
 					conversationMessagesKey(orgSlug, read.conversationId),
 					(current) => withCounterpartRead(current, cursor),
 				);
-				queryClient.setQueryData(
-					conversationKey(orgSlug, read.conversationId),
-					(current: { counterpartRead: unknown } | undefined) =>
-						current ? { ...current, counterpartRead: cursor } : current,
-				);
 			} else {
-				// This person read it in another tab.
-				queryClient.setQueryData<ConversationPages>(
-					conversationsKey(orgSlug),
-					(current) => withConversationUnread(current, read.conversationId, 0),
-				);
+				// This person read the timeline in another tab.
+				void queryClient.invalidateQueries({
+					queryKey: conversationMessagesKey(orgSlug, read.conversationId),
+				});
+				void queryClient.invalidateQueries({
+					queryKey: conversationsKey(orgSlug),
+				});
 				void queryClient.invalidateQueries({
 					queryKey: notificationSummaryKey(orgSlug),
 				});
@@ -204,46 +251,81 @@ export function useMessagesRealtime(input: {
 		if (!payload) return;
 
 		const message = toViewerMessage(payload.message, viewerId);
+		const parentId = message.parentId;
 
-		queryClient.setQueryData<MessagePages>(
-			conversationMessagesKey(orgSlug, payload.conversationId),
-			(current) =>
-				event.type === "conversation.message.created"
-					? appendMessage(current, message)
-					: replaceMessage(current, message),
-		);
+		if (event.type === "conversation.message.created") {
+			const visible =
+				typeof document !== "undefined" &&
+				document.visibilityState === "visible";
+			const conversationActive =
+				payload.conversationId === activeConversationId &&
+				activeThreadId === null &&
+				visible;
+			const threadActive =
+				payload.conversationId === activeConversationId &&
+				parentId !== null &&
+				activeThreadId === parentId &&
+				visible;
 
-		if (event.type !== "conversation.message.created") {
-			// An edit or a delete can change the sidebar preview.
-			void queryClient.invalidateQueries({
-				queryKey: conversationsKey(orgSlug),
+			if (parentId) {
+				queryClient.setQueryData<ThreadPages>(
+					conversationThreadKey(orgSlug, payload.conversationId, parentId),
+					(current) => appendThreadReply(current, message),
+				);
+				queryClient.setQueryData<MessagePages>(
+					conversationMessagesKey(orgSlug, payload.conversationId),
+					(current) =>
+						withRootReplyCount(current, parentId, {
+							replyDelta: 1,
+							unreadDelta:
+								payload.senderId !== viewerId && !threadActive ? 1 : 0,
+						}),
+				);
+			} else {
+				queryClient.setQueryData<MessagePages>(
+					conversationMessagesKey(orgSlug, payload.conversationId),
+					(current) => appendMessage(current, toRootView(message)),
+				);
+			}
+
+			if (!payload.conversation) return;
+
+			const current = queryClient.getQueryData<ConversationPages>(
+				conversationsKey(orgSlug),
+			);
+			const result = withConversationActivity(current, payload.conversation, {
+				viewerId,
+				senderId: payload.senderId,
+				active: parentId ? threadActive : conversationActive,
 			});
+
+			if (result.found) {
+				queryClient.setQueryData(conversationsKey(orgSlug), result.pages);
+			} else {
+				// A brand new chat is not in the list yet.
+				void queryClient.invalidateQueries({
+					queryKey: conversationsKey(orgSlug),
+				});
+			}
 
 			return;
 		}
 
-		if (!payload.conversation) return;
-
-		const active =
-			payload.conversationId === activeConversationId &&
-			typeof document !== "undefined" &&
-			document.visibilityState === "visible";
-		const current = queryClient.getQueryData<ConversationPages>(
-			conversationsKey(orgSlug),
-		);
-		const result = withConversationActivity(current, payload.conversation, {
-			viewerId,
-			senderId: payload.senderId,
-			active,
-		});
-
-		if (result.found) {
-			queryClient.setQueryData(conversationsKey(orgSlug), result.pages);
+		if (parentId) {
+			queryClient.setQueryData<ThreadPages>(
+				conversationThreadKey(orgSlug, payload.conversationId, parentId),
+				(current) => replaceThreadReply(current, message),
+			);
 		} else {
-			// A brand new chat is not in the list yet.
-			void queryClient.invalidateQueries({
-				queryKey: conversationsKey(orgSlug),
-			});
+			queryClient.setQueryData<MessagePages>(
+				conversationMessagesKey(orgSlug, payload.conversationId),
+				(current) => replaceRootMessage(current, message),
+			);
 		}
+
+		// An edit or a delete can change the sidebar preview.
+		void queryClient.invalidateQueries({
+			queryKey: conversationsKey(orgSlug),
+		});
 	});
 }

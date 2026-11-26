@@ -57,7 +57,9 @@ function ResizableHandle({
 		<ResizablePrimitive.Separator
 			data-slot="resizable-handle"
 			className={cn(
-				"relative flex w-px shrink-0 items-center justify-center bg-app-border",
+				"relative flex w-px shrink-0 items-center justify-center bg-app-border transition-colors",
+				"aria-[orientation=vertical]:cursor-col-resize aria-[orientation=horizontal]:cursor-row-resize",
+				"hover:bg-app-border-strong",
 				"after:absolute after:inset-y-0 after:left-1/2 after:w-2 after:-translate-x-1/2",
 				"focus-visible:ring-1 focus-visible:ring-app-focus focus-visible:outline-hidden",
 				"aria-[orientation=horizontal]:h-px aria-[orientation=horizontal]:w-full aria-[orientation=horizontal]:after:inset-x-0 aria-[orientation=horizontal]:after:left-0 aria-[orientation=horizontal]:after:h-2 aria-[orientation=horizontal]:after:w-full aria-[orientation=horizontal]:after:-translate-y-1/2",
@@ -68,7 +70,7 @@ function ResizableHandle({
 		>
 			{withHandle && (
 				// A visible grip so the divider reads as draggable, not as a border.
-				<div className="z-10 flex h-6 w-1 shrink-0 bg-app-border-strong" />
+				<div className="z-10 flex h-8 w-1 shrink-0 bg-app-border-strong" />
 			)}
 		</ResizablePrimitive.Separator>
 	);

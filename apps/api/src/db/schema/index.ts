@@ -23,6 +23,7 @@ export {
 	conversation,
 	conversationMessage,
 	conversationParticipant,
+	conversationThreadRead,
 } from "./conversation";
 export { linkPreview } from "./link-preview";
 export {

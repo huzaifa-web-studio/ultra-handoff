@@ -18,6 +18,8 @@
  *   - Shift+Enter submits. Cmd/Ctrl+Enter still works as a desktop shortcut.
  *     Both are handled in the capture phase so Slate cannot insert a break
  *     first.
+ *   - a host that passes `submitOnEnter` flips the two: Enter sends and
+ *     Shift+Enter breaks, which is the chat contract
  *   - Escape cancels when the parent offers a cancel action, otherwise it
  *     blurs the editor so Tab starts moving again
  *   - while the mention picker is open, Enter selects, the arrow keys move the
@@ -72,6 +74,7 @@ function handleShortcut(
 	event: KeyboardEvent<HTMLElement>,
 	onSubmit?: () => void,
 	onCancel?: () => void,
+	submitOnEnter = false,
 ): void {
 	// The link prompt and the image caption are real form fields inside the
 	// editor tree. Their Enter and Shift+Enter belong to them, not to the post.
@@ -84,6 +87,38 @@ function handleShortcut(
 	// An input method may use Enter or Shift+Enter to pick a candidate. Never
 	// submit while a composition is active.
 	if (event.nativeEvent.isComposing) return;
+
+	/*
+	 * A chat sends on Enter, because a message is a single line far more often
+	 * than a paragraph, and that is what a chat app trains people to expect.
+	 * Shift+Enter still inserts the break. Comments keep the opposite default,
+	 * where Enter is the break and Shift+Enter posts, so the flag is opt in.
+	 */
+	if (submitOnEnter) {
+		if (
+			event.key === "Enter" &&
+			!event.shiftKey &&
+			!event.metaKey &&
+			!event.ctrlKey &&
+			!event.altKey
+		) {
+			event.preventDefault();
+			event.stopPropagation();
+			onSubmit?.();
+			return;
+		}
+
+		if (event.key !== "Escape") return;
+
+		if (onCancel) {
+			event.preventDefault();
+			onCancel();
+			return;
+		}
+
+		(event.target as HTMLElement).blur();
+		return;
+	}
 
 	if (
 		event.key === "Enter" &&
@@ -223,6 +258,7 @@ export function CommentEditor({
 	footer,
 	onUploadingChange,
 	mentionsEnabled = true,
+	submitOnEnter = false,
 }: {
 	initialValue: unknown[];
 	onChange: (value: unknown[]) => void;
@@ -258,6 +294,13 @@ export function CommentEditor({
 	 * no project. A stored mention still renders; only the picker is removed.
 	 */
 	mentionsEnabled?: boolean;
+	/**
+	 * Send on a bare Enter and keep Shift+Enter for a line break.
+	 *
+	 * A chat wants this. A comment does not, because a comment is usually a
+	 * paragraph, so the default stays the comment contract.
+	 */
+	submitOnEnter?: boolean;
 }) {
 	// Created once per mounted instance. The parent uses `key` to reset it after
 	// a successful post, which is the only reliable way to clear undo history.
@@ -574,7 +617,7 @@ export function CommentEditor({
 				className="m-0 min-w-0 border-0 p-0"
 				onKeyDownCapture={(event) => {
 					if (handleMentionKey(event)) return;
-					handleShortcut(event, onSubmit, onCancel);
+					handleShortcut(event, onSubmit, onCancel, submitOnEnter);
 				}}
 				onBlur={(event) => {
 					const next = event.relatedTarget;

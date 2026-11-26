@@ -33,6 +33,15 @@ export function conversationMessagesKey(
 	return [...messagesKey(orgSlug), "thread", conversationId] as const;
 }
 
+/** One thread, paged by the before cursor. */
+export function conversationThreadKey(
+	orgSlug: string,
+	conversationId: string,
+	rootId: string,
+) {
+	return [...messagesKey(orgSlug), "thread", conversationId, rootId] as const;
+}
+
 /** One in conversation search. */
 export function conversationSearchKey(
 	orgSlug: string,

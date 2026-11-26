@@ -8,21 +8,32 @@
  * notification the person did not see, which is why the visibility listener
  * lives here and not in the realtime provider.
  *
+ * Layout: the conversation is one full width column, and a thread opens in a
+ * panel beside it. That keeps the reply in context instead of navigating away
+ * from the message it answers.
+ *
  * Sending is optimistic. The composer keeps its draft until the request
  * resolves, and a failed row stays in place with a retry that reuses the same
  * nonce, so the server cannot store it twice.
  *
- * Used by: routes/_app/$orgSlug.messages.$conversationId.tsx.
+ * Used by: routes/_app/$orgSlug.messages.$conversationId.index.tsx.
  */
 
 import { Avatar, AvatarFallback, AvatarImage } from "@org/ui/components/avatar";
 import { Button } from "@org/ui/components/button";
 import { Input } from "@org/ui/components/input";
-import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
+import {
+	ResizableHandle,
+	ResizablePanel,
+	ResizablePanelGroup,
+	useDefaultLayout,
+} from "@org/ui/components/resizable";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowDownIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { authClient } from "#/features/auth/client";
+import { useMediaQuery } from "#/hooks/use-media-query";
 import { formatDateTime } from "#/lib/date";
 import { useConversationTypingSender } from "#/lib/realtime/typing-sender";
 import {
@@ -38,9 +49,16 @@ import {
 	useMessages,
 	useSendMessage,
 } from "./hooks";
+import { conversationMessagesKey } from "./keys";
 import { MessageComposer } from "./message-composer";
 import type { PendingMessage } from "./message-item";
 import { MessageList } from "./message-list";
+import { ThreadPanel } from "./thread-panel";
+import {
+	addThreadTab,
+	threadTabsStorageKey,
+	toOpenThreadTab,
+} from "./thread-tabs";
 
 /** Initials for an avatar fallback. */
 function initials(name: string): string {
@@ -56,11 +74,23 @@ export function ConversationView({
 	orgSlug: string;
 	conversationId: string;
 }) {
-	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const { data: session } = authClient.useSession();
 	const { data: activeOrg } = authClient.useActiveOrganization();
 	const viewerId = session?.user.id ?? "";
 	const organizationId = activeOrg?.id ?? "";
+
+	/*
+	 * The thread split is remembered per browser, so a width the reader chose
+	 * survives a reload and every conversation. Below the tablet breakpoint the
+	 * chat is too narrow for two panes, so the thread covers the conversation
+	 * instead and the handle is not rendered.
+	 */
+	const isDesktop = useMediaQuery("(min-width: 768px)");
+	const layout = useDefaultLayout({
+		id: "handoff-messages-thread-split-v1",
+		panelIds: ["conversation", "thread"],
+	});
 
 	const detail = useConversation(orgSlug, conversationId);
 	const thread = useMessages(orgSlug, conversationId);
@@ -74,12 +104,61 @@ export function ConversationView({
 	);
 
 	const [pending, setPending] = useState<PendingMessage[]>([]);
-	const [searchOpen, setSearchOpen] = useState(false);
 	const [search, setSearch] = useState("");
 	const [highlightId, setHighlightId] = useState<string | null>(null);
+	const [jumped, setJumped] = useState(false);
+	const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+	const [replyFocusToken, setReplyFocusToken] = useState(0);
+	const searchRef = useRef<HTMLDivElement>(null);
 
 	const searchResults = useMessageSearch(orgSlug, conversationId, search);
 	const typingUserId = useTypingUser(conversationChannel(conversationId));
+	const showSearchResults = search.trim().length >= 2;
+
+	const threadTabsKey = threadTabsStorageKey(orgSlug, conversationId);
+
+	// Switching conversation closes any thread panel from the previous one.
+	useEffect(() => {
+		if (!conversationId) return;
+
+		setActiveThreadId(null);
+	}, [conversationId]);
+
+	// A click outside the search box closes the overlay instead of leaving it
+	// open over the conversation.
+	useEffect(() => {
+		if (!showSearchResults) return;
+
+		function onPointerDown(event: PointerEvent) {
+			if (searchRef.current?.contains(event.target as Node)) return;
+
+			setSearch("");
+		}
+
+		document.addEventListener("pointerdown", onPointerDown);
+
+		return () => document.removeEventListener("pointerdown", onPointerDown);
+	}, [showSearchResults]);
+
+	/** Open the thread panel under one root and focus its composer. */
+	const handleReply = useCallback((message: Message) => {
+		setActiveThreadId(message.id);
+		setReplyFocusToken((current) => current + 1);
+	}, []);
+
+	/** Open the dedicated thread route in a real new browser tab. */
+	const handleOpenThreadInNewTab = useCallback(
+		(message: Message) => {
+			addThreadTab(threadTabsKey, toOpenThreadTab(message));
+
+			window.open(
+				`/${orgSlug}/messages/${conversationId}/threads/${message.id}`,
+				"_blank",
+				"noopener,noreferrer",
+			);
+		},
+		[orgSlug, conversationId, threadTabsKey],
+	);
 
 	/*
 	 * `pages[0]` is the newest page, so the pages are reversed before flattening
@@ -218,73 +297,89 @@ export function ConversationView({
 			? "No longer in this workspace"
 			: "Direct message";
 
-	return (
-		<div className="flex h-full min-h-0 flex-col">
-			<header className="flex items-center gap-3 border-b border-app-border px-3 py-2">
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					className="md:hidden"
-					aria-label="Back to conversations"
-					onPress={() =>
-						void navigate({ to: "/$orgSlug/messages", params: { orgSlug } })
-					}
-				>
-					<ArrowLeftIcon aria-hidden />
-				</Button>
+	const threadPanel = activeThreadId ? (
+		<ThreadPanel
+			orgSlug={orgSlug}
+			conversationId={conversationId}
+			organizationId={organizationId}
+			rootId={activeThreadId}
+			viewerId={viewerId}
+			focusToken={replyFocusToken}
+			onClose={() => setActiveThreadId(null)}
+			onOpenThread={() => {
+				const root = messages.find((message) => message.id === activeThreadId);
 
+				if (root) handleOpenThreadInNewTab(root);
+			}}
+		/>
+	) : null;
+
+	const conversationColumn = (
+		<div className="flex h-full min-w-0 flex-1 flex-col">
+			<header className="flex h-14 shrink-0 items-center gap-3 border-b border-app-border px-4">
 				<Avatar size="sm">
 					{counterpart?.image && <AvatarImage src={counterpart.image} alt="" />}
 					<AvatarFallback>{initials(name)}</AvatarFallback>
 				</Avatar>
 
-				<div className="min-w-0 flex-1">
-					<p className="truncate text-sm font-medium text-app-text">{name}</p>
-					<p className="truncate text-xs text-app-text-muted">{status}</p>
+				<div className="flex min-w-0 flex-1 items-center gap-2">
+					<p className="truncate text-sm font-semibold text-app-text">{name}</p>
+					<span aria-hidden className="h-4 w-px bg-app-border" />
+					<p
+						className="truncate text-xs text-app-text-muted"
+						aria-live="polite"
+					>
+						{status}
+					</p>
 				</div>
 
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					aria-label="Search this conversation"
-					aria-pressed={searchOpen}
-					onPress={() => setSearchOpen((current) => !current)}
-				>
-					<SearchIcon aria-hidden />
-				</Button>
-			</header>
+				{jumped && (
+					<Button
+						variant="outline"
+						size="sm"
+						onPress={() => {
+							setHighlightId(null);
+							setJumped(false);
+							void queryClient.resetQueries({
+								queryKey: conversationMessagesKey(orgSlug, conversationId),
+							});
+						}}
+					>
+						<ArrowDownIcon aria-hidden />
+						Latest
+					</Button>
+				)}
 
-			{searchOpen && (
-				<div className="border-b border-app-border p-2">
-					<div className="relative">
-						<SearchIcon
-							aria-hidden
-							className="pointer-events-none absolute top-1/2 left-0 size-3.5 -translate-y-1/2 text-app-text-muted"
-						/>
-						<Input
-							type="search"
-							value={search}
-							onChange={(event) => setSearch(event.target.value)}
-							placeholder="Search this conversation"
-							aria-label="Search this conversation"
-							className="pl-6"
-							autoFocus
-						/>
-						{search.length > 0 && (
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								className="absolute top-1/2 right-0 -translate-y-1/2"
-								aria-label="Clear search"
-								onPress={() => setSearch("")}
-							>
-								<XIcon aria-hidden />
-							</Button>
-						)}
-					</div>
+				<div ref={searchRef} className="relative w-36 shrink-0 sm:w-52 md:w-64">
+					<SearchIcon
+						aria-hidden
+						className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-app-text-muted"
+					/>
+					<Input
+						type="search"
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === "Escape") setSearch("");
+						}}
+						placeholder="Search"
+						aria-label="Search this conversation"
+						className="h-8 bg-transparent pr-7 pl-7"
+					/>
+					{search.length > 0 && (
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							className="absolute top-1/2 right-0.5 -translate-y-1/2"
+							aria-label="Clear search"
+							onPress={() => setSearch("")}
+						>
+							<XIcon aria-hidden />
+						</Button>
+					)}
 
-					{search.trim().length >= 2 && (
-						<div className="mt-2 max-h-56 overflow-y-auto border border-app-border">
+					{showSearchResults && (
+						<div className="absolute top-full right-0 z-30 mt-1 max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto border border-app-border bg-app-panel shadow-lg">
 							{searchResults.isPending ? (
 								<p className="p-3 text-xs text-app-text-muted">Searching...</p>
 							) : searchResults.isError ? (
@@ -296,35 +391,55 @@ export function ConversationView({
 									No messages match that search.
 								</p>
 							) : (
-								searchResults.data?.results.map((result) => (
-									<button
-										key={result.id}
-										type="button"
-										className="block w-full border-b border-app-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-app-panel-subtle focus-visible:bg-app-selected focus-visible:outline-none"
-										onClick={() => {
-											void jump.mutateAsync(result.id);
-											setHighlightId(result.id);
-											setSearchOpen(false);
-										}}
-									>
-										<span className="flex items-baseline gap-2">
-											<span className="text-xs font-medium text-app-text">
-												{result.authorName}
+								searchResults.data?.results.map((result) => {
+									const isRoot = result.id === result.rootId;
+
+									return (
+										<button
+											key={result.id}
+											type="button"
+											className="block w-full border-b border-app-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-app-panel-subtle focus-visible:bg-app-selected focus-visible:outline-none"
+											onClick={() => {
+												if (isRoot) {
+													void jump
+														.mutateAsync(result.id)
+														.then(() => {
+															setHighlightId(result.id);
+															setJumped(true);
+														})
+														.catch(() => undefined);
+												} else {
+													setActiveThreadId(result.rootId);
+													setReplyFocusToken((current) => current + 1);
+												}
+
+												setSearch("");
+											}}
+										>
+											<span className="flex items-baseline gap-2">
+												<span className="text-xs font-medium text-app-text">
+													{result.authorName}
+												</span>
+												<span className="text-[0.65rem] text-app-text-muted">
+													{formatDateTime(result.createdAt)}
+												</span>
+												{!isRoot && (
+													<span className="text-[0.65rem] text-app-text-muted">
+														in thread
+													</span>
+												)}
 											</span>
-											<span className="text-[0.65rem] text-app-text-muted">
-												{formatDateTime(result.createdAt)}
+											<span className="mt-0.5 block truncate text-xs text-app-text-muted">
+												{result.snippet}
 											</span>
-										</span>
-										<span className="mt-0.5 block truncate text-xs text-app-text-muted">
-											{result.snippet}
-										</span>
-									</button>
-								))
+										</button>
+									);
+								})
 							)}
 						</div>
 					)}
 				</div>
-			)}
+			</header>
 
 			{thread.isPending ? (
 				<div className="flex flex-1 items-center justify-center p-6">
@@ -358,11 +473,14 @@ export function ConversationView({
 					loadingOlder={thread.isFetchingNextPage}
 					onLoadOlder={() => void thread.fetchNextPage()}
 					onRetryPending={(nonce) => void retryPending(nonce)}
+					onReply={handleReply}
+					onOpenThreadInNewTab={handleOpenThreadInNewTab}
+					activeThreadId={activeThreadId}
 					highlightId={highlightId}
 				/>
 			)}
 
-			<div className="border-t border-app-border p-3">
+			<div className="shrink-0 px-4 pt-2 pb-4">
 				{counterpart && !counterpart.isMember ? (
 					<p className="text-xs text-app-text-muted">
 						This person is no longer part of the workspace, so this conversation
@@ -374,9 +492,46 @@ export function ConversationView({
 						conversationId={conversationId}
 						onSend={handleSend}
 						onTyping={notifyTyping}
+						placeholder={`Message ${name}`}
 					/>
 				)}
 			</div>
+		</div>
+	);
+
+	return (
+		<div className="relative flex h-full min-h-0">
+			{activeThreadId && isDesktop ? (
+				<ResizablePanelGroup
+					orientation="horizontal"
+					defaultLayout={layout.defaultLayout}
+					onLayoutChanged={layout.onLayoutChanged}
+					className="min-h-0"
+				>
+					<ResizablePanel id="conversation" minSize="35%">
+						{conversationColumn}
+					</ResizablePanel>
+
+					<ResizableHandle withHandle />
+
+					<ResizablePanel
+						id="thread"
+						defaultSize="380px"
+						minSize="280px"
+						maxSize="55%"
+					>
+						{threadPanel}
+					</ResizablePanel>
+				</ResizablePanelGroup>
+			) : (
+				<>
+					{conversationColumn}
+
+					{activeThreadId && (
+						<div className="absolute inset-0 z-20 md:hidden">{threadPanel}</div>
+					)}
+				</>
+			)}
 		</div>
 	);
 }

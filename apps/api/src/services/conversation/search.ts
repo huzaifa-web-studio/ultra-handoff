@@ -68,6 +68,7 @@ export async function searchConversationMessages(
 
 					return {
 						id: record.id,
+						rootId: record.parentId ?? record.id,
 						authorId: record.authorId,
 						authorName: person?.name || person?.email || "Former member",
 						authorImage: person?.image ?? null,

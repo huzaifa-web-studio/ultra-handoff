@@ -23,6 +23,7 @@
 
 import { sql } from "drizzle-orm";
 import {
+	type AnyPgColumn,
 	check,
 	index,
 	jsonb,
@@ -301,6 +302,17 @@ export const conversationMessage = pgTable(
 		conversationId: text("conversation_id")
 			.notNull()
 			.references(() => conversation.id, { onDelete: "cascade" }),
+		/**
+		 * The root message this row replies to. Null for a root.
+		 *
+		 * One level only, enforced in the service: the parent must itself have no
+		 * parent. A reply is rendered inside its root's thread, never in the main
+		 * conversation timeline.
+		 */
+		parentId: text("parent_id").references(
+			(): AnyPgColumn => conversationMessage.id,
+			{ onDelete: "cascade" },
+		),
 		authorId: text("author_id").references(() => user.id, {
 			onDelete: "set null",
 		}),
@@ -329,6 +341,18 @@ export const conversationMessage = pgTable(
 			table.clientNonce,
 		),
 		index("conversation_message_organization_idx").on(table.organizationId),
+		// The main timeline reads roots; the thread reads one root's replies.
+		index("conversation_message_thread_idx").on(
+			table.conversationId,
+			table.parentId,
+			table.createdAt,
+			table.id,
+		),
+		// A message can never be its own parent.
+		check(
+			"conversation_message_parent_check",
+			sql`${table.parentId} is null or ${table.parentId} <> ${table.id}`,
+		),
 		/**
 		 * In conversation search.
 		 *
@@ -370,6 +394,90 @@ export const conversationMessage = pgTable(
 			to: appRole,
 			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)
 				and ${table.authorId} = current_setting('app.current_user_id', true)`,
+		}),
+	],
+).enableRLS();
+
+/**
+ * One person's read cursor for one message thread.
+ *
+ * Why a cursor per thread and not only per conversation: a reply lands inside
+ * its root's thread. If the conversation cursor covered replies as well, a
+ * person who opened the conversation but never opened a thread would mark its
+ * replies read. The comment surface already solves this with a cursor per
+ * thread root, and the messaging surface follows the same rule.
+ *
+ * Rows are readable by the workspace, like participant rows, so the other
+ * participant can show a "Seen" marker for a thread. Writes are self only:
+ * nobody can mark a thread read on someone else's behalf.
+ */
+export const conversationThreadRead = pgTable(
+	"conversation_thread_read",
+	{
+		id: text("id").primaryKey(),
+		organizationId: text("organization_id")
+			.notNull()
+			.references(() => organization.id, { onDelete: "cascade" }),
+		conversationId: text("conversation_id")
+			.notNull()
+			.references(() => conversation.id, { onDelete: "cascade" }),
+		rootMessageId: text("root_message_id")
+			.notNull()
+			.references(() => conversationMessage.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		lastReadAt: timestamp("last_read_at").notNull().defaultNow(),
+		lastReadMessageId: text("last_read_message_id").references(
+			() => conversationMessage.id,
+			{ onDelete: "set null" },
+		),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+		updatedAt: timestamp("updated_at")
+			.defaultNow()
+			.$onUpdate(() => /* @__PURE__ */ new Date())
+			.notNull(),
+	},
+	(table) => [
+		// The conflict target for the monotonic upsert.
+		uniqueIndex("conversation_thread_read_root_user_idx").on(
+			table.rootMessageId,
+			table.userId,
+		),
+		// The conversation list and the thread receipt read one person's cursors.
+		index("conversation_thread_read_user_conversation_idx").on(
+			table.userId,
+			table.conversationId,
+		),
+		index("conversation_thread_read_organization_idx").on(table.organizationId),
+		pgPolicy("conversation_thread_read_select", {
+			as: "permissive",
+			for: "select",
+			to: appRole,
+			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)`,
+		}),
+		pgPolicy("conversation_thread_read_insert", {
+			as: "permissive",
+			for: "insert",
+			to: appRole,
+			withCheck: sql`${table.organizationId} = current_setting('app.current_org_id', true)
+				and ${table.userId} = current_setting('app.current_user_id', true)`,
+		}),
+		pgPolicy("conversation_thread_read_update", {
+			as: "permissive",
+			for: "update",
+			to: appRole,
+			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)
+				and ${table.userId} = current_setting('app.current_user_id', true)`,
+			withCheck: sql`${table.organizationId} = current_setting('app.current_org_id', true)
+				and ${table.userId} = current_setting('app.current_user_id', true)`,
+		}),
+		pgPolicy("conversation_thread_read_delete", {
+			as: "permissive",
+			for: "delete",
+			to: appRole,
+			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)
+				and ${table.userId} = current_setting('app.current_user_id', true)`,
 		}),
 	],
 ).enableRLS();

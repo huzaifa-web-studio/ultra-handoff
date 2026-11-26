@@ -9,16 +9,26 @@
 
 import { describe, expect, it } from "bun:test";
 
-import type { ConversationSummary, Message } from "./api";
+import type {
+	ConversationSummary,
+	Message,
+	ThreadReply,
+	ThreadRoot,
+} from "./api";
 import {
 	appendMessage,
+	appendThreadReply,
 	type ConversationPages,
 	flattenConversations,
 	type MessagePages,
 	replaceMessage,
+	replaceThreadReply,
+	type ThreadPages,
 	withConversationActivity,
 	withConversationUnread,
 	withCounterpartRead,
+	withRootReplyCount,
+	withThreadCounterpartRead,
 } from "./cache";
 
 /** One message with the fields a cache patch touches. */
@@ -26,6 +36,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
 	return {
 		id: "message-1",
 		conversationId: "conversation-1",
+		parentId: null,
 		body: [{ type: "p", children: [{ text: "hello" }] }],
 		author: {
 			id: "user-1",
@@ -39,6 +50,8 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
 		deletedAt: null,
 		canEdit: true,
 		canDelete: true,
+		replyCount: 0,
+		unreadReplyCount: 0,
 		...overrides,
 	};
 }
@@ -83,6 +96,64 @@ function messagePages(messages: Message[]): MessagePages {
 				messages,
 				nextCursor: null,
 				hasNewer: false,
+				counterpartRead: null,
+			},
+		],
+		pageParams: [null],
+	};
+}
+
+/** One thread reply, without the root only reply summary. */
+function makeThreadReply(overrides: Partial<ThreadReply> = {}): ThreadReply {
+	return {
+		id: "reply-1",
+		conversationId: "conversation-1",
+		parentId: "root-1",
+		body: [{ type: "p", children: [{ text: "a reply" }] }],
+		author: {
+			id: "user-2",
+			name: "Bilal",
+			image: null,
+			isMember: true,
+		},
+		createdAt: "2026-01-01T10:05:00.000Z",
+		updatedAt: "2026-01-01T10:05:00.000Z",
+		editedAt: null,
+		deletedAt: null,
+		canEdit: false,
+		canDelete: false,
+		...overrides,
+	};
+}
+
+/** One thread root. */
+function makeThreadRoot(overrides: Partial<ThreadRoot> = {}): ThreadRoot {
+	return {
+		...makeThreadReply({ parentId: null }),
+		id: "root-1",
+		author: {
+			id: "user-1",
+			name: "Ayesha",
+			image: null,
+			isMember: true,
+		},
+		createdAt: "2026-01-01T10:00:00.000Z",
+		updatedAt: "2026-01-01T10:00:00.000Z",
+		...overrides,
+	};
+}
+
+function threadPages(
+	replies: ThreadReply[],
+	root: ThreadRoot = makeThreadRoot(),
+): ThreadPages {
+	return {
+		pages: [
+			{
+				root,
+				replies,
+				nextCursor: null,
+				threadRead: { lastReadAt: null, lastReadMessageId: null },
 				counterpartRead: null,
 			},
 		],
@@ -336,5 +407,104 @@ describe("flattenConversations", () => {
 			"conversation-1",
 			"conversation-2",
 		]);
+	});
+});
+
+describe("appendThreadReply", () => {
+	it("appends a reply to the newest reply page", () => {
+		const pages = threadPages([makeThreadReply()]);
+		const next = appendThreadReply(
+			pages,
+			makeThreadReply({
+				id: "reply-2",
+				createdAt: "2026-01-01T10:10:00.000Z",
+			}),
+		);
+
+		expect(next?.pages[0]?.replies.map((reply) => reply.id)).toEqual([
+			"reply-1",
+			"reply-2",
+		]);
+	});
+
+	it("is idempotent for a replayed reply", () => {
+		const pages = threadPages([makeThreadReply()]);
+		const next = appendThreadReply(pages, makeThreadReply());
+
+		expect(next).toBe(pages);
+	});
+});
+
+describe("replaceThreadReply", () => {
+	it("replaces a reply in place", () => {
+		const pages = threadPages([
+			makeThreadReply({ id: "reply-1" }),
+			makeThreadReply({
+				id: "reply-2",
+				createdAt: "2026-01-01T10:10:00.000Z",
+			}),
+		]);
+		const next = replaceThreadReply(
+			pages,
+			makeThreadReply({
+				id: "reply-1",
+				deletedAt: "2026-01-01T11:00:00.000Z",
+				body: [],
+			}),
+		);
+
+		expect(next?.pages[0]?.replies[0]?.deletedAt).toBe(
+			"2026-01-01T11:00:00.000Z",
+		);
+		expect(next?.pages[0]?.replies[1]?.id).toBe("reply-2");
+	});
+});
+
+describe("withRootReplyCount", () => {
+	it("increments the reply and unread reply counts", () => {
+		const pages = messagePages([
+			makeMessage({ replyCount: 1, unreadReplyCount: 0 }),
+		]);
+		const next = withRootReplyCount(pages, "message-1", {
+			replyDelta: 1,
+			unreadDelta: 1,
+		});
+
+		expect(next?.pages[0]?.messages[0]?.replyCount).toBe(2);
+		expect(next?.pages[0]?.messages[0]?.unreadReplyCount).toBe(1);
+	});
+
+	it("clears the unread reply count", () => {
+		const pages = messagePages([
+			makeMessage({ replyCount: 3, unreadReplyCount: 2 }),
+		]);
+		const next = withRootReplyCount(pages, "message-1", {
+			clearUnread: true,
+		});
+
+		expect(next?.pages[0]?.messages[0]?.unreadReplyCount).toBe(0);
+	});
+
+	it("returns the same pages for a root that is not loaded", () => {
+		const pages = messagePages([makeMessage()]);
+		const next = withRootReplyCount(pages, "missing", { replyDelta: 1 });
+
+		expect(next).toBe(pages);
+	});
+});
+
+describe("withThreadCounterpartRead", () => {
+	it("updates the receipt on every page", () => {
+		const pages = threadPages([]);
+		const next = withThreadCounterpartRead(pages, {
+			lastReadAt: "2026-01-01T12:00:00.000Z",
+			lastReadMessageId: "reply-9",
+		});
+
+		expect(
+			next?.pages.every(
+				(page) => page.counterpartRead?.lastReadMessageId === "reply-9",
+			),
+		).toBe(true);
 	});
 });

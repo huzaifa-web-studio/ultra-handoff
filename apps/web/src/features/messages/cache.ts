@@ -13,13 +13,18 @@
 
 import type { InfiniteData } from "@tanstack/react-query";
 import type {
+	ConversationMessage,
 	ConversationSummary,
 	ConversationsPage,
 	Message,
 	MessagePage,
+	ThreadPage,
+	ThreadReply,
+	ThreadRoot,
 } from "./api";
 
 export type MessagePages = InfiniteData<MessagePage, string | null>;
+export type ThreadPages = InfiniteData<ThreadPage, string | null>;
 export type ConversationPages = InfiniteData<ConversationsPage, string | null>;
 
 /** The activity fields a message event carries. */
@@ -31,8 +36,17 @@ export type ConversationActivity = {
 	lastMessagePreview: string;
 };
 
+/** A thread or conversation cursor. */
+export type ThreadCursor = {
+	lastReadAt: string | null;
+	lastReadMessageId: string | null;
+};
+
 /** Sort key matching the server: timestamp, then id. */
-function isBefore(first: Message, second: Message): boolean {
+function isBefore(
+	first: { id: string; createdAt: string },
+	second: { id: string; createdAt: string },
+): boolean {
 	if (first.createdAt !== second.createdAt) {
 		return first.createdAt < second.createdAt;
 	}
@@ -40,23 +54,31 @@ function isBefore(first: Message, second: Message): boolean {
 	return first.id < second.id;
 }
 
-/** Insert one message in order, skipping an id that is already present. */
+/** Insert one ordered row, skipping an id that is already present. */
+export function insertOrdered<T extends { id: string; createdAt: string }>(
+	items: T[],
+	item: T,
+): T[] {
+	if (items.some((existing) => existing.id === item.id)) return items;
+
+	const next = [...items];
+	const index = next.findIndex((existing) => isBefore(item, existing));
+
+	if (index < 0) {
+		next.push(item);
+	} else {
+		next.splice(index, 0, item);
+	}
+
+	return next;
+}
+
+/** Insert one root message in order. */
 export function insertMessage(
 	messages: Message[],
 	message: Message,
 ): Message[] {
-	if (messages.some((item) => item.id === message.id)) return messages;
-
-	const next = [...messages];
-	const index = next.findIndex((item) => isBefore(message, item));
-
-	if (index < 0) {
-		next.push(message);
-	} else {
-		next.splice(index, 0, message);
-	}
-
-	return next;
+	return insertOrdered(messages, message);
 }
 
 /** Append one message to the newest page. */
@@ -124,6 +146,148 @@ export function newestMessage(pages: MessagePages | undefined): Message | null {
 	if (!newest || newest.messages.length === 0) return null;
 
 	return newest.messages[newest.messages.length - 1] ?? null;
+}
+
+/** Replace a root in place while keeping its reply summary. */
+export function replaceRootMessage(
+	pages: MessagePages | undefined,
+	message: ConversationMessage,
+): MessagePages | undefined {
+	if (!pages) return pages;
+
+	let changed = false;
+
+	const next = pages.pages.map((page) => {
+		const messages = page.messages.map((item) => {
+			if (item.id !== message.id) return item;
+
+			changed = true;
+
+			return {
+				...message,
+				replyCount: item.replyCount,
+				unreadReplyCount: item.unreadReplyCount,
+			};
+		});
+
+		return messages === page.messages ? page : { ...page, messages };
+	});
+
+	return changed ? { ...pages, pages: next } : pages;
+}
+
+/** Append one reply to the newest thread page. */ export function appendThreadReply(
+	pages: ThreadPages | undefined,
+	reply: ThreadReply,
+): ThreadPages | undefined {
+	if (!pages || pages.pages.length === 0) return pages;
+
+	const [newest, ...rest] = pages.pages;
+	const replies = insertOrdered(newest.replies, reply);
+
+	if (replies === newest.replies) return pages;
+
+	return {
+		...pages,
+		pages: [{ ...newest, replies }, ...rest],
+	};
+}
+
+/** Replace one thread reply in place. */
+export function replaceThreadReply(
+	pages: ThreadPages | undefined,
+	reply: ThreadReply,
+): ThreadPages | undefined {
+	if (!pages) return pages;
+
+	let changed = false;
+
+	const next = pages.pages.map((page) => {
+		const replies = page.replies.map((item) => {
+			if (item.id !== reply.id) return item;
+
+			changed = true;
+
+			return reply;
+		});
+
+		return replies === page.replies ? page : { ...page, replies };
+	});
+
+	return changed ? { ...pages, pages: next } : pages;
+}
+
+/** Update the viewer's thread cursor. */
+export function withThreadRead(
+	pages: ThreadPages | undefined,
+	cursor: ThreadCursor,
+): ThreadPages | undefined {
+	if (!pages) return pages;
+
+	return {
+		...pages,
+		pages: pages.pages.map((page) => ({ ...page, threadRead: cursor })),
+	};
+}
+
+/** Update the other participant's thread cursor for the receipt. */
+export function withThreadCounterpartRead(
+	pages: ThreadPages | undefined,
+	cursor: ThreadCursor,
+): ThreadPages | undefined {
+	if (!pages) return pages;
+
+	return {
+		...pages,
+		pages: pages.pages.map((page) => ({ ...page, counterpartRead: cursor })),
+	};
+}
+
+/** The newest item in a thread, a reply or the root. */
+export function newestThreadItem(
+	pages: ThreadPages | undefined,
+): ThreadReply | ThreadRoot | null {
+	const newest = pages?.pages[0];
+
+	if (!newest) return null;
+
+	return newest.replies[newest.replies.length - 1] ?? newest.root;
+}
+
+/**
+ * Update one root's reply count and unread reply count.
+ *
+ * Used by a realtime reply, a reply mutation and the read receipt. `clearUnread`
+ * wins over a delta so a thread read cannot leave a stale one behind.
+ */
+export function withRootReplyCount(
+	pages: MessagePages | undefined,
+	rootId: string,
+	options: { replyDelta?: number; unreadDelta?: number; clearUnread?: boolean },
+): MessagePages | undefined {
+	if (!pages) return pages;
+
+	let changed = false;
+
+	const next = pages.pages.map((page) => {
+		const messages = page.messages.map((message) => {
+			if (message.id !== rootId) return message;
+
+			changed = true;
+
+			return {
+				...message,
+				replyCount: Math.max(0, message.replyCount + (options.replyDelta ?? 0)),
+				unreadReplyCount: options.clearUnread
+					? 0
+					: Math.max(0, message.unreadReplyCount + (options.unreadDelta ?? 0)),
+			};
+		});
+
+		return messages === page.messages ? page : { ...page, messages };
+	});
+
+	return changed ? { ...pages, pages: next } : pages;
 }
 
 /** Read every loaded conversation without duplicates across pages. */

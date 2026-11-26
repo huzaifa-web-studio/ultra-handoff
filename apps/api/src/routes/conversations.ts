@@ -25,15 +25,18 @@ import {
 import type { RealtimeEventType } from "../realtime/protocol";
 import {
 	type ConversationListQuery,
+	type ConversationReadResult,
 	createConversationMessage,
 	deleteConversationMessage,
 	editConversationMessage,
 	getConversation,
 	listContacts,
-	listConversationMessages,
+	listConversationRoots,
 	listConversations,
+	listThreadReplies,
 	type MessagePageQuery,
 	markConversationRead,
+	markThreadRead,
 	openDirectConversation,
 	searchConversationMessages,
 } from "../services/conversation";
@@ -52,6 +55,13 @@ const messageParams = t.Object({
 	messageId: t.String({ minLength: 1, maxLength: 64 }),
 });
 
+/** One thread inside a conversation. */
+const threadParams = t.Object({
+	orgSlug: t.String({ minLength: 1, maxLength: 255 }),
+	conversationId: t.String({ minLength: 1, maxLength: 64 }),
+	rootId: t.String({ minLength: 1, maxLength: 64 }),
+});
+
 const listQuery = t.Object({
 	cursor: t.Optional(t.String({ maxLength: 200 })),
 	limit: t.Optional(t.String()),
@@ -60,6 +70,12 @@ const listQuery = t.Object({
 const pageQuery = t.Object({
 	before: t.Optional(t.String({ maxLength: 64 })),
 	after: t.Optional(t.String({ maxLength: 64 })),
+	around: t.Optional(t.String({ maxLength: 64 })),
+	limit: t.Optional(t.String()),
+});
+
+const threadQuery = t.Object({
+	before: t.Optional(t.String({ maxLength: 64 })),
 	around: t.Optional(t.String({ maxLength: 64 })),
 	limit: t.Optional(t.String()),
 });
@@ -121,6 +137,23 @@ function parsePageQuery(query: {
 	};
 }
 
+/** One thread page. A thread has no forward cursor, only older replies. */
+function parseThreadQuery(query: {
+	before?: string;
+	around?: string;
+	limit?: string;
+}): MessagePageQuery {
+	const before = query.before ?? null;
+	const around = before ? null : (query.around ?? null);
+
+	return {
+		before,
+		after: null,
+		around,
+		limit: clampLimit(query.limit, 40, 60),
+	};
+}
+
 /**
  * Publish one conversation event to each participant.
  *
@@ -139,6 +172,27 @@ function publishToParticipants(
 			() => undefined,
 		);
 	}
+}
+
+/** Publish one cursor move, conversation or thread. */
+function publishRead(
+	tenant: { organizationId: string; userId: string },
+	result: ConversationReadResult,
+): void {
+	const payload: ConversationReadPayload = {
+		conversationId: result.conversationId,
+		threadRootId: result.threadRootId,
+		userId: tenant.userId,
+		lastReadAt: result.lastReadAt,
+		lastReadMessageId: result.lastReadMessageId,
+	};
+
+	publishToParticipants(
+		tenant.organizationId,
+		result.participantIds,
+		"conversation.read",
+		payload,
+	);
 }
 
 export const conversationRoutes = new Elysia({ name: "conversations" })
@@ -221,12 +275,12 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 		},
 		{ tenant: true, params: conversationParams },
 	)
-	/** One page of messages, oldest first inside the page. */
+	/** One page of root messages, oldest first inside the page. */
 	.get(
 		"/orgs/:orgSlug/conversations/:conversationId/messages",
 		async ({ tenant, status, params, query }) => {
 			try {
-				return await listConversationMessages(
+				return await listConversationRoots(
 					tenant,
 					params.conversationId,
 					parsePageQuery(query),
@@ -238,6 +292,25 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 			}
 		},
 		{ tenant: true, params: conversationParams, query: pageQuery },
+	)
+	/** One complete thread, root and a page of replies. */
+	.get(
+		"/orgs/:orgSlug/conversations/:conversationId/threads/:rootId",
+		async ({ tenant, status, params, query }) => {
+			try {
+				return await listThreadReplies(
+					tenant,
+					params.conversationId,
+					params.rootId,
+					parseThreadQuery(query),
+				);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not load the thread."),
+				});
+			}
+		},
+		{ tenant: true, params: threadParams, query: threadQuery },
 	)
 	/** Search inside one conversation. */
 	.get(
@@ -302,6 +375,9 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 			body: t.Object({
 				body: bodyField,
 				clientNonce: t.String({ minLength: 1, maxLength: 64 }),
+				parentId: t.Optional(
+					t.Union([t.String({ minLength: 1, maxLength: 64 }), t.Null()]),
+				),
 			}),
 		},
 	)
@@ -391,19 +467,7 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 					body.messageId,
 				);
 
-				const payload: ConversationReadPayload = {
-					conversationId: result.conversationId,
-					userId: tenant.userId,
-					lastReadAt: result.lastReadAt,
-					lastReadMessageId: result.lastReadMessageId,
-				};
-
-				publishToParticipants(
-					tenant.organizationId,
-					result.participantIds,
-					"conversation.read",
-					payload,
-				);
+				publishRead(tenant, result);
 
 				return {
 					conversationId: result.conversationId,
@@ -420,6 +484,46 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 		{
 			tenant: true,
 			params: conversationParams,
+			body: t.Object({
+				messageId: t.String({ minLength: 1, maxLength: 64 }),
+			}),
+		},
+	)
+	/**
+	 * Move one thread's read cursor.
+	 *
+	 * A thread cursor is separate from the conversation cursor, so opening the
+	 * conversation never marks replies read.
+	 */
+	.post(
+		"/orgs/:orgSlug/conversations/:conversationId/threads/:rootId/read",
+		async ({ tenant, status, params, body }) => {
+			try {
+				const result = await markThreadRead(
+					tenant,
+					params.conversationId,
+					params.rootId,
+					body.messageId,
+				);
+
+				publishRead(tenant, result);
+
+				return {
+					conversationId: result.conversationId,
+					threadRootId: result.threadRootId,
+					lastReadAt: result.lastReadAt,
+					lastReadMessageId: result.lastReadMessageId,
+					unread: result.unread,
+				};
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not update the read state."),
+				});
+			}
+		},
+		{
+			tenant: true,
+			params: threadParams,
 			body: t.Object({
 				messageId: t.String({ minLength: 1, maxLength: 64 }),
 			}),

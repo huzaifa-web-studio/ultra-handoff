@@ -17,11 +17,7 @@ import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
 import { and, eq } from "drizzle-orm";
 
-import {
-	conversation,
-	conversationMessage,
-	conversationParticipant,
-} from "../../db/schema";
+import { conversation, conversationMessage } from "../../db/schema";
 import { withTenant } from "../../db/tenant";
 import { notificationPreview } from "../../lib/notifications";
 import { sanitizeCommentBody } from "../../lib/rich-text";
@@ -31,10 +27,13 @@ import {
 	allowMessageRate,
 	assertRecipientMember,
 	loadMessageByNonce,
+	loadMessageRecord,
 	loadPeople,
+	type MessageRecord,
 	requireConversation,
 	toMessageRow,
 } from "./access";
+import { advanceConversationCursor, advanceThreadCursor } from "./cursors";
 import { upsertDirectMessageNotification } from "./notify";
 import type {
 	ConversationMessageResult,
@@ -61,6 +60,7 @@ export async function createConversationMessage(
 ): Promise<CreateMessageResult> {
 	const body = sanitizeCommentBody(input.body);
 	const clientNonce = input.clientNonce.trim();
+	const parentId = input.parentId?.trim() || null;
 
 	if (clientNonce.length === 0 || clientNonce.length > 64) {
 		throw new APIError("BAD_REQUEST", {
@@ -95,12 +95,44 @@ export async function createConversationMessage(
 			// receive a new message.
 			await assertRecipientMember(tenant.organizationId, recipient.userId);
 
+			/*
+			 * Resolve the reply target before the insert.
+			 *
+			 * One level only, the same rule comments use. A reply to a reply would
+			 * make the thread a tree, which the thread view does not render.
+			 */
+			let parent: MessageRecord | null = null;
+
+			if (parentId) {
+				parent = await loadMessageRecord(tx, tenant, conversationId, parentId);
+
+				if (!parent) {
+					throw new APIError("NOT_FOUND", {
+						message: "The message you replied to no longer exists.",
+					});
+				}
+
+				if (parent.deletedAt !== null) {
+					throw new APIError("BAD_REQUEST", {
+						message: "You cannot reply to a deleted message.",
+					});
+				}
+
+				if (parent.parentId !== null) {
+					throw new APIError("BAD_REQUEST", {
+						message:
+							"Replies are one level deep. Reply to the first message instead.",
+					});
+				}
+			}
+
 			const inserted = await tx
 				.insert(conversationMessage)
 				.values({
 					id: randomUUID(),
 					organizationId: tenant.organizationId,
 					conversationId,
+					parentId,
 					authorId: tenant.userId,
 					body: body.value,
 					bodyText: body.text,
@@ -145,21 +177,37 @@ export async function createConversationMessage(
 						),
 					);
 
-				// Sending is reading. The sender's own message can never be unread
-				// to them, and this keeps the sidebar honest across devices.
-				await tx
-					.update(conversationParticipant)
-					.set({
-						lastReadAt: record.createdAt,
-						lastReadMessageId: record.id,
-					})
-					.where(
-						and(
-							eq(conversationParticipant.organizationId, tenant.organizationId),
-							eq(conversationParticipant.conversationId, conversationId),
-							eq(conversationParticipant.userId, tenant.userId),
-						),
+				/*
+				 * Sending is reading. The sender's own message can never be unread
+				 * to them, and this keeps the sidebar honest across devices.
+				 *
+				 * A reply advances its thread cursor. It also advances the
+				 * conversation cursor to the parent root, because replying means
+				 * the root was read. Both writes copy the exact stored timestamp,
+				 * never a JavaScript Date.
+				 */
+				if (parentId && parent) {
+					await advanceThreadCursor(
+						tx,
+						tenant,
+						conversationId,
+						parentId,
+						record.id,
 					);
+					await advanceConversationCursor(
+						tx,
+						tenant,
+						conversationId,
+						parent.id,
+					);
+				} else {
+					await advanceConversationCursor(
+						tx,
+						tenant,
+						conversationId,
+						record.id,
+					);
+				}
 			}
 
 			const people = await loadPeople(tenant.organizationId, [tenant.userId]);

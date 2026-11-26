@@ -19,6 +19,7 @@ import {
 	conversation,
 	conversationMessage,
 	conversationParticipant,
+	conversationThreadRead,
 } from "../../db/schema";
 import type { TenantTx } from "../../db/tenant";
 import { withTenant } from "../../db/tenant";
@@ -95,8 +96,36 @@ export function buildConversationSummary(input: {
 	};
 }
 
-/** One page of conversations, newest activity first. */
-export async function listConversations(
+/**
+ * Unread condition shared by the list, the badge and the bell.
+ *
+ * A root is unread when it is after the conversation cursor. A reply is unread
+ * when it is after its thread cursor, or when the thread has never been opened,
+ * so a reply never becomes read just because the conversation was opened.
+ *
+ * The caller joins `conversation_participant` for the viewer and left joins
+ * `conversation_thread_read` on the reply's root, or on the root itself.
+ */
+function unreadMessageCondition() {
+	return sql`(
+		(${conversationMessage.parentId} is null and (
+			(${conversationMessage.createdAt}, ${conversationMessage.id}) > (
+				${conversationParticipant.lastReadAt},
+				coalesce(${conversationParticipant.lastReadMessageId}, '')
+			)
+		))
+		or
+		(${conversationMessage.parentId} is not null and (
+			${conversationThreadRead.id} is null
+			or (${conversationMessage.createdAt}, ${conversationMessage.id}) > (
+				${conversationThreadRead.lastReadAt},
+				coalesce(${conversationThreadRead.lastReadMessageId}, '')
+			)
+		))
+	)`;
+}
+
+/** One page of conversations, newest activity first. */ export async function listConversations(
 	tenant: TenantContext,
 	query: ConversationListQuery,
 ): Promise<ConversationListResult> {
@@ -160,10 +189,20 @@ export async function listConversations(
 			 *
 			 * A stored counter would have to be written by the sender into the
 			 * recipient's row, which the self-only participant update policy
-			 * forbids. The range read below is exact, drift free, and bounded by
-			 * the message index. The prefilter skips a conversation whose newest
-			 * message is already read, so fully read chats cost no message scan.
+			 * forbids. The range read below is exact and drift free.
+			 *
+			 * A root is unread after the conversation cursor. A reply is unread
+			 * after its thread cursor, so opening the conversation never marks a
+			 * thread read.
 			 */
+			const threadJoin = and(
+				eq(
+					conversationThreadRead.rootMessageId,
+					sql`coalesce(${conversationMessage.parentId}, ${conversationMessage.id})`,
+				),
+				eq(conversationThreadRead.userId, tenant.userId),
+			);
+
 			const unreadRows =
 				ids.length > 0
 					? await tx
@@ -182,21 +221,14 @@ export async function listConversations(
 									eq(conversationParticipant.userId, tenant.userId),
 								),
 							)
-							.innerJoin(
-								conversation,
-								eq(conversation.id, conversationMessage.conversationId),
-							)
+							.leftJoin(conversationThreadRead, threadJoin)
 							.where(
 								and(
 									eq(conversationMessage.organizationId, tenant.organizationId),
 									inArray(conversationMessage.conversationId, ids),
-									sql`${conversation.lastMessageAt} > ${conversationParticipant.lastReadAt}`,
 									isNull(conversationMessage.deletedAt),
 									sql`${conversationMessage.authorId} is distinct from ${tenant.userId}`,
-									sql`(${conversationMessage.createdAt}, ${conversationMessage.id}) > (
-										${conversationParticipant.lastReadAt},
-										coalesce(${conversationParticipant.lastReadMessageId}, '')
-									)`,
+									unreadMessageCondition(),
 								),
 							)
 							.groupBy(conversationMessage.conversationId)
@@ -223,6 +255,7 @@ export async function listConversations(
 						eq(conversationParticipant.userId, tenant.userId),
 					),
 				)
+				.leftJoin(conversationThreadRead, threadJoin)
 				.innerJoin(
 					conversation,
 					eq(conversation.id, conversationMessage.conversationId),
@@ -231,13 +264,9 @@ export async function listConversations(
 					and(
 						eq(conversationMessage.organizationId, tenant.organizationId),
 						isNotNull(conversation.lastMessageAt),
-						sql`${conversation.lastMessageAt} > ${conversationParticipant.lastReadAt}`,
 						isNull(conversationMessage.deletedAt),
 						sql`${conversationMessage.authorId} is distinct from ${tenant.userId}`,
-						sql`(${conversationMessage.createdAt}, ${conversationMessage.id}) > (
-							${conversationParticipant.lastReadAt},
-							coalesce(${conversationParticipant.lastReadMessageId}, '')
-						)`,
+						unreadMessageCondition(),
 					),
 				)
 				.groupBy(conversationMessage.conversationId);
@@ -322,16 +351,23 @@ export async function countConversationUnread(
 				eq(conversationParticipant.userId, tenant.userId),
 			),
 		)
+		.leftJoin(
+			conversationThreadRead,
+			and(
+				eq(
+					conversationThreadRead.rootMessageId,
+					sql`coalesce(${conversationMessage.parentId}, ${conversationMessage.id})`,
+				),
+				eq(conversationThreadRead.userId, tenant.userId),
+			),
+		)
 		.where(
 			and(
 				eq(conversationMessage.organizationId, tenant.organizationId),
 				eq(conversationMessage.conversationId, conversationId),
 				isNull(conversationMessage.deletedAt),
 				sql`${conversationMessage.authorId} is distinct from ${tenant.userId}`,
-				sql`(${conversationMessage.createdAt}, ${conversationMessage.id}) > (
-					${conversationParticipant.lastReadAt},
-					coalesce(${conversationParticipant.lastReadMessageId}, '')
-				)`,
+				unreadMessageCondition(),
 			),
 		);
 

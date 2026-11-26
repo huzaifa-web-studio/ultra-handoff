@@ -9,7 +9,7 @@
  * renderer.
  *
  * Behaviour:
- *   - Enter inserts a line break, Shift+Enter sends, matching comments
+ *   - Enter sends, Shift+Enter inserts a line break, which is the chat contract
  *   - the draft is persisted per conversation, so a reload or a tab switch does
  *     not lose it
  *   - a failed send keeps the draft and offers a retry
@@ -38,6 +38,12 @@ export function MessageComposer({
 	conversationId,
 	onSend,
 	onTyping,
+	placeholder = "Write a message...",
+	ariaLabel = "Write a message",
+	draftId,
+	autoFocus = false,
+	focusToken = 0,
+	minHeightClass = "min-h-16",
 }: {
 	orgSlug: string;
 	conversationId: string;
@@ -45,10 +51,20 @@ export function MessageComposer({
 	onSend: (body: unknown[]) => Promise<void>;
 	/** Called on every change, for the throttled typing frame. */
 	onTyping?: () => void;
+	placeholder?: string;
+	ariaLabel?: string;
+	/** Draft scope. Defaults to the conversation, set per thread otherwise. */
+	draftId?: string;
+	/** Focus the editor when it first mounts. */
+	autoFocus?: boolean;
+	/** Bumped by the parent to focus an already mounted editor. */
+	focusToken?: number;
+	/** Editor height, so the panel composer can be shorter than the main one. */
+	minHeightClass?: string;
 }) {
 	const { data: activeOrg } = authClient.useActiveOrganization();
 	const organizationId = activeOrg?.id ?? "";
-	const draftKey = draftStorageKey(orgSlug, conversationId);
+	const draftKey = draftStorageKey(orgSlug, draftId ?? conversationId);
 
 	const [draft, setDraft] = useState<unknown[]>(() => readDraft(draftKey));
 	// Bumped after a successful send to remount the editor with an empty value.
@@ -107,15 +123,17 @@ export function MessageComposer({
 					initialValue={draft}
 					onChange={handleChange}
 					onSubmit={() => void submit()}
-					autoFocus={focusAfterPost}
+					autoFocus={autoFocus || focusAfterPost}
+					focusToken={focusToken}
 					readOnly={sending}
-					minHeightClass="min-h-12"
+					minHeightClass={minHeightClass}
 					organizationId={organizationId}
 					organizationSlug={orgSlug}
 					mentionsEnabled={false}
+					submitOnEnter
 					onUploadingChange={setUploading}
-					ariaLabel="Write a message"
-					placeholder="Write a message..."
+					ariaLabel={ariaLabel}
+					placeholder={placeholder}
 					footer={
 						<div className="flex flex-wrap items-center justify-between gap-2 border-t border-app-border px-1.5 py-1">
 							<CommentToolbar
@@ -142,6 +160,7 @@ export function MessageComposer({
 									size="sm"
 									loading={sending}
 									isDisabled={!canSend}
+									aria-label="Send message"
 									onPress={() => void submit()}
 								>
 									<SendIcon aria-hidden />

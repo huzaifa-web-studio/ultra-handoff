@@ -19,6 +19,7 @@ import {
 	conversation,
 	conversationMessage,
 	conversationParticipant,
+	conversationThreadRead,
 } from "../../db/schema";
 import type { TenantScope, TenantTx } from "../../db/tenant";
 import { consumeRateLimit } from "../../lib/rate-limit";
@@ -32,6 +33,7 @@ import type {
 	ConversationMessageRow,
 	ConversationParticipantView,
 	ConversationScope,
+	ConversationThreadReadState,
 } from "./types";
 
 /** Most messages one person may send per minute. */
@@ -298,6 +300,58 @@ export async function loadMessageByNonce(
 	return record ?? null;
 }
 
+/** Read a person's cursor for one thread. Missing means nothing is read. */
+export async function loadThreadRead(
+	tx: TenantTx,
+	tenant: TenantContext,
+	conversationId: string,
+	rootId: string,
+	userId: string,
+): Promise<ConversationThreadReadState> {
+	const [row] = await tx
+		.select({
+			lastReadAt: conversationThreadRead.lastReadAt,
+			lastReadMessageId: conversationThreadRead.lastReadMessageId,
+		})
+		.from(conversationThreadRead)
+		.where(
+			and(
+				eq(conversationThreadRead.organizationId, tenant.organizationId),
+				eq(conversationThreadRead.conversationId, conversationId),
+				eq(conversationThreadRead.rootMessageId, rootId),
+				eq(conversationThreadRead.userId, userId),
+			),
+		)
+		.limit(1);
+
+	return {
+		lastReadAt: row ? row.lastReadAt.toISOString() : null,
+		lastReadMessageId: row?.lastReadMessageId ?? null,
+	};
+}
+
+/** Read a participant row for one person, or null. */
+export async function loadParticipant(
+	tx: TenantTx,
+	tenant: TenantContext,
+	conversationId: string,
+	userId: string,
+): Promise<ParticipantRecord | null> {
+	const [row] = await tx
+		.select()
+		.from(conversationParticipant)
+		.where(
+			and(
+				eq(conversationParticipant.organizationId, tenant.organizationId),
+				eq(conversationParticipant.conversationId, conversationId),
+				eq(conversationParticipant.userId, userId),
+			),
+		)
+		.limit(1);
+
+	return row ?? null;
+}
+
 /** Load the display names and membership state for a set of people. */ export async function loadPeople(
 	organizationId: string,
 	userIds: (string | null)[],
@@ -359,6 +413,7 @@ export function toMessageRow(
 	return {
 		id: record.id,
 		conversationId: record.conversationId,
+		parentId: record.parentId,
 		body: deleted ? [] : record.body,
 		author: record.authorId
 			? {

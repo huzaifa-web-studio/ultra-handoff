@@ -1,21 +1,24 @@
 "use client";
 
 /**
- * The message thread.
+ * The message timeline.
  *
  * Why it owns scrolling: a chat has three scroll rules that must agree. Opening
  * lands at the newest message, a new message follows the tail only when the
  * reader is already there, and loading an older page keeps the viewport on the
  * same message instead of jumping.
  *
- * Day dividers use the shared date helpers, so a chat reads the same as a
- * comment thread.
+ * Messages are grouped by author and day, the way a chat transcript reads. The
+ * first row of a group carries the avatar, name and time, and the rows under it
+ * drop the repeated header. Day dividers use the shared date helpers, so a chat
+ * reads the same as a comment thread.
  *
  * Used by: conversation-view.tsx.
  */
 
 import { Button } from "@org/ui/components/button";
 import { ScrollArea } from "@org/ui/components/scroll-area";
+import { cn } from "cn";
 import { ArrowDownIcon, Loader2Icon } from "lucide-react";
 import {
 	Fragment,
@@ -33,6 +36,9 @@ import { MessageItem, type PendingMessage } from "./message-item";
 /** The distance from the bottom that still counts as "at the bottom". */
 const BOTTOM_SLACK_PX = 56;
 
+/** A run of messages from one author is grouped for this long. */
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
 export function MessageList({
 	messages,
 	pending,
@@ -44,6 +50,9 @@ export function MessageList({
 	loadingOlder,
 	onLoadOlder,
 	onRetryPending,
+	onReply,
+	onOpenThreadInNewTab,
+	activeThreadId,
 	highlightId,
 }: {
 	messages: Message[];
@@ -57,6 +66,12 @@ export function MessageList({
 	loadingOlder: boolean;
 	onLoadOlder: () => void;
 	onRetryPending: (nonce: string) => void;
+	/** Open the thread panel for a root and focus its composer. */
+	onReply: (message: Message) => void;
+	/** Open the dedicated thread view in a new browser tab. */
+	onOpenThreadInNewTab: (message: Message) => void;
+	/** The root whose thread panel is open. */
+	activeThreadId: string | null;
 	/** A search hit to scroll to and highlight. */
 	highlightId: string | null;
 }) {
@@ -140,9 +155,14 @@ export function MessageList({
 	return (
 		<div className="relative min-h-0 flex-1">
 			<ScrollArea ref={scrollRef} onScroll={handleScroll} className="h-full">
-				<div className="flex flex-col gap-4 p-4">
+				{/*
+				 * `justify-end` anchors a short history to the bottom of the pane,
+				 * right above the composer, which is where a chat starts. Once the
+				 * history is taller than the pane it scrolls normally.
+				 */}
+				<div className="flex min-h-full w-full flex-col justify-end py-3">
 					{hasOlder && (
-						<div className="flex justify-center">
+						<div className="flex justify-center pb-2">
 							<Button
 								variant="ghost"
 								size="sm"
@@ -177,31 +197,46 @@ export function MessageList({
 						const showDivider =
 							!previousHeading || previousHeading.key !== heading.key;
 
+						/*
+						 * A run from one author collapses only inside one day and only
+						 * while the rows are close together. A long silence restarts the
+						 * header, because the time is the useful piece of information
+						 * at that point.
+						 */
+						const grouped =
+							!showDivider &&
+							previous?.author?.id === message.author?.id &&
+							Math.abs(
+								new Date(message.createdAt).getTime() -
+									new Date(previous.createdAt).getTime(),
+							) < GROUP_WINDOW_MS;
+
 						return (
 							<Fragment key={message.id}>
 								{showDivider && (
-									<div className="flex items-center gap-3">
+									<div className="my-3 flex items-center gap-3 px-4">
 										<span className="h-px flex-1 bg-app-border" />
-										<span className="text-[0.65rem] font-medium tracking-wide text-app-text-muted uppercase">
+										<span className="text-[0.65rem] font-semibold tracking-wide text-app-text-muted uppercase">
 											{heading.label ?? heading.absolute}
 										</span>
 										<span className="h-px flex-1 bg-app-border" />
 									</div>
 								)}
 
-								<div
-									className={
-										highlightId === message.id
-											? "bg-app-selected/40 outline outline-app-focus"
-											: undefined
-									}
-								>
+								<div className={cn(!grouped && index > 0 && "mt-2")}>
 									<MessageItem
 										message={message}
 										viewerId={viewerId}
 										organizationId={organizationId}
 										organizationSlug={organizationSlug}
 										showSeen={seenMessageId === message.id}
+										replyCount={message.replyCount}
+										unreadReplyCount={message.unreadReplyCount}
+										grouped={grouped}
+										highlighted={highlightId === message.id}
+										repliesOpen={activeThreadId === message.id}
+										onReply={() => onReply(message)}
+										onOpenThread={() => onOpenThreadInNewTab(message)}
 									/>
 								</div>
 							</Fragment>

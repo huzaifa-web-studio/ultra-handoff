@@ -31,9 +31,11 @@ import { Route as AppOrgSlugProjectsProjectSlugRouteImport } from './routes/_app
 import { Route as AppOrgSlugSettingsIndexRouteImport } from './routes/_app/$orgSlug.settings.index'
 import { Route as AppOrgSlugSettingsInvitationsRouteImport } from './routes/_app/$orgSlug.settings.invitations'
 import { Route as AppOrgSlugSettingsMembersRouteImport } from './routes/_app/$orgSlug.settings.members'
+import { Route as AppOrgSlugMessagesConversationIdIndexRouteImport } from './routes/_app/$orgSlug.messages.$conversationId.index'
 import { Route as AppOrgSlugProjectsProjectSlugIndexRouteImport } from './routes/_app/$orgSlug.projects.$projectSlug.index'
 import { Route as AppOrgSlugProjectsProjectSlugMilestonesRouteImport } from './routes/_app/$orgSlug.projects.$projectSlug.milestones'
 import { Route as AppOrgSlugProjectsProjectSlugSettingsRouteImport } from './routes/_app/$orgSlug.projects.$projectSlug.settings'
+import { Route as AppOrgSlugMessagesConversationIdThreadsRootIdRouteImport } from './routes/_app/$orgSlug.messages.$conversationId.threads.$rootId'
 import { Route as AppOrgSlugProjectsProjectSlugSettingsIndexRouteImport } from './routes/_app/$orgSlug.projects.$projectSlug.settings.index'
 import { Route as AppOrgSlugProjectsProjectSlugSettingsMembersRouteImport } from './routes/_app/$orgSlug.projects.$projectSlug.settings.members'
 
@@ -150,6 +152,12 @@ const AppOrgSlugSettingsMembersRoute =
     path: '/members',
     getParentRoute: () => AppOrgSlugSettingsRoute,
   } as any)
+const AppOrgSlugMessagesConversationIdIndexRoute =
+  AppOrgSlugMessagesConversationIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppOrgSlugMessagesConversationIdRoute,
+  } as any)
 const AppOrgSlugProjectsProjectSlugIndexRoute =
   AppOrgSlugProjectsProjectSlugIndexRouteImport.update({
     id: '/',
@@ -167,6 +175,12 @@ const AppOrgSlugProjectsProjectSlugSettingsRoute =
     id: '/settings',
     path: '/settings',
     getParentRoute: () => AppOrgSlugProjectsProjectSlugRoute,
+  } as any)
+const AppOrgSlugMessagesConversationIdThreadsRootIdRoute =
+  AppOrgSlugMessagesConversationIdThreadsRootIdRouteImport.update({
+    id: '/threads/$rootId',
+    path: '/threads/$rootId',
+    getParentRoute: () => AppOrgSlugMessagesConversationIdRoute,
   } as any)
 const AppOrgSlugProjectsProjectSlugSettingsIndexRoute =
   AppOrgSlugProjectsProjectSlugSettingsIndexRouteImport.update({
@@ -195,7 +209,7 @@ export interface FileRoutesByFullPath {
   '/$orgSlug/projects': typeof AppOrgSlugProjectsRouteWithChildren
   '/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/$orgSlug/': typeof AppOrgSlugIndexRoute
-  '/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRoute
+  '/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRouteWithChildren
   '/$orgSlug/people/$userId': typeof AppOrgSlugPeopleUserIdRoute
   '/$orgSlug/projects/$projectSlug': typeof AppOrgSlugProjectsProjectSlugRouteWithChildren
   '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
@@ -205,7 +219,9 @@ export interface FileRoutesByFullPath {
   '/$orgSlug/settings/': typeof AppOrgSlugSettingsIndexRoute
   '/$orgSlug/projects/$projectSlug/milestones': typeof AppOrgSlugProjectsProjectSlugMilestonesRoute
   '/$orgSlug/projects/$projectSlug/settings': typeof AppOrgSlugProjectsProjectSlugSettingsRouteWithChildren
+  '/$orgSlug/messages/$conversationId/': typeof AppOrgSlugMessagesConversationIdIndexRoute
   '/$orgSlug/projects/$projectSlug/': typeof AppOrgSlugProjectsProjectSlugIndexRoute
+  '/$orgSlug/messages/$conversationId/threads/$rootId': typeof AppOrgSlugMessagesConversationIdThreadsRootIdRoute
   '/$orgSlug/projects/$projectSlug/settings/members': typeof AppOrgSlugProjectsProjectSlugSettingsMembersRoute
   '/$orgSlug/projects/$projectSlug/settings/': typeof AppOrgSlugProjectsProjectSlugSettingsIndexRoute
 }
@@ -219,7 +235,6 @@ export interface FileRoutesByTo {
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/$orgSlug/notifications': typeof AppOrgSlugNotificationsRoute
   '/$orgSlug': typeof AppOrgSlugIndexRoute
-  '/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRoute
   '/$orgSlug/people/$userId': typeof AppOrgSlugPeopleUserIdRoute
   '/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
   '/$orgSlug/settings/members': typeof AppOrgSlugSettingsMembersRoute
@@ -227,7 +242,9 @@ export interface FileRoutesByTo {
   '/$orgSlug/projects': typeof AppOrgSlugProjectsIndexRoute
   '/$orgSlug/settings': typeof AppOrgSlugSettingsIndexRoute
   '/$orgSlug/projects/$projectSlug/milestones': typeof AppOrgSlugProjectsProjectSlugMilestonesRoute
+  '/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdIndexRoute
   '/$orgSlug/projects/$projectSlug': typeof AppOrgSlugProjectsProjectSlugIndexRoute
+  '/$orgSlug/messages/$conversationId/threads/$rootId': typeof AppOrgSlugMessagesConversationIdThreadsRootIdRoute
   '/$orgSlug/projects/$projectSlug/settings/members': typeof AppOrgSlugProjectsProjectSlugSettingsMembersRoute
   '/$orgSlug/projects/$projectSlug/settings': typeof AppOrgSlugProjectsProjectSlugSettingsIndexRoute
 }
@@ -247,7 +264,7 @@ export interface FileRoutesById {
   '/_app/$orgSlug/projects': typeof AppOrgSlugProjectsRouteWithChildren
   '/_app/$orgSlug/settings': typeof AppOrgSlugSettingsRouteWithChildren
   '/_app/$orgSlug/': typeof AppOrgSlugIndexRoute
-  '/_app/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRoute
+  '/_app/$orgSlug/messages/$conversationId': typeof AppOrgSlugMessagesConversationIdRouteWithChildren
   '/_app/$orgSlug/people/$userId': typeof AppOrgSlugPeopleUserIdRoute
   '/_app/$orgSlug/projects/$projectSlug': typeof AppOrgSlugProjectsProjectSlugRouteWithChildren
   '/_app/$orgSlug/settings/invitations': typeof AppOrgSlugSettingsInvitationsRoute
@@ -257,7 +274,9 @@ export interface FileRoutesById {
   '/_app/$orgSlug/settings/': typeof AppOrgSlugSettingsIndexRoute
   '/_app/$orgSlug/projects/$projectSlug/milestones': typeof AppOrgSlugProjectsProjectSlugMilestonesRoute
   '/_app/$orgSlug/projects/$projectSlug/settings': typeof AppOrgSlugProjectsProjectSlugSettingsRouteWithChildren
+  '/_app/$orgSlug/messages/$conversationId/': typeof AppOrgSlugMessagesConversationIdIndexRoute
   '/_app/$orgSlug/projects/$projectSlug/': typeof AppOrgSlugProjectsProjectSlugIndexRoute
+  '/_app/$orgSlug/messages/$conversationId/threads/$rootId': typeof AppOrgSlugMessagesConversationIdThreadsRootIdRoute
   '/_app/$orgSlug/projects/$projectSlug/settings/members': typeof AppOrgSlugProjectsProjectSlugSettingsMembersRoute
   '/_app/$orgSlug/projects/$projectSlug/settings/': typeof AppOrgSlugProjectsProjectSlugSettingsIndexRoute
 }
@@ -287,7 +306,9 @@ export interface FileRouteTypes {
     | '/$orgSlug/settings/'
     | '/$orgSlug/projects/$projectSlug/milestones'
     | '/$orgSlug/projects/$projectSlug/settings'
+    | '/$orgSlug/messages/$conversationId/'
     | '/$orgSlug/projects/$projectSlug/'
+    | '/$orgSlug/messages/$conversationId/threads/$rootId'
     | '/$orgSlug/projects/$projectSlug/settings/members'
     | '/$orgSlug/projects/$projectSlug/settings/'
   fileRoutesByTo: FileRoutesByTo
@@ -301,7 +322,6 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/$orgSlug/notifications'
     | '/$orgSlug'
-    | '/$orgSlug/messages/$conversationId'
     | '/$orgSlug/people/$userId'
     | '/$orgSlug/settings/invitations'
     | '/$orgSlug/settings/members'
@@ -309,7 +329,9 @@ export interface FileRouteTypes {
     | '/$orgSlug/projects'
     | '/$orgSlug/settings'
     | '/$orgSlug/projects/$projectSlug/milestones'
+    | '/$orgSlug/messages/$conversationId'
     | '/$orgSlug/projects/$projectSlug'
+    | '/$orgSlug/messages/$conversationId/threads/$rootId'
     | '/$orgSlug/projects/$projectSlug/settings/members'
     | '/$orgSlug/projects/$projectSlug/settings'
   id:
@@ -338,7 +360,9 @@ export interface FileRouteTypes {
     | '/_app/$orgSlug/settings/'
     | '/_app/$orgSlug/projects/$projectSlug/milestones'
     | '/_app/$orgSlug/projects/$projectSlug/settings'
+    | '/_app/$orgSlug/messages/$conversationId/'
     | '/_app/$orgSlug/projects/$projectSlug/'
+    | '/_app/$orgSlug/messages/$conversationId/threads/$rootId'
     | '/_app/$orgSlug/projects/$projectSlug/settings/members'
     | '/_app/$orgSlug/projects/$projectSlug/settings/'
   fileRoutesById: FileRoutesById
@@ -509,6 +533,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSlugSettingsMembersRouteImport
       parentRoute: typeof AppOrgSlugSettingsRoute
     }
+    '/_app/$orgSlug/messages/$conversationId/': {
+      id: '/_app/$orgSlug/messages/$conversationId/'
+      path: '/'
+      fullPath: '/$orgSlug/messages/$conversationId/'
+      preLoaderRoute: typeof AppOrgSlugMessagesConversationIdIndexRouteImport
+      parentRoute: typeof AppOrgSlugMessagesConversationIdRoute
+    }
     '/_app/$orgSlug/projects/$projectSlug/': {
       id: '/_app/$orgSlug/projects/$projectSlug/'
       path: '/'
@@ -530,6 +561,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSlugProjectsProjectSlugSettingsRouteImport
       parentRoute: typeof AppOrgSlugProjectsProjectSlugRoute
     }
+    '/_app/$orgSlug/messages/$conversationId/threads/$rootId': {
+      id: '/_app/$orgSlug/messages/$conversationId/threads/$rootId'
+      path: '/threads/$rootId'
+      fullPath: '/$orgSlug/messages/$conversationId/threads/$rootId'
+      preLoaderRoute: typeof AppOrgSlugMessagesConversationIdThreadsRootIdRouteImport
+      parentRoute: typeof AppOrgSlugMessagesConversationIdRoute
+    }
     '/_app/$orgSlug/projects/$projectSlug/settings/': {
       id: '/_app/$orgSlug/projects/$projectSlug/settings/'
       path: '/'
@@ -547,13 +585,32 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppOrgSlugMessagesConversationIdRouteChildren {
+  AppOrgSlugMessagesConversationIdIndexRoute: typeof AppOrgSlugMessagesConversationIdIndexRoute
+  AppOrgSlugMessagesConversationIdThreadsRootIdRoute: typeof AppOrgSlugMessagesConversationIdThreadsRootIdRoute
+}
+
+const AppOrgSlugMessagesConversationIdRouteChildren: AppOrgSlugMessagesConversationIdRouteChildren =
+  {
+    AppOrgSlugMessagesConversationIdIndexRoute:
+      AppOrgSlugMessagesConversationIdIndexRoute,
+    AppOrgSlugMessagesConversationIdThreadsRootIdRoute:
+      AppOrgSlugMessagesConversationIdThreadsRootIdRoute,
+  }
+
+const AppOrgSlugMessagesConversationIdRouteWithChildren =
+  AppOrgSlugMessagesConversationIdRoute._addFileChildren(
+    AppOrgSlugMessagesConversationIdRouteChildren,
+  )
+
 interface AppOrgSlugMessagesRouteChildren {
-  AppOrgSlugMessagesConversationIdRoute: typeof AppOrgSlugMessagesConversationIdRoute
+  AppOrgSlugMessagesConversationIdRoute: typeof AppOrgSlugMessagesConversationIdRouteWithChildren
   AppOrgSlugMessagesIndexRoute: typeof AppOrgSlugMessagesIndexRoute
 }
 
 const AppOrgSlugMessagesRouteChildren: AppOrgSlugMessagesRouteChildren = {
-  AppOrgSlugMessagesConversationIdRoute: AppOrgSlugMessagesConversationIdRoute,
+  AppOrgSlugMessagesConversationIdRoute:
+    AppOrgSlugMessagesConversationIdRouteWithChildren,
   AppOrgSlugMessagesIndexRoute: AppOrgSlugMessagesIndexRoute,
 }
 

@@ -93,7 +93,7 @@ export type ConversationDetailResponse = Awaited<
 	ReturnType<typeof fetchConversation>
 >;
 
-/** One page of messages. `before` pages backwards. */
+/** One page of the main timeline. */
 export async function fetchMessages(
 	orgSlug: string,
 	conversationId: string,
@@ -119,7 +119,40 @@ export async function fetchMessages(
 }
 
 export type MessagePage = Awaited<ReturnType<typeof fetchMessages>>;
+/** A root message, with its reply summary. */
 export type Message = MessagePage["messages"][number];
+
+/** One thread page, root plus replies. */
+export async function fetchThread(
+	orgSlug: string,
+	conversationId: string,
+	rootId: string,
+	options?: { before?: string; around?: string },
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.threads({ rootId })
+		.get({ query: options ?? {} });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load the thread."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load the thread.", 0);
+	}
+
+	return response.data;
+}
+
+export type ThreadPage = Awaited<ReturnType<typeof fetchThread>>;
+export type ConversationMessage = ThreadPage["root"];
+export type ThreadRoot = ThreadPage["root"];
+export type ThreadReply = ThreadPage["replies"][number];
 
 /** One page around a specific message, used by a search jump. */
 export async function fetchMessagesAround(
@@ -150,7 +183,7 @@ export async function fetchMessagesAround(
 export async function sendMessage(
 	orgSlug: string,
 	conversationId: string,
-	input: { body: unknown[]; clientNonce: string },
+	input: { body: unknown[]; clientNonce: string; parentId?: string | null },
 ) {
 	const response = await api
 		.orgs({ orgSlug })
@@ -235,6 +268,33 @@ export async function markRead(
 	const response = await api
 		.orgs({ orgSlug })
 		.conversations({ conversationId })
+		.read.post({ messageId });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not update the read state."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not update the read state.", 0);
+	}
+
+	return response.data;
+}
+
+/** Move one thread's read cursor. */
+export async function markThreadRead(
+	orgSlug: string,
+	conversationId: string,
+	rootId: string,
+	messageId: string,
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.threads({ rootId })
 		.read.post({ messageId });
 
 	if (response.error) {

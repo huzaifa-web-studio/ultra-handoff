@@ -12,7 +12,7 @@
  * member to chat with every other member. A person who already has a
  * conversation opens that history; no second empty chat is created.
  *
- * Used by: conversation-list.tsx and the sidebar messages section.
+ * Used by: the sidebar messages section and the messages empty state.
  */
 
 import { Avatar, AvatarFallback, AvatarImage } from "@org/ui/components/avatar";

@@ -35,6 +35,16 @@ const RELATIVE_FORMAT = new Intl.RelativeTimeFormat(DATE_LOCALE, {
 	numeric: "auto",
 });
 
+/*
+ * Clock only format for a chat row. A conversation groups messages by day with
+ * its own divider, so repeating the date on every row is noise. The day lives in
+ * the divider and the hover title keeps the full value.
+ */
+const CLOCK_FORMAT = new Intl.DateTimeFormat(DATE_LOCALE, {
+	hour: "numeric",
+	minute: "2-digit",
+});
+
 /** Shown instead of a formatted value when a stored date cannot be parsed. */
 const UNKNOWN_DATE = "Unknown date";
 
@@ -145,6 +155,18 @@ export function formatDateTime(value: string | Date): string {
 	const date = toValidDate(value);
 
 	return date ? DATE_TIME_FORMAT.format(date) : UNKNOWN_DATE;
+}
+
+/**
+ * Clock time only, for one chat row.
+ *
+ * The day is already shown by the divider above the row, so a chat timestamp
+ * reads "9:41 am" instead of repeating the date on every message.
+ */
+export function formatClockTime(value: string | Date): string {
+	const date = toValidDate(value);
+
+	return date ? CLOCK_FORMAT.format(date) : UNKNOWN_DATE;
 }
 
 /**

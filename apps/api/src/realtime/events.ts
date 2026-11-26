@@ -195,6 +195,8 @@ export type ConversationMessageRealtimePayload = {
 /** A read cursor moved, for the other side's receipt and the same side's tabs. */
 export type ConversationReadPayload = {
 	conversationId: string;
+	/** Null when the conversation cursor moved, the root id for a thread. */
+	threadRootId: string | null;
 	userId: string;
 	lastReadAt: string;
 	lastReadMessageId: string;
@@ -223,6 +225,7 @@ export function toRealtimeConversationMessage(
 	return {
 		id: message.id,
 		conversationId: message.conversationId,
+		parentId: message.parentId,
 		body: message.body,
 		author: message.author,
 		createdAt: message.createdAt,

@@ -29,6 +29,7 @@ export const TENANT_TABLES: readonly string[] = [
 	"conversation",
 	"conversation_participant",
 	"conversation_message",
+	"conversation_thread_read",
 	"change_request",
 	"link_preview",
 	"notification",

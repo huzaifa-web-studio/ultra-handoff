@@ -19,13 +19,16 @@ export {
 } from "./access";
 export { createConversationMessage } from "./create";
 export { listConversations } from "./list";
-export { listConversationMessages } from "./messages";
+export {
+	listConversationRoots,
+	listThreadReplies,
+} from "./messages";
 export {
 	getConversation,
 	listContacts,
 	openDirectConversation,
 } from "./open";
-export { markConversationRead } from "./read";
+export { markConversationRead, markThreadRead } from "./read";
 export { searchConversationMessages } from "./search";
 export type {
 	ConversationContact,
@@ -36,10 +39,13 @@ export type {
 	ConversationMessageRow,
 	ConversationParticipantView,
 	ConversationReadResult,
+	ConversationRootMessage,
 	ConversationScope,
 	ConversationSearchResult,
 	ConversationSearchRow,
 	ConversationSummary,
+	ConversationThreadPage,
+	ConversationThreadReadState,
 	CreateConversationMessageInput,
 	MessagePage,
 	MessagePageQuery,

@@ -237,6 +237,21 @@ policy forbids. The list does a capped count over the message index, prefixed by
 `conversation.last_message_at > participant.last_read_at`, so a fully read chat
 costs no message scan.
 
+### Threads
+
+A message with `conversation_message.parent_id` set is a reply. Replies are one
+level deep and never appear in the main timeline; the timeline shows roots with
+a reply count and an unread reply dot. The focused thread route
+`/messages/:conversationId/threads/:rootId` renders the root and its replies,
+and open threads are kept as tabs in local storage.
+
+Read state uses two cursors. The conversation cursor covers roots. A thread
+cursor in `conversation_thread_read` covers one root and its replies, so opening
+the conversation never marks a thread read. Unread is the count of roots after
+the conversation cursor plus replies after their thread cursor. Both writes copy
+the message's exact `created_at` inside SQL, because a JavaScript `Date`
+round-trip truncates microseconds and leaves a message unread forever.
+
 Realtime rides the existing personal socket. `conversation.message.created`,
 `.updated`, `.deleted` and `conversation.read` are published to both
 participants, so the author's other tabs stay in sync. Typing is ephemeral: an
