@@ -126,21 +126,24 @@ export async function loadActiveParticipants(
 }
 
 /**
- * Reject a channel name that is already taken in this workspace.
+ * Reject a channel name that is already taken in this workspace and visibility.
  *
- * Case insensitive, matching the partial unique index. The index is still the
- * concurrency guard; this check exists to answer with a sentence instead of a
- * driver error.
+ * Case insensitive, matching the partial unique index. Visibility is part of
+ * the key so a public channel cannot reveal that a private channel already uses
+ * a name. The index is still the concurrency guard; this check exists to answer
+ * with a sentence instead of a driver error.
  */
 export async function assertTitleAvailable(
 	tx: TenantTx,
 	organizationId: string,
 	title: string,
+	visibility: string,
 	excludeConversationId?: string,
 ): Promise<void> {
 	const conditions = [
 		eq(conversation.organizationId, organizationId),
 		eq(conversation.scope, "group"),
+		eq(conversation.visibility, visibility),
 		isNull(conversation.archivedAt),
 		sql`lower(${conversation.title}) = lower(${title})`,
 	];

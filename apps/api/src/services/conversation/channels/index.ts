@@ -10,7 +10,13 @@
  */
 
 export { type ChannelResult, createChannel } from "./create";
-export { browseChannels, listChannels } from "./directory";
+export {
+	browseChannels,
+	decodeBrowseCursor,
+	encodeBrowseCursor,
+	listArchivedChannels,
+	listChannels,
+} from "./directory";
 export {
 	addChannelMembers,
 	joinChannel,

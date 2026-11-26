@@ -32,6 +32,10 @@ import {
 } from "./magic-link-gate";
 import { hasPendingInvitationForEmail } from "./magic-link-invitation";
 import {
+	detachUserFromAllWorkspaces,
+	detachWorkspaceMemberFromChannels,
+} from "./member-channels";
+import {
 	assertAllowedRoles,
 	MAGIC_LINK_TTL_SECONDS,
 	ORG_INVITATION_LIMIT,
@@ -187,6 +191,11 @@ export const auth = betterAuth({
 				// Best effort. The user row still exists here, so we have the
 				// image URL needed to find the object in SeaweedFS.
 				await deletePreviousAvatar(user.id, user.image);
+
+				// Group channel rows cascade with the member row, so detach and
+				// recount first. Otherwise a channel would keep a stale member
+				// count and could be left without an owner.
+				await detachUserFromAllWorkspaces(user.id);
 			},
 		},
 	},
@@ -611,6 +620,22 @@ export const auth = betterAuth({
 						previousRole,
 						newRole: member.role,
 					});
+				},
+				/**
+				 * A removed member loses every group channel they were in.
+				 *
+				 * The `member` row is already gone here, so this runs on the
+				 * privileged client. It recounts each affected channel, keeps an
+				 * owner, and archives a room that has nobody left.
+				 */
+				afterRemoveMember: async ({
+					member: removedMember,
+					organization: removedFrom,
+				}) => {
+					await detachWorkspaceMemberFromChannels(
+						removedFrom.id,
+						removedMember.userId,
+					);
 				},
 			},
 		}),

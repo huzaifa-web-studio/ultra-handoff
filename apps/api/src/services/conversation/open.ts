@@ -22,6 +22,7 @@ import {
 	pairKey,
 	requireConversation,
 } from "./access";
+import { withTargetUser } from "./channels/shared";
 import { buildConversationSummary, countConversationUnread } from "./list";
 import type { ConversationContact, ConversationSummary } from "./types";
 
@@ -95,25 +96,33 @@ export async function openDirectConversation(
 				});
 			}
 
+			// The insert policy is self only, so the counterpart's row is written
+			// with the transaction scoped to that person. Both inserts ignore a
+			// conflict, because a concurrent open may have written the pair
+			// already.
 			await tx
 				.insert(conversationParticipant)
-				.values([
-					{
-						id: randomUUID(),
-						organizationId: tenant.organizationId,
-						conversationId: record.id,
-						userId: tenant.userId,
-						role: "owner",
-					},
-					{
+				.values({
+					id: randomUUID(),
+					organizationId: tenant.organizationId,
+					conversationId: record.id,
+					userId: tenant.userId,
+					role: "owner",
+				})
+				.onConflictDoNothing();
+
+			await withTargetUser(tx, target, () =>
+				tx
+					.insert(conversationParticipant)
+					.values({
 						id: randomUUID(),
 						organizationId: tenant.organizationId,
 						conversationId: record.id,
 						userId: target,
 						role: "member",
-					},
-				])
-				.onConflictDoNothing();
+					})
+					.onConflictDoNothing(),
+			);
 
 			const participants = await tx
 				.select()

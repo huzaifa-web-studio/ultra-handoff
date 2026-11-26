@@ -12,7 +12,9 @@
 import { Elysia } from "elysia";
 
 import { auth } from "../auth/auth";
+import { detachWorkspaceMemberFromChannels } from "../auth/member-channels";
 import { canEditOrganization, isOrganizationOwner } from "../auth/permissions";
+import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
 import { tenantPlugin } from "../middleware/tenant";
 import {
 	getOrganizationLogo,
@@ -23,6 +25,37 @@ import { deletePreviousOrgLogo } from "../services/upload.service";
 
 export const organizationRoutes = new Elysia()
 	.use(tenantPlugin)
+	/**
+	 * Leave a workspace.
+	 *
+	 * Why a route instead of the plugin endpoint directly: the plugin removes
+	 * the member row but has no leave hook, so the channel cleanup has to run in
+	 * the same request. The tenant macro has already proved membership and gives
+	 * us the organization id and user id the cleanup needs.
+	 */
+	.post(
+		"/orgs/:orgSlug/leave",
+		async ({ tenant, request, status }) => {
+			try {
+				await auth.api.leaveOrganization({
+					body: { organizationId: tenant.organizationId },
+					headers: request.headers,
+				});
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(error, "Could not leave the organization."),
+				});
+			}
+
+			await detachWorkspaceMemberFromChannels(
+				tenant.organizationId,
+				tenant.userId,
+			);
+
+			return { status: "ok" as const };
+		},
+		{ tenant: true },
+	)
 	/**
 	 * Clear the organization logo and delete the stored object.
 	 *

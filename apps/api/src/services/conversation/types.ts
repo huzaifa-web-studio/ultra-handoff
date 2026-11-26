@@ -241,6 +241,11 @@ export type ChannelListResult = {
 	channels: ConversationSummary[];
 	/** Unread across every joined channel, for the section badge. */
 	unreadTotal: number;
+	/**
+	 * True when the list hit its cap. The rail shows a hint instead of
+	 * pretending the workspace has exactly this many channels.
+	 */
+	truncated: boolean;
 };
 
 /** One public channel in the browse directory. */

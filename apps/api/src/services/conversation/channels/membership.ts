@@ -213,11 +213,11 @@ export async function addChannelMembers(
 		});
 	}
 
-	await assertWorkspaceMembers(tenant.organizationId, memberIds);
-
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
+			// Ownership first. A plain member must not learn which ids are
+			// workspace members from a validation error.
 			const access = await requireGroupOwner(tx, tenant, conversationId);
 
 			if (access.conversation.archivedAt !== null) {
@@ -225,6 +225,8 @@ export async function addChannelMembers(
 					message: "Restore the channel before adding members.",
 				});
 			}
+
+			await assertWorkspaceMembers(tenant.organizationId, memberIds);
 
 			const active = new Set(
 				access.participants.map((participant) => participant.userId),
@@ -279,15 +281,17 @@ export async function addChannelMembers(
 					}
 				}
 
-				if (fresh.length > 0) {
-					await tx.insert(conversationParticipant).values(
-						fresh.map((userId) => ({
+				// Insert is self only, so each new member's row is written with
+				// the transaction scoped to that person.
+				for (const userId of fresh) {
+					await withTargetUser(tx, userId, () =>
+						tx.insert(conversationParticipant).values({
 							id: randomUUID(),
 							organizationId: tenant.organizationId,
 							conversationId,
 							userId,
 							role: "member",
-						})),
+						}),
 					);
 				}
 

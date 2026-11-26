@@ -17,6 +17,7 @@ import {
 	browseChannels,
 	CHANNEL_BROWSE_DEFAULT,
 	CHANNEL_BROWSE_MAX,
+	listArchivedChannels,
 	listChannels,
 } from "../../services/conversation";
 import { browseQuery } from "./schemas";
@@ -40,6 +41,28 @@ export const channelDirectoryRoutes = new Elysia({
 		{ tenant: true },
 	)
 	/**
+	 * Channels the viewer still belongs to that an owner archived.
+	 *
+	 * Restore is only reachable from a list, so this has to exist even though
+	 * an archived channel never appears in the rail or in browse.
+	 */
+	.get(
+		"/orgs/:orgSlug/channels/archived",
+		async ({ tenant, status }) => {
+			try {
+				return await listArchivedChannels(tenant);
+			} catch (error) {
+				return status(authErrorStatus(error), {
+					message: authErrorMessage(
+						error,
+						"Could not load the archived channels.",
+					),
+				});
+			}
+		},
+		{ tenant: true },
+	)
+	/**
 	 * Public channels in the workspace.
 	 *
 	 * Registered before any parameter route so `browse` is never read as an id.
@@ -50,7 +73,7 @@ export const channelDirectoryRoutes = new Elysia({
 			try {
 				return await browseChannels(tenant, {
 					search: query.search ?? "",
-					cursor: null,
+					cursor: query.cursor ?? null,
 					limit: clampLimit(
 						query.limit,
 						CHANNEL_BROWSE_DEFAULT,

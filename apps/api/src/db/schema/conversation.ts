@@ -178,14 +178,21 @@ export const conversation = pgTable(
 				)`,
 		),
 		/*
-		 * One channel name per workspace, case insensitive.
+		 * One channel name per workspace and visibility, case insensitive.
+		 *
+		 * Why visibility is part of the key: a public and a private channel may
+		 * share a name. Without that, a workspace member who tried to create a
+		 * public channel would get "that name already exists" for a private
+		 * channel they cannot see, which confirms the private name. Two private
+		 * channels with the same name are also allowed because their member sets
+		 * are disjoint and neither leaks the other.
 		 *
 		 * Archived channels are excluded so an old name becomes free again. The
 		 * service checks first to answer 409, and the index is the concurrency
 		 * guard when two people create the same name at once.
 		 */
 		uniqueIndex("conversation_org_group_title_idx")
-			.on(table.organizationId, sql`lower(${table.title})`)
+			.on(table.organizationId, sql`lower(${table.title})`, table.visibility)
 			.where(sql`${table.scope} = 'group' and ${table.archivedAt} is null`),
 		// The public directory filters by scope and visibility.
 		index("conversation_org_scope_visibility_idx").on(
@@ -346,11 +353,19 @@ export const conversationParticipant = pgTable(
 		/*
 		 * Participant rows are workspace visible.
 		 *
-		 * Why not participants only: a policy on this table that read this table
-		 * to check the caller would be self referential, and Postgres rejects
-		 * that as infinite recursion. The service is the read boundary (it only
-		 * queries participants of a conversation the caller belongs to), and
-		 * message bodies stay participant scoped in `conversation_message`.
+		 * INVARIANT: every service that reads participant rows must first prove
+		 * the caller participates in that conversation, or must limit the read
+		 * to conversations the caller participates in. The policy cannot do it
+		 * itself: a policy on this table that read this table to check the caller
+		 * would be self referential, and Postgres rejects that as infinite
+		 * recursion. Message bodies stay participant scoped in
+		 * `conversation_message`, so the roster and the cursors are the only
+		 * workspace readable data.
+		 *
+		 * Insert is self only. A cross user row is written by switching the
+		 * transaction scope with `withTargetUser`, the same pattern the
+		 * notification writer uses. That keeps a workspace member from inserting
+		 * themselves into a private channel through a future route.
 		 */
 		pgPolicy("conversation_participant_select", {
 			as: "permissive",
@@ -359,17 +374,20 @@ export const conversationParticipant = pgTable(
 			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)`,
 		}),
 		/**
-		 * The person who starts a conversation inserts both rows.
+		 * Only your own participant row may be inserted.
 		 *
-		 * A workspace scoped insert is required for that second row, and it is the
-		 * same cross-user pattern as the notification writer. Reads and updates
-		 * stay narrow.
+		 * The person who starts a conversation inserts the other person's row
+		 * through `withTargetUser`, which scopes the transaction to that person
+		 * for the single write. That keeps the database from allowing a
+		 * workspace member to insert themselves into a private channel through a
+		 * future route that forgets the service check.
 		 */
 		pgPolicy("conversation_participant_insert", {
 			as: "permissive",
 			for: "insert",
 			to: appRole,
-			withCheck: sql`${table.organizationId} = current_setting('app.current_org_id', true)`,
+			withCheck: sql`${table.organizationId} = current_setting('app.current_org_id', true)
+				and ${table.userId} = current_setting('app.current_user_id', true)`,
 		}),
 		/**
 		 * Only your own cursor and role move.

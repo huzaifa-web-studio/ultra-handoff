@@ -32,6 +32,7 @@ export const memberParams = t.Object({
 /** Browse query. */
 export const browseQuery = t.Object({
 	search: t.Optional(t.String({ maxLength: 100 })),
+	cursor: t.Optional(t.String({ maxLength: 200 })),
 	limit: t.Optional(t.String()),
 });
 
@@ -41,7 +42,11 @@ export const createChannelBody = t.Object({
 	description: t.Optional(
 		t.Union([t.String({ maxLength: CHANNEL_DESCRIPTION_MAX }), t.Null()]),
 	),
-	visibility: t.UnionEnum(["public", "private"]),
+	// `t.UnionEnum` normally injects its first value as a default, which would
+	// make a required field optional and silently create a public channel. The
+	// explicit undefined keeps a missing value missing, matching the fix in
+	// routes/milestones/schemas.ts.
+	visibility: t.UnionEnum(["public", "private"], { default: undefined }),
 	memberIds: t.Optional(
 		t.Array(t.String({ minLength: 1, maxLength: 64 }), {
 			maxItems: CHANNEL_MEMBER_MAX - 1,
@@ -55,7 +60,9 @@ export const updateChannelBody = t.Object({
 	description: t.Optional(
 		t.Union([t.String({ maxLength: CHANNEL_DESCRIPTION_MAX }), t.Null()]),
 	),
-	visibility: t.Optional(t.UnionEnum(["public", "private"])),
+	visibility: t.Optional(
+		t.UnionEnum(["public", "private"], { default: undefined }),
+	),
 });
 
 /** Add members body. */
@@ -66,7 +73,7 @@ export const addMembersBody = t.Object({
 	}),
 });
 
-/** Change one member's role. */
+/** Change one member's role. Required, so no default may fill it in. */
 export const updateMemberBody = t.Object({
-	role: t.UnionEnum(["owner", "member"]),
+	role: t.UnionEnum(["owner", "member"], { default: undefined }),
 });

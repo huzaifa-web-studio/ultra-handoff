@@ -26,6 +26,7 @@ import {
 	assertTitleAvailable,
 	loadActiveParticipants,
 	refreshMemberCount,
+	withTargetUser,
 } from "./shared";
 import {
 	assertWorkspaceMembers,
@@ -78,7 +79,7 @@ export async function createChannel(
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			await assertTitleAvailable(tx, tenant.organizationId, title);
+			await assertTitleAvailable(tx, tenant.organizationId, title, visibility);
 
 			const conversationId = randomUUID();
 
@@ -103,22 +104,28 @@ export async function createChannel(
 				throw error;
 			}
 
-			await tx.insert(conversationParticipant).values([
-				{
-					id: randomUUID(),
-					organizationId: tenant.organizationId,
-					conversationId,
-					userId: tenant.userId,
-					role: "owner",
-				},
-				...memberIds.map((userId) => ({
-					id: randomUUID(),
-					organizationId: tenant.organizationId,
-					conversationId,
-					userId,
-					role: "member",
-				})),
-			]);
+			// The creator writes their own row, then each member row is written
+			// with the transaction scoped to that person. The participant insert
+			// policy is self only, so this is the only way to add someone else.
+			await tx.insert(conversationParticipant).values({
+				id: randomUUID(),
+				organizationId: tenant.organizationId,
+				conversationId,
+				userId: tenant.userId,
+				role: "owner",
+			});
+
+			for (const userId of memberIds) {
+				await withTargetUser(tx, userId, () =>
+					tx.insert(conversationParticipant).values({
+						id: randomUUID(),
+						organizationId: tenant.organizationId,
+						conversationId,
+						userId,
+						role: "member",
+					}),
+				);
+			}
 
 			await refreshMemberCount(tx, tenant.organizationId, conversationId);
 

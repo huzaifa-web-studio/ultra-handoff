@@ -12,6 +12,7 @@ import { eq, isNull, or, sql } from "drizzle-orm";
 import {
 	changeRequest,
 	comment,
+	conversationParticipant,
 	milestone,
 	milestoneScopeEntry,
 	notification,
@@ -70,7 +71,35 @@ export function notificationBaseScope(tx: TenantTx, tenant: TenantContext) {
 		eq(notification.organizationId, tenant.organizationId),
 		eq(notification.recipientUserId, tenant.userId),
 		or(isNull(notification.projectId), projectVisibility(tx, tenant)),
+		conversationVisible(),
 	];
+}
+
+/**
+ * A message notification is hidden once the recipient is no longer in the
+ * conversation.
+ *
+ * Why: leaving a channel, being removed from it, or being removed from the
+ * workspace does not delete the bell row. Without this predicate the row stays
+ * unread and its link opens a channel that answers 404. The row is kept so a
+ * rejoin, which restores the old cursor, also restores the missed activity.
+ *
+ * The type guard comes first, matching `commentVisible`, so an ordinary
+ * notification never runs the EXISTS.
+ */
+export function conversationVisible() {
+	return sql`(
+		${notification.conversationId} is null
+		or ${notification.type} not in ('direct_message', 'group_message')
+		or exists (
+			select 1
+			from ${conversationParticipant} as visible_participant
+			where visible_participant.conversation_id = ${notification.conversationId}
+				and visible_participant.user_id = ${notification.recipientUserId}
+				and visible_participant.organization_id = ${notification.organizationId}
+				and visible_participant.left_at is null
+		)
+	)`;
 }
 
 /**

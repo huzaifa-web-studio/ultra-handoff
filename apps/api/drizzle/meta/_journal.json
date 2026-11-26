@@ -267,6 +267,13 @@
       "when": 1795715654075,
       "tag": "0037_special_havok",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795721041448,
+      "tag": "0038_many_captain_britain",
+      "breakpoints": true
     }
   ]
 }

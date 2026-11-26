@@ -69,14 +69,29 @@ export async function updateChannel(
 			}
 
 			const changed: UpdateChannelResult["changed"] = [];
+			const titleChanged =
+				title !== undefined && title !== access.conversation.title;
+			const visibilityChanged =
+				visibility !== undefined &&
+				visibility !== access.conversation.visibility;
 
-			if (title !== undefined && title !== access.conversation.title) {
+			/*
+			 * The uniqueness key is (name, visibility). A rename, a visibility
+			 * change, or both in one request all have to be checked against the
+			 * visibility the channel will have afterwards, not the one it has
+			 * now.
+			 */
+			if (titleChanged || visibilityChanged) {
 				await assertTitleAvailable(
 					tx,
 					tenant.organizationId,
-					title,
+					title ?? access.conversation.title ?? "",
+					visibility ?? access.conversation.visibility,
 					conversationId,
 				);
+			}
+
+			if (titleChanged) {
 				changed.push("title");
 			}
 
@@ -87,10 +102,7 @@ export async function updateChannel(
 				changed.push("description");
 			}
 
-			if (
-				visibility !== undefined &&
-				visibility !== access.conversation.visibility
-			) {
+			if (visibilityChanged) {
 				changed.push("visibility");
 			}
 
@@ -145,17 +157,44 @@ export async function setChannelArchived(
 	return withTenant(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
-			await requireGroupOwner(tx, tenant, conversationId);
+			const access = await requireGroupOwner(tx, tenant, conversationId);
 
-			await tx
-				.update(conversation)
-				.set({ archivedAt: archived ? new Date() : null })
-				.where(
-					and(
-						eq(conversation.organizationId, tenant.organizationId),
-						eq(conversation.id, conversationId),
-					),
+			/*
+			 * Restoring brings the row back under the partial unique index. The
+			 * name may have been reused while the channel was archived, so check
+			 * before the update and translate the race guard below into the same
+			 * sentence.
+			 */
+			if (!archived && access.conversation.archivedAt !== null) {
+				await assertTitleAvailable(
+					tx,
+					tenant.organizationId,
+					access.conversation.title ?? "",
+					access.conversation.visibility,
+					conversationId,
 				);
+			}
+
+			try {
+				await tx
+					.update(conversation)
+					.set({ archivedAt: archived ? new Date() : null })
+					.where(
+						and(
+							eq(conversation.organizationId, tenant.organizationId),
+							eq(conversation.id, conversationId),
+						),
+					);
+			} catch (error) {
+				if (isUniqueViolation(error, "conversation_org_group_title_idx")) {
+					throw new APIError("BAD_REQUEST", {
+						message:
+							"That channel name was reused while this channel was archived. Rename the other channel first.",
+					});
+				}
+
+				throw error;
+			}
 
 			const result = await loadChannelSummary(tx, tenant, conversationId);
 
