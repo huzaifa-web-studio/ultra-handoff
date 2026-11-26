@@ -112,7 +112,12 @@ export function NavMessages({ orgSlug }: { orgSlug: string }) {
 	return (
 		<>
 			<SidebarGroup>
-				<SidebarGroupLabel>
+				{/*
+				 * The group action is absolutely positioned at the right edge.
+				 * Reserve room for it so the unread badge can never sit under
+				 * the plus icon.
+				 */}
+				<SidebarGroupLabel className="pr-10">
 					Channels
 					<SectionBadge count={channelUnread} />
 				</SidebarGroupLabel>
@@ -192,7 +197,7 @@ export function NavMessages({ orgSlug }: { orgSlug: string }) {
 			)}
 
 			<SidebarGroup>
-				<SidebarGroupLabel>
+				<SidebarGroupLabel className="pr-10">
 					Direct messages
 					<SectionBadge count={dmUnread} />
 				</SidebarGroupLabel>
