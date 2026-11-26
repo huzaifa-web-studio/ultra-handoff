@@ -293,15 +293,26 @@ Rules enforced by the service, with RLS as the backstop:
 - The last active owner cannot leave or be removed. Archiving is the escape.
 - Owners manage the name, topic, visibility, members and archive state. Authors
   alone edit or delete a message, in a channel and in a direct chat alike.
-- An archived channel is read only and leaves the rail. It is never hard
-  deleted, so the delivery record survives.
-- A channel name is unique per workspace, case insensitive, among channels that
-  are not archived. The partial unique index is the concurrency guard.
+- An archived channel is read only and leaves the rail and browse. It stays
+  listed under `/channels/archived` so an owner can find it again and restore
+  it. It is never hard deleted, so the delivery record survives.
+- A channel name is unique per workspace and visibility, case insensitive,
+  among channels that are not archived. Visibility is part of the key so a
+  public create cannot confirm that a private channel already uses a name. The
+  partial unique index is the concurrency guard.
+- Removing a person from the workspace detaches them from every group channel
+  they were in, recomputes the counts, promotes the earliest remaining member
+  when they were the last owner, and archives a room that nobody is left in.
+  Direct conversations keep their row so the other person still sees the read
+  only "no longer in this workspace" state.
 
-The directory is two reads: `/channels` returns every joined channel including
-one with no messages yet, and `/channels/browse` returns public channels with a
-member count and a joined flag. The direct message list stays on
-`/conversations`, which now returns direct conversations only.
+The directory is three reads: `/channels` returns every joined channel
+including one with no messages yet, `/channels/browse` returns public channels
+with a member count and a joined flag, and `/channels/archived` returns the
+channels the viewer still belongs to that an owner archived. Browse is paged
+with a keyset cursor over member count, name and id, so a big workspace cannot
+silently truncate. The direct message list stays on `/conversations`, which now
+returns direct conversations only.
 
 Realtime adds `conversation.updated` for metadata changes and
 `conversation.member.changed` for an add or a removal. Message events still fan
@@ -312,7 +323,15 @@ Notifications use type `group_message` and dedupe key
 `channel:{conversationId}`, one row per channel per recipient. A muted
 participant still accrues unread but receives no bell or push. The copy and the
 href read the channel title from the joined row, so a rename is reflected in an
-old bell entry.
+old bell entry. A message notification is hidden from the list and from the
+unread count once the recipient is no longer an active participant, so leaving
+or being removed cannot strand an unread row that opens a 404.
+
+Participant rows are workspace readable because a policy that read that table to
+check the caller would recurse. The service is therefore the read boundary, and
+the policy comments in `db/schema/conversation.ts` state it as an invariant.
+Insert is self only: a cross user row is written by switching the transaction
+user with `withTargetUser`, the same pattern the notification writer uses.
 
 A channel accepts at most 100 members. That cap is the notification fan out
 boundary: the send transaction writes one bell upsert per notifiable recipient,

@@ -422,3 +422,33 @@ and channels, and left them in the dev database for inspection. The UI workspace
 is `org_ui_test` (`gc-ui-test`) with owner, member and outsider accounts. No
 host files were changed except this report and the screenshots directory. The
 temporary scripts and cookies lived under `/tmp/opencode` and were removed.
+
+## Resolution
+
+All findings were fixed after this report. Migration `0038_many_captain_britain`
+carries the schema changes.
+
+| Finding | Fix |
+|---|---|
+| QA-GC-001 | Every channel `t.UnionEnum` now passes `default: undefined`; create without visibility and role PATCH without a role are 422. Added `routes/channels/schemas.test.ts`. |
+| QA-GC-002 | Restore checks the name against active channels of the same visibility and translates a unique violation to 400. |
+| QA-GC-003 | Added `GET /channels/archived`, a sidebar Archived section and a restore path from it. |
+| QA-GC-004 | Notification scope hides `direct_message` and `group_message` rows when the recipient is no longer an active participant. |
+| QA-GC-005 | Participant insert is self only; create, direct open and add members write cross user rows with `withTargetUser`. The workspace visible select is documented as an invariant. |
+| QA-GC-006 | Channel names are unique per workspace and visibility, so a public create cannot confirm a private name. |
+| QA-GC-007 | Workspace removal detaches the person from every group channel, recomputes the count, promotes an owner and archives an empty room. |
+| QA-GC-008 | Add members checks ownership before validating the ids. |
+| QA-GC-009 | The member picker closes on Escape and keeps the selection. |
+| QA-GC-010 | Channel read, edit and delete mutations patch or invalidate the channel cache directly. |
+| QA-GC-011 | Browse is keyset paged with a Load more control; the joined list reports when it is capped. |
+| QA-GC-012 | The create dialog clears its error when the name or topic changes. |
+| QA-GC-013 | The QA plan is updated for the current RLS and restore rules. |
+| QA-GC-014 | The duplicated footer Close was removed from the channel dialogs. |
+
+Verification after the fixes:
+
+- API unit suite: 545 pass, 151 skip, 0 fail.
+- API integration suite against `app_test`: 673 pass, 0 fail.
+- Web unit suite: 142 pass, 0 fail.
+- A fresh 26 assertion live API pass: 26 pass, 0 fail.
+- Chrome UI spot check of the Archived section and the Escape behaviour.

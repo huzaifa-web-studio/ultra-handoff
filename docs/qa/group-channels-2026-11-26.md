@@ -2,7 +2,8 @@
 
 Date: 26 Nov 2026
 Branch: `feature/group-messages`
-Migrations: `0035_last_mastermind.sql`, `0036_needy_dracula.sql`, `0037_special_havok.sql`
+Migrations: `0035_last_mastermind.sql`, `0036_needy_dracula.sql`,
+`0037_special_havok.sql`, `0038_many_captain_britain.sql`
 
 ## Verdict
 
@@ -44,8 +45,11 @@ Run with one owner, one member and one outsider, after
 | CH-03 | Create a private channel | Appears in the creator rail, absent from Browse for the outsider |
 | CH-04 | Open Browse as the outsider | Public channels listed with member count, private absent |
 | CH-05 | Join a public channel as the outsider | Channel appears in the rail and the channel opens |
-| CH-06 | Archive a channel as the owner | Leaves the rail and Browse, header becomes read only |
-| CH-07 | Restore it as the owner | Returns to the rail with members and messages intact |
+| CH-06 | Archive a channel as the owner | Leaves the rail and Browse, appears under Archived, header becomes read only |
+| CH-07 | Navigate away, reopen Messages, restore it from Archived | Returns to the rail with members and messages intact |
+| CH-30 | Archive `launch`, then create another channel named `launch` | The new name is accepted while the old row is archived |
+| CH-31 | Restore the old `launch` after the name was reused | 400 asking to rename the other channel, never a 500 |
+| CH-32 | Create a public channel `design` and a private channel `design` | Both are accepted, and a duplicate in the same visibility is still 400 |
 
 ### Access rules
 
@@ -71,6 +75,8 @@ Run with one owner, one member and one outsider, after
 | CH-20 | Send in an archived channel | 400, composer is read only |
 | CH-21 | Search inside a channel | Only that channel's matches, jump opens the right page |
 | CH-22 | Mute a channel, send a message from another member | Unread still rises, no bell row and no push |
+| CH-33 | Leave a channel with an unread bell row, then reopen the bell | The row is hidden and the bell unread is 0 |
+| CH-34 | Rejoin the same channel | The missed bell row returns unread and the old cursor is kept |
 
 ### Realtime and notifications
 
@@ -92,9 +98,30 @@ Run as `app_tenant` with `app.current_org_id` and `app.current_user_id` set.
 | RLS-01 | Select a private channel row as a non-participant | 0 rows |
 | RLS-02 | Select a public channel row as a non-participant | 1 row |
 | RLS-03 | Select `conversation_message` for a channel after `left_at` is set | 0 rows |
-| RLS-04 | Select another member's `conversation_participant` row as a non-participant | 0 rows |
+| RLS-04 | Select another member's `conversation_participant` row as a non-participant | 1 row, workspace visible by design |
 | RLS-05 | Update another member's role as a non-owner | 0 rows affected |
-| RLS-06 | Insert a participant row for a private channel as a non-owner | Rejected by the service; note the workspace scoped insert policy |
+| RLS-06 | Insert another person's participant row as a non-owner | Rejected by the self only insert policy |
+| RLS-07 | Insert your own participant row into a private channel through a raw query | Allowed by RLS, so every route must check visibility first |
+
+## Regression cases from the 27 Nov pass
+
+The full report is `docs/qa/group-channels-2026-11-27-report.md`. These cases
+were added to cover the fixes:
+
+| ID | Case | Expected |
+|---|---|---|
+| FX-01 | `PATCH /conversations/:id` with `{}` | 400 "There is nothing to change." |
+| FX-02 | `PATCH /conversations/:id` with only a title on a private channel | 200, visibility stays private |
+| FX-03 | `PATCH /members/:id` with `{}` | 422, role is required |
+| FX-04 | `POST /channels` without `visibility` | 422, never a silent public channel |
+| FX-05 | Restore after the name was reused | 400, never a 500 |
+| FX-06 | Leave a channel with an unread bell row | The row is hidden and the unread count drops |
+| FX-07 | Rejoin the channel | The missed row returns unread |
+| FX-08 | Remove a workspace member who owned a channel | The earliest member becomes owner |
+| FX-09 | Remove a workspace member from a channel they alone were in | The channel is archived, count 0 |
+| FX-10 | Browse past the first page | Every page is distinct and the cursor ends at null |
+| FX-11 | Create a public and a private channel with the same name | Both accepted, same-visibility duplicate 400 |
+| FX-12 | Escape in the member picker after selecting people | The popover closes and the selection is kept |
 
 ## Known limits
 
@@ -103,8 +130,11 @@ Run as `app_tenant` with `app.current_org_id` and `app.current_user_id` set.
 - No per person read receipt in a channel. The direct chat keeps its "Seen"
   marker.
 - No @mention notifications in chat, matching the current composer.
-- A member removed from the workspace is skipped for notifications and fan out,
-  but their participant row and the denormalised member count are not rewritten
-  until the next membership change.
+- A member removed from the workspace is detached from every group channel,
+  the count is recomputed, an owner is kept and an empty channel is archived.
+  Direct conversations keep their row and stay read only.
+- Participant rows are workspace readable because a policy on that table cannot
+  read the same table without recursion. The service proves participation
+  before every read, and the insert policy is self only.
 - Channels are workspace scoped only. Project channels remain a reserved scope,
   not a surface yet.
