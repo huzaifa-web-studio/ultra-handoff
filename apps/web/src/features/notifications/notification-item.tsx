@@ -19,6 +19,7 @@ import {
 	CircleAlertIcon,
 	FlagIcon,
 	GitPullRequestIcon,
+	HashIcon,
 	LockIcon,
 	MessageSquareIcon,
 	Settings2Icon,
@@ -38,6 +39,9 @@ function NotificationIcon({ type }: { type: NotificationItemType["type"] }) {
 		return <AtSignIcon className={className} aria-hidden />;
 	if (type === "comment_reply" || type === "comment_new") {
 		return <MessageSquareIcon className={className} aria-hidden />;
+	}
+	if (type === "group_message") {
+		return <HashIcon className={className} aria-hidden />;
 	}
 	if (type === "milestone_due_soon" || type === "milestone_overdue") {
 		return <CalendarClockIcon className={className} aria-hidden />;

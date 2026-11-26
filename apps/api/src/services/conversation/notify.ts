@@ -1,10 +1,12 @@
 /**
- * Direct message notifications.
+ * Conversation notifications.
  *
  * Why a dedicated writer: the generic notification service inserts and ignores
  * a duplicate, which is right for a comment mention but wrong for a chat. A
  * conversation should own one bell row that is refreshed by each new message,
- * so a busy chat cannot flood the bell.
+ * so a busy chat cannot flood the bell. A channel uses a second prefix so its
+ * row is cleared independently of a direct chat with the same id, which cannot
+ * happen today but keeps the two namespaces honest.
  *
  * How the cross-user write works: the notification INSERT policy is workspace
  * wide, but the UPDATE policy is recipient only. The transaction is therefore
@@ -20,15 +22,30 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { notification } from "../../db/schema";
 import type { TenantTx } from "../../db/tenant";
+import type { NotificationType } from "../../lib/notification-types";
 import { renderNotification } from "../../lib/notifications";
 import type { TenantContext } from "../../middleware/tenant";
 import type { NotificationDelivery } from "../notification.service";
 
-/** Dedupe key prefix. One row per conversation per recipient. */
+/** Dedupe key prefix for a direct conversation. */
 export const DIRECT_MESSAGE_DEDUPE_PREFIX = "dm:";
+
+/** Dedupe key prefix for a group channel. */
+export const CHANNEL_MESSAGE_DEDUPE_PREFIX = "channel:";
 
 /** Longest preview kept on the notification row. */
 const PREVIEW_MAX = 160;
+
+/** One conversation notification write. */
+type ConversationNotificationInput = {
+	conversationId: string;
+	recipientUserId: string;
+	preview: string;
+	/** The thread root when the message being notified is a reply. */
+	threadRootId?: string | null;
+	/** Channel name, used by the rendered copy. Null for a direct chat. */
+	channelTitle?: string | null;
+};
 
 /**
  * Create or refresh the recipient's bell row for one conversation.
@@ -38,18 +55,14 @@ const PREVIEW_MAX = 160;
  * read back, which only happens if the recipient left the workspace between the
  * membership check and the write.
  */
-export async function upsertDirectMessageNotification(
+async function upsertConversationNotification(
 	tx: TenantTx,
 	tenant: TenantContext,
-	input: {
-		conversationId: string;
-		recipientUserId: string;
-		preview: string;
-		/** The thread root when the message being notified is a reply. */
-		threadRootId?: string | null;
-	},
+	input: ConversationNotificationInput,
+	type: NotificationType,
+	dedupePrefix: string,
 ): Promise<NotificationDelivery | null> {
-	const dedupeKey = `${DIRECT_MESSAGE_DEDUPE_PREFIX}${input.conversationId}`;
+	const dedupeKey = `${dedupePrefix}${input.conversationId}`;
 	const data = {
 		preview: input.preview.slice(0, PREVIEW_MAX),
 		// Null on a root message, so a newer timeline message replaces a thread
@@ -75,7 +88,7 @@ export async function upsertDirectMessageNotification(
 				organizationId: tenant.organizationId,
 				recipientUserId: input.recipientUserId,
 				actorUserId: tenant.userId,
-				type: "direct_message",
+				type,
 				dedupeKey,
 				conversationId: input.conversationId,
 				data,
@@ -112,7 +125,7 @@ export async function upsertDirectMessageNotification(
 	if (!row) return null;
 
 	const rendered = renderNotification({
-		type: "direct_message",
+		type,
 		actorName: tenant.name,
 		organizationSlug: tenant.slug,
 		organizationName: null,
@@ -121,7 +134,10 @@ export async function upsertDirectMessageNotification(
 		comment: null,
 		changeRequest: null,
 		scopeEntry: null,
-		conversation: { id: input.conversationId },
+		conversation: {
+			id: input.conversationId,
+			title: input.channelTitle ?? null,
+		},
 		data,
 	});
 
@@ -130,12 +146,42 @@ export async function upsertDirectMessageNotification(
 		organizationId: row.organizationId,
 		organizationSlug: tenant.slug,
 		recipientUserId: row.recipientUserId,
-		type: "direct_message",
+		type,
 		title: rendered.title,
 		body: rendered.body,
 		href: rendered.href,
 		createdAt: row.createdAt.toISOString(),
 	};
+}
+
+/** Create or refresh the bell row for a direct conversation. */
+export function upsertDirectMessageNotification(
+	tx: TenantTx,
+	tenant: TenantContext,
+	input: ConversationNotificationInput,
+): Promise<NotificationDelivery | null> {
+	return upsertConversationNotification(
+		tx,
+		tenant,
+		input,
+		"direct_message",
+		DIRECT_MESSAGE_DEDUPE_PREFIX,
+	);
+}
+
+/** Create or refresh the bell row for a group channel. */
+export function upsertChannelMessageNotification(
+	tx: TenantTx,
+	tenant: TenantContext,
+	input: ConversationNotificationInput,
+): Promise<NotificationDelivery | null> {
+	return upsertConversationNotification(
+		tx,
+		tenant,
+		input,
+		"group_message",
+		CHANNEL_MESSAGE_DEDUPE_PREFIX,
+	);
 }
 
 /**
@@ -145,10 +191,10 @@ export async function upsertDirectMessageNotification(
  * without any scope switch. A conversation that is not fully read yet keeps its
  * row, which is why the caller decides whether to clear it.
  */
-export async function markDirectMessageNotificationRead(
+async function markNotificationRead(
 	tx: TenantTx,
 	tenant: TenantContext,
-	conversationId: string,
+	dedupeKey: string,
 ): Promise<void> {
 	await tx
 		.update(notification)
@@ -157,11 +203,34 @@ export async function markDirectMessageNotificationRead(
 			and(
 				eq(notification.organizationId, tenant.organizationId),
 				eq(notification.recipientUserId, tenant.userId),
-				eq(
-					notification.dedupeKey,
-					`${DIRECT_MESSAGE_DEDUPE_PREFIX}${conversationId}`,
-				),
+				eq(notification.dedupeKey, dedupeKey),
 				isNull(notification.readAt),
 			),
 		);
+}
+
+/** Clear the bell row for a direct conversation. */
+export async function markDirectMessageNotificationRead(
+	tx: TenantTx,
+	tenant: TenantContext,
+	conversationId: string,
+): Promise<void> {
+	await markNotificationRead(
+		tx,
+		tenant,
+		`${DIRECT_MESSAGE_DEDUPE_PREFIX}${conversationId}`,
+	);
+}
+
+/** Clear the bell row for a channel. */
+export async function markChannelMessageNotificationRead(
+	tx: TenantTx,
+	tenant: TenantContext,
+	conversationId: string,
+): Promise<void> {
+	await markNotificationRead(
+		tx,
+		tenant,
+		`${CHANNEL_MESSAGE_DEDUPE_PREFIX}${conversationId}`,
+	);
 }

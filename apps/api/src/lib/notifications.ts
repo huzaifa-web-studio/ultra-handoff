@@ -71,6 +71,8 @@ export type NotificationRenderInput = {
 /** The conversation a direct message notification points at. */
 export type NotificationConversationView = {
 	id: string;
+	/** The channel name. Null for a direct conversation, whose name is a person. */
+	title?: string | null;
 };
 
 /** The three strings every notification surface displays. */
@@ -153,7 +155,10 @@ export function notificationHref(input: NotificationRenderInput): string {
 	// branch. The messages page owns the deep link. A reply carries its root in
 	// `data`, so the bell lands on the thread that actually has the new reply
 	// instead of a timeline that cannot show it.
-	if (input.type === "direct_message" && input.conversation) {
+	if (
+		(input.type === "direct_message" || input.type === "group_message") &&
+		input.conversation
+	) {
 		const conversationPath = `${base}/messages/${encodeURIComponent(input.conversation.id)}`;
 		const threadRootId = input.data.threadRootId;
 
@@ -386,6 +391,22 @@ export function renderNotification(
 				body: preview
 					? `${actor} sent you a message "${preview}"`
 					: `${actor} sent you a message.`,
+				href: notificationHref(input),
+			};
+		}
+		case "group_message": {
+			const preview = notificationPreview(
+				dataString(input.data, "preview") ?? null,
+			);
+			const channel = input.conversation?.title
+				? `#${input.conversation.title}`
+				: "a channel";
+
+			return {
+				title: `New message in ${channel}`,
+				body: preview
+					? `${actor} in ${channel}: "${preview}"`
+					: `${actor} sent a message in ${channel}.`,
 				href: notificationHref(input),
 			};
 		}

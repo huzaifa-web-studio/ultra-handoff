@@ -35,6 +35,7 @@ import type {
 	ConversationListQuery,
 	ConversationListResult,
 	ConversationRecord,
+	ConversationScope,
 	ConversationSummary,
 } from "./types";
 
@@ -69,11 +70,18 @@ export function buildConversationSummary(input: {
 	const lastAuthor = input.record.lastMessageAuthorId
 		? input.people.get(input.record.lastMessageAuthorId)
 		: undefined;
+	const scope = toScope(input.record.scope);
 
 	return {
 		id: input.record.id,
-		scope: toScope(input.record.scope),
+		scope,
 		title: input.record.title,
+		visibility: input.record.visibility === "public" ? "public" : "private",
+		description: input.record.description,
+		archivedAt: input.record.archivedAt
+			? input.record.archivedAt.toISOString()
+			: null,
+		memberCount: input.record.memberCount,
 		counterpart: counterpart
 			? toParticipantView(counterpart, input.people)
 			: null,
@@ -91,6 +99,7 @@ export function buildConversationSummary(input: {
 		},
 		unread: input.unread,
 		muted: Boolean(viewer?.mutedAt),
+		canManage: scope === "group" && viewer?.role === "owner",
 		createdAt: input.record.createdAt.toISOString(),
 		updatedAt: input.record.updatedAt.toISOString(),
 	};
@@ -125,6 +134,87 @@ function unreadMessageCondition() {
 	)`;
 }
 
+/**
+ * Unread counts for a set of conversations, or for a whole scope.
+ *
+ * Why one helper: the direct list, the channel list and the in conversation
+ * count all read the same two cursors. Keeping the query here means a change to
+ * the unread rule is made once.
+ *
+ * `ids` limits the read to a page. `scope` limits the read to one conversation
+ * type and is used by the section badges. Neither is set when the caller wants
+ * every conversation the viewer participates in.
+ */
+export async function countUnreadByConversation(
+	tx: TenantTx,
+	tenant: TenantContext,
+	options: { ids?: string[]; scope?: ConversationScope } = {},
+): Promise<Map<string, number>> {
+	if (options.ids && options.ids.length === 0) return new Map();
+
+	const threadJoin = and(
+		eq(
+			conversationThreadRead.rootMessageId,
+			sql`coalesce(${conversationMessage.parentId}, ${conversationMessage.id})`,
+		),
+		eq(conversationThreadRead.userId, tenant.userId),
+	);
+
+	const conditions = [
+		eq(conversationMessage.organizationId, tenant.organizationId),
+		isNull(conversationMessage.deletedAt),
+		sql`${conversationMessage.authorId} is distinct from ${tenant.userId}`,
+		unreadMessageCondition(),
+	];
+
+	if (options.ids) {
+		conditions.push(inArray(conversationMessage.conversationId, options.ids));
+	}
+
+	if (options.scope) {
+		conditions.push(eq(conversation.scope, options.scope));
+		conditions.push(isNull(conversation.archivedAt));
+	}
+
+	const rows = await tx
+		.select({
+			conversationId: conversationMessage.conversationId,
+			unread: sql<number>`least(count(*), 99)`.mapWith(Number),
+		})
+		.from(conversationMessage)
+		.innerJoin(
+			conversationParticipant,
+			and(
+				eq(
+					conversationParticipant.conversationId,
+					conversationMessage.conversationId,
+				),
+				eq(conversationParticipant.userId, tenant.userId),
+				isNull(conversationParticipant.leftAt),
+			),
+		)
+		.leftJoin(conversationThreadRead, threadJoin)
+		.innerJoin(
+			conversation,
+			eq(conversation.id, conversationMessage.conversationId),
+		)
+		.where(and(...conditions))
+		.groupBy(conversationMessage.conversationId);
+
+	return new Map(rows.map((row) => [row.conversationId, row.unread]));
+}
+
+/** Sum one unread map, for a section badge. */
+export function sumUnread(unread: Map<string, number>): number {
+	let total = 0;
+
+	for (const value of unread.values()) {
+		total += value;
+	}
+
+	return total;
+}
+
 /** One page of conversations, newest activity first. */ export async function listConversations(
 	tenant: TenantContext,
 	query: ConversationListQuery,
@@ -155,12 +245,16 @@ function unreadMessageCondition() {
 						and(
 							eq(conversationParticipant.conversationId, conversation.id),
 							eq(conversationParticipant.userId, tenant.userId),
+							isNull(conversationParticipant.leftAt),
 						),
 					)
 					.where(
 						and(
 							eq(conversation.organizationId, tenant.organizationId),
 							eq(conversation.id, cursorId),
+							// This list is direct only. A channel id is not a valid
+							// position in it.
+							eq(conversation.scope, "direct"),
 						),
 					)
 					.limit(1);
@@ -198,11 +292,17 @@ function unreadMessageCondition() {
 					and(
 						eq(conversationParticipant.conversationId, conversation.id),
 						eq(conversationParticipant.userId, tenant.userId),
+						isNull(conversationParticipant.leftAt),
 					),
 				)
 				.where(
 					and(
 						eq(conversation.organizationId, tenant.organizationId),
+						// This endpoint is the direct message list. Channels have
+						// their own listing so an empty channel can appear before its
+						// first message.
+						eq(conversation.scope, "direct"),
+						isNull(conversation.archivedAt),
 						// An empty conversation is not a chat yet. It appears the moment
 						// the first message is sent.
 						isNotNull(conversation.lastMessageAt),
@@ -221,89 +321,18 @@ function unreadMessageCondition() {
 			 *
 			 * A stored counter would have to be written by the sender into the
 			 * recipient's row, which the self-only participant update policy
-			 * forbids. The range read below is exact and drift free.
-			 *
-			 * A root is unread after the conversation cursor. A reply is unread
-			 * after its thread cursor, so opening the conversation never marks a
-			 * thread read.
+			 * forbids. The shared helper below is the one rule the DM list, the
+			 * channel list and the bell all read, so they cannot disagree.
 			 */
-			const threadJoin = and(
-				eq(
-					conversationThreadRead.rootMessageId,
-					sql`coalesce(${conversationMessage.parentId}, ${conversationMessage.id})`,
-				),
-				eq(conversationThreadRead.userId, tenant.userId),
+			const unreadByConversation = await countUnreadByConversation(tx, tenant, {
+				ids,
+			});
+
+			// The badge counts every unread direct conversation, not only this
+			// page. Channels have their own section badge.
+			const unreadTotal = sumUnread(
+				await countUnreadByConversation(tx, tenant, { scope: "direct" }),
 			);
-
-			const unreadRows =
-				ids.length > 0
-					? await tx
-							.select({
-								conversationId: conversationMessage.conversationId,
-								unread: sql<number>`least(count(*), 99)`.mapWith(Number),
-							})
-							.from(conversationMessage)
-							.innerJoin(
-								conversationParticipant,
-								and(
-									eq(
-										conversationParticipant.conversationId,
-										conversationMessage.conversationId,
-									),
-									eq(conversationParticipant.userId, tenant.userId),
-								),
-							)
-							.leftJoin(conversationThreadRead, threadJoin)
-							.where(
-								and(
-									eq(conversationMessage.organizationId, tenant.organizationId),
-									inArray(conversationMessage.conversationId, ids),
-									isNull(conversationMessage.deletedAt),
-									sql`${conversationMessage.authorId} is distinct from ${tenant.userId}`,
-									unreadMessageCondition(),
-								),
-							)
-							.groupBy(conversationMessage.conversationId)
-					: [];
-
-			const unreadByConversation = new Map(
-				unreadRows.map((row) => [row.conversationId, row.unread]),
-			);
-
-			// The badge counts every unread conversation, not only this page.
-			const totalRows = await tx
-				.select({
-					conversationId: conversationMessage.conversationId,
-					unread: sql<number>`least(count(*), 99)`.mapWith(Number),
-				})
-				.from(conversationMessage)
-				.innerJoin(
-					conversationParticipant,
-					and(
-						eq(
-							conversationParticipant.conversationId,
-							conversationMessage.conversationId,
-						),
-						eq(conversationParticipant.userId, tenant.userId),
-					),
-				)
-				.leftJoin(conversationThreadRead, threadJoin)
-				.innerJoin(
-					conversation,
-					eq(conversation.id, conversationMessage.conversationId),
-				)
-				.where(
-					and(
-						eq(conversationMessage.organizationId, tenant.organizationId),
-						isNotNull(conversation.lastMessageAt),
-						isNull(conversationMessage.deletedAt),
-						sql`${conversationMessage.authorId} is distinct from ${tenant.userId}`,
-						unreadMessageCondition(),
-					),
-				)
-				.groupBy(conversationMessage.conversationId);
-
-			const unreadTotal = totalRows.reduce((sum, row) => sum + row.unread, 0);
 
 			const participantRows =
 				ids.length > 0
@@ -317,6 +346,7 @@ function unreadMessageCondition() {
 										tenant.organizationId,
 									),
 									inArray(conversationParticipant.conversationId, ids),
+									isNull(conversationParticipant.leftAt),
 								),
 							)
 					: [];
@@ -368,40 +398,9 @@ export async function countConversationUnread(
 	tenant: TenantContext,
 	conversationId: string,
 ): Promise<number> {
-	const [row] = await tx
-		.select({
-			unread: sql<number>`least(count(*), 99)`.mapWith(Number),
-		})
-		.from(conversationMessage)
-		.innerJoin(
-			conversationParticipant,
-			and(
-				eq(
-					conversationParticipant.conversationId,
-					conversationMessage.conversationId,
-				),
-				eq(conversationParticipant.userId, tenant.userId),
-			),
-		)
-		.leftJoin(
-			conversationThreadRead,
-			and(
-				eq(
-					conversationThreadRead.rootMessageId,
-					sql`coalesce(${conversationMessage.parentId}, ${conversationMessage.id})`,
-				),
-				eq(conversationThreadRead.userId, tenant.userId),
-			),
-		)
-		.where(
-			and(
-				eq(conversationMessage.organizationId, tenant.organizationId),
-				eq(conversationMessage.conversationId, conversationId),
-				isNull(conversationMessage.deletedAt),
-				sql`${conversationMessage.authorId} is distinct from ${tenant.userId}`,
-				unreadMessageCondition(),
-			),
-		);
+	const unread = await countUnreadByConversation(tx, tenant, {
+		ids: [conversationId],
+	});
 
-	return row?.unread ?? 0;
+	return unread.get(conversationId) ?? 0;
 }

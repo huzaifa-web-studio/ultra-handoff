@@ -23,9 +23,9 @@ import { notificationPreview } from "../../lib/notifications";
 import { sanitizeCommentBody } from "../../lib/rich-text";
 import type { TenantContext } from "../../middleware/tenant";
 import type { NotificationDelivery } from "../notification.service";
+import { loadOrganizationMemberUserIds } from "../organization.service";
 import {
 	allowMessageRate,
-	assertRecipientMember,
 	loadMessageByNonce,
 	loadMessageRecord,
 	loadPeople,
@@ -34,7 +34,10 @@ import {
 	toMessageRow,
 } from "./access";
 import { advanceConversationCursor, advanceThreadCursor } from "./cursors";
-import { upsertDirectMessageNotification } from "./notify";
+import {
+	upsertChannelMessageNotification,
+	upsertDirectMessageNotification,
+} from "./notify";
 import type {
 	ConversationMessageResult,
 	CreateConversationMessageInput,
@@ -42,8 +45,8 @@ import type {
 
 /** The result a send returns, plus the transport metadata the route strips. */
 export type CreateMessageResult = ConversationMessageResult & {
-	/** The other participant, so the route can publish to both sides. */
-	recipientUserId: string;
+	/** Every active participant except the sender, so the route can fan out. */
+	recipientIds: string[];
 	notifications: NotificationDelivery[];
 };
 
@@ -86,17 +89,47 @@ export async function createConversationMessage(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireConversation(tx, tenant, conversationId);
-			const recipient = access.counterpart;
+			const isDirect = access.conversation.scope === "direct";
 
-			if (!recipient) {
+			// An archived channel keeps its history but accepts no new messages.
+			if (access.conversation.archivedAt !== null) {
+				throw new APIError("BAD_REQUEST", {
+					message: "This channel is archived and is read only.",
+				});
+			}
+
+			const recipients = access.participants.filter(
+				(participant) => participant.userId !== tenant.userId,
+			);
+
+			if (isDirect && recipients.length === 0) {
 				throw new APIError("BAD_REQUEST", {
 					message: "This conversation has no one to send to.",
 				});
 			}
 
-			// A person removed from the workspace keeps their history but cannot
-			// receive a new message.
-			await assertRecipientMember(tenant.organizationId, recipient.userId);
+			/*
+			 * A person removed from the workspace keeps their history but cannot
+			 * receive a new message. A direct chat has one recipient, so a missing
+			 * membership is an error. A channel simply skips that person for the
+			 * notification and keeps the message for everyone still present.
+			 */
+			const recipientMemberIds = await loadOrganizationMemberUserIds(
+				tenant.organizationId,
+				recipients.map((participant) => participant.userId),
+			);
+
+			if (isDirect && recipientMemberIds.size === 0) {
+				throw new APIError("FORBIDDEN", {
+					message: "That person is no longer part of this workspace.",
+				});
+			}
+
+			const notifiableRecipients = recipients.filter(
+				(participant) =>
+					recipientMemberIds.has(participant.userId) &&
+					participant.mutedAt === null,
+			);
 
 			/*
 			 * Resolve the reply target before the insert.
@@ -216,27 +249,42 @@ export async function createConversationMessage(
 			const people = await loadPeople(tenant.organizationId, [tenant.userId]);
 			const message = toMessageRow(record, people, tenant.userId);
 
-			const notification = created
-				? await upsertDirectMessageNotification(tx, tenant, {
-						conversationId,
-						recipientUserId: recipient.userId,
-						preview,
-						threadRootId: parentId,
-					})
-				: null;
+			const notifications: NotificationDelivery[] = [];
+
+			if (created) {
+				for (const recipient of notifiableRecipients) {
+					const notification = isDirect
+						? await upsertDirectMessageNotification(tx, tenant, {
+								conversationId,
+								recipientUserId: recipient.userId,
+								preview,
+								threadRootId: parentId,
+							})
+						: await upsertChannelMessageNotification(tx, tenant, {
+								conversationId,
+								recipientUserId: recipient.userId,
+								channelTitle: access.conversation.title ?? "a channel",
+								preview,
+								threadRootId: parentId,
+							});
+
+					if (notification) notifications.push(notification);
+				}
+			}
 
 			return {
 				message,
 				created,
-				recipientUserId: recipient.userId,
+				recipientIds: recipients.map((participant) => participant.userId),
 				conversation: {
 					id: conversationId,
+					scope: access.conversation.scope === "group" ? "group" : "direct",
 					lastMessageAt: record.createdAt.toISOString(),
 					lastMessageId: record.id,
 					lastMessageAuthorId: tenant.userId,
 					lastMessagePreview: preview,
 				},
-				notifications: notification ? [notification] : [],
+				notifications,
 			};
 		},
 	);

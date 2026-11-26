@@ -3,20 +3,18 @@
 /**
  * The messages section in the primary sidebar.
  *
- * Why the whole list lives here: the user asked for one conversation surface,
- * the same shape ClickUp uses. The sidebar is the only list, and the messages
- * page is a single full width chat. That removes the inner list pane and gives
- * the conversation the space it needs.
+ * Why two sections: a channel is a named room the reader joins, and a direct
+ * message is a private pair. They have different discovery rules, empty states
+ * and management actions, so the rail shows Channels then Direct messages. A
+ * joined channel appears even with no messages, which is the one behaviour the
+ * activity ordered list could not express.
  *
- * Each row shows the other person, the newest preview, the time and the unread
- * count. Typing replaces the preview, so a row never needs a second badge. An
- * unread row brightens and carries a dot on the avatar, which is what makes a
- * long list scannable.
+ * The list lives in the rail so the conversation owns the full page width. The
+ * realtime subscription lives in the messages layout and patches both queries.
  *
  * Used by: components/app-sidebar/app-sidebar.tsx.
  */
 
-import { Avatar, AvatarFallback, AvatarImage } from "@org/ui/components/avatar";
 import {
 	SidebarGroup,
 	SidebarGroupAction,
@@ -25,27 +23,19 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@org/ui/components/sidebar";
-import { useLocation, useNavigate } from "@tanstack/react-router";
-import { cn } from "cn";
-import { MessageSquarePlusIcon } from "lucide-react";
-import type * as React from "react";
+import { useLocation } from "@tanstack/react-router";
+import { HashIcon, MessageSquarePlusIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
-import type { ConversationSummary } from "#/features/messages/api";
 import { flattenConversations } from "#/features/messages/cache";
-import { useConversation, useConversations } from "#/features/messages/hooks";
-import { NewConversationDialog } from "#/features/messages/new-conversation-dialog";
-import { formatCommentTime } from "#/lib/date";
+import { ChannelDialog } from "#/features/messages/channel-dialog";
 import {
-	conversationChannel,
-	useTypingUser,
-} from "#/lib/realtime/typing-store";
-
-/** Initials for an avatar fallback. */
-function initials(name: string): string {
-	const parts = name.trim().split(/\s+/).slice(0, 2);
-
-	return parts.map((part) => part.charAt(0).toUpperCase()).join("") || "?";
-}
+	useChannels,
+	useConversation,
+	useConversations,
+} from "#/features/messages/hooks";
+import { NewConversationDialog } from "#/features/messages/new-conversation-dialog";
+import { NavChannelRow } from "./nav-channel-row";
+import { NavDirectRow } from "./nav-direct-row";
 
 /** Read the conversation id out of a messages path, or null. */
 function activeConversationId(pathname: string): string | null {
@@ -61,223 +51,192 @@ function activeConversationId(pathname: string): string | null {
 	}
 }
 
-/** One conversation row in the rail. */
-function SidebarConversationRow({
-	orgSlug,
-	conversation,
-	active,
-}: {
-	orgSlug: string;
-	conversation: ConversationSummary;
-	active: boolean;
-}) {
-	const navigate = useNavigate();
-	const typingUserId = useTypingUser(conversationChannel(conversation.id));
-	const name = conversation.counterpart?.name ?? "Conversation";
-	const href = `/${orgSlug}/messages/${conversation.id}`;
-	const time = conversation.lastMessage.createdAt;
-	// An empty chat is a real chat the person just opened. Say so instead of
-	// the generic "No messages yet", which reads like the row is broken.
-	const preview = time
-		? conversation.lastMessage.preview || "No messages yet"
-		: "New conversation";
-	const unread = conversation.unread > 0;
+/** A compact unread badge for a section label. */
+function SectionBadge({ count }: { count: number }) {
+	if (count <= 0) return null;
 
 	return (
-		<SidebarMenuItem>
-			<SidebarMenuButton
-				href={href}
-				isActive={active}
-				tooltip={name}
-				onClick={(event: React.MouseEvent) => {
-					event.preventDefault();
-					void navigate({ to: href });
-				}}
-				className={cn(
-					"h-auto items-start gap-2 py-1.5",
-					active && "bg-sidebar-accent/70",
-					unread && "text-sidebar-foreground",
-				)}
-			>
-				<span className="relative mt-0.5 shrink-0">
-					<Avatar size="sm">
-						{conversation.counterpart?.image && (
-							<AvatarImage src={conversation.counterpart.image} alt="" />
-						)}
-						<AvatarFallback>{initials(name)}</AvatarFallback>
-					</Avatar>
-					{unread && (
-						<span
-							aria-hidden
-							className="absolute -right-0.5 -bottom-0.5 size-2.5 border-2 border-sidebar bg-app-attention"
-						/>
-					)}
-				</span>
-
-				<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-					<span className="flex items-baseline gap-2">
-						<span
-							className={cn(
-								"truncate text-sm",
-								active
-									? "font-semibold text-sidebar-primary"
-									: unread
-										? "font-semibold text-sidebar-foreground"
-										: "font-medium text-sidebar-foreground/80",
-							)}
-						>
-							{name}
-						</span>
-						{time && (
-							<span
-								className={cn(
-									"ml-auto shrink-0 text-[0.6rem] tabular-nums",
-									unread
-										? "text-sidebar-foreground/80"
-										: "text-sidebar-foreground/50",
-								)}
-							>
-								{formatCommentTime(time)}
-							</span>
-						)}
-					</span>
-					<span
-						className={cn(
-							"truncate text-xs",
-							typingUserId
-								? "text-sidebar-primary"
-								: unread
-									? "text-sidebar-foreground/80"
-									: "text-sidebar-foreground/55",
-						)}
-					>
-						{typingUserId ? "typing..." : preview}
-					</span>
-				</span>
-
-				{unread && (
-					<span className="ml-1 shrink-0 self-center bg-app-attention px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-app-attention-text">
-						{conversation.unread > 99 ? "99+" : conversation.unread}
-						<span className="sr-only"> unread</span>
-					</span>
-				)}
-			</SidebarMenuButton>
-		</SidebarMenuItem>
+		<span className="ml-auto bg-app-attention px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-app-attention-text">
+			{count > 99 ? "99+" : count}
+			<span className="sr-only"> unread</span>
+		</span>
 	);
 }
 
 export function NavMessages({ orgSlug }: { orgSlug: string }) {
 	const { pathname } = useLocation();
+	const channels = useChannels(orgSlug);
 	const conversations = useConversations(orgSlug);
 	const rows = flattenConversations(conversations.data);
-	const unreadTotal = conversations.data?.pages[0]?.unreadTotal ?? 0;
+	const channelRows = channels.data?.channels ?? [];
+	const channelUnread = channels.data?.unreadTotal ?? 0;
+	const dmUnread = conversations.data?.pages[0]?.unreadTotal ?? 0;
+	const [channelDialogOpen, setChannelDialogOpen] = useState(false);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const base = `/${orgSlug}/messages`;
 
 	/*
-	 * An empty conversation is intentionally absent from the list query, because
-	 * a list of chats with no messages is noise. The catch is the person who
-	 * just opened one from the picker: the rail said "No conversations yet"
+	 * An empty direct conversation is intentionally absent from the list query,
+	 * because a list of chats with no messages is noise. The catch is the person
+	 * who just opened one from the picker: the rail said "No conversations yet"
 	 * while the chat was on screen. The open conversation is therefore shown as
 	 * a temporary row until its first message makes it a real list entry.
+	 * Channels do not need this, because their list includes empty rows.
 	 */
 	const openId = activeConversationId(pathname);
 	const openDetail = useConversation(orgSlug, openId ?? "");
 	const openConversation = openDetail.data?.conversation ?? null;
 	const draftRow =
 		openConversation &&
+		openConversation.scope === "direct" &&
 		openConversation.lastMessage.createdAt === null &&
 		!rows.some((row) => row.id === openConversation.id)
 			? openConversation
 			: null;
 
+	/** True when the channel or chat in the path is this id. */
+	function isActive(id: string): boolean {
+		return (
+			pathname === `${base}/${id}` || pathname.startsWith(`${base}/${id}/`)
+		);
+	}
+
 	return (
-		<SidebarGroup>
-			<SidebarGroupLabel>
-				Messages
-				{unreadTotal > 0 && (
-					<span className="ml-auto bg-app-attention px-1.5 py-0.5 text-[0.6rem] font-semibold tabular-nums text-app-attention-text">
-						{unreadTotal > 99 ? "99+" : unreadTotal}
-						<span className="sr-only"> unread</span>
-					</span>
+		<>
+			<SidebarGroup>
+				<SidebarGroupLabel>
+					Channels
+					<SectionBadge count={channelUnread} />
+				</SidebarGroupLabel>
+
+				<SidebarGroupAction
+					aria-label="Create or browse channels"
+					title="Create or browse channels"
+					onClick={() => setChannelDialogOpen(true)}
+				>
+					<PlusIcon aria-hidden />
+				</SidebarGroupAction>
+
+				{channelRows.length > 0 && (
+					<SidebarMenu>
+						{channelRows.map((channel) => (
+							<NavChannelRow
+								key={channel.id}
+								orgSlug={orgSlug}
+								channel={channel}
+								active={isActive(channel.id)}
+							/>
+						))}
+					</SidebarMenu>
 				)}
-			</SidebarGroupLabel>
 
-			{/*
-			 * The compose action sits in the section header, which is where a chat
-			 * rail normally puts it. It stays reachable when the list grows long.
-			 */}
-			<SidebarGroupAction
-				aria-label="New message"
-				title="New message"
-				onClick={() => setDialogOpen(true)}
-			>
-				<MessageSquarePlusIcon aria-hidden />
-			</SidebarGroupAction>
-
-			{(rows.length > 0 || draftRow) && (
-				<SidebarMenu>
-					{draftRow && (
-						<SidebarConversationRow
-							key={draftRow.id}
-							orgSlug={orgSlug}
-							conversation={draftRow}
-							active
-						/>
-					)}
-					{rows.map((conversation) => (
-						<SidebarConversationRow
-							key={conversation.id}
-							orgSlug={orgSlug}
-							conversation={conversation}
-							active={
-								pathname === `${base}/${conversation.id}` ||
-								pathname.startsWith(`${base}/${conversation.id}/`)
-							}
-						/>
-					))}
-				</SidebarMenu>
-			)}
-
-			{conversations.isPending ? (
-				<p className="px-3 py-2 text-xs text-sidebar-foreground/60">
-					Loading conversations...
-				</p>
-			) : rows.length === 0 && !draftRow ? (
-				<div className="flex flex-col items-start gap-1 px-3 py-2">
-					<p className="text-xs text-sidebar-foreground/60">
-						No conversations yet.
+				{channels.isPending ? (
+					<p className="px-3 py-2 text-xs text-sidebar-foreground/60">
+						Loading channels...
 					</p>
-					<button
-						type="button"
-						onClick={() => setDialogOpen(true)}
-						className="text-xs font-medium text-sidebar-primary hover:underline focus-visible:underline focus-visible:outline-none"
-					>
-						Start a conversation
-					</button>
-				</div>
-			) : null}
-
-			{conversations.hasNextPage && (
-				<SidebarMenu>
-					<SidebarMenuItem>
-						<SidebarMenuButton
-							size="sm"
-							tooltip="Load older conversations"
-							isDisabled={conversations.isFetchingNextPage}
-							onClick={() => void conversations.fetchNextPage()}
+				) : channelRows.length === 0 ? (
+					<div className="flex flex-col items-start gap-1 px-3 py-2">
+						<p className="text-xs text-sidebar-foreground/60">
+							No channels yet.
+						</p>
+						<button
+							type="button"
+							onClick={() => setChannelDialogOpen(true)}
+							className="inline-flex items-center gap-1 text-xs font-medium text-sidebar-primary hover:underline focus-visible:underline focus-visible:outline-none"
 						>
-							<span>Load older conversations</span>
-						</SidebarMenuButton>
-					</SidebarMenuItem>
-				</SidebarMenu>
-			)}
+							<HashIcon aria-hidden className="size-3" />
+							Browse or create a channel
+						</button>
+					</div>
+				) : null}
+			</SidebarGroup>
+
+			<SidebarGroup>
+				<SidebarGroupLabel>
+					Direct messages
+					<SectionBadge count={dmUnread} />
+				</SidebarGroupLabel>
+
+				{/*
+				 * The compose action sits in the section header, which is where a
+				 * chat rail normally puts it. It stays reachable when the list
+				 * grows long.
+				 */}
+				<SidebarGroupAction
+					aria-label="New message"
+					title="New message"
+					onClick={() => setDialogOpen(true)}
+				>
+					<MessageSquarePlusIcon aria-hidden />
+				</SidebarGroupAction>
+
+				{(rows.length > 0 || draftRow) && (
+					<SidebarMenu>
+						{draftRow && (
+							<NavDirectRow
+								key={draftRow.id}
+								orgSlug={orgSlug}
+								conversation={draftRow}
+								active
+							/>
+						)}
+						{rows.map((conversation) => (
+							<NavDirectRow
+								key={conversation.id}
+								orgSlug={orgSlug}
+								conversation={conversation}
+								active={isActive(conversation.id)}
+							/>
+						))}
+					</SidebarMenu>
+				)}
+
+				{conversations.isPending ? (
+					<p className="px-3 py-2 text-xs text-sidebar-foreground/60">
+						Loading conversations...
+					</p>
+				) : rows.length === 0 && !draftRow ? (
+					<div className="flex flex-col items-start gap-1 px-3 py-2">
+						<p className="text-xs text-sidebar-foreground/60">
+							No conversations yet.
+						</p>
+						<button
+							type="button"
+							onClick={() => setDialogOpen(true)}
+							className="text-xs font-medium text-sidebar-primary hover:underline focus-visible:underline focus-visible:outline-none"
+						>
+							Start a conversation
+						</button>
+					</div>
+				) : null}
+
+				{conversations.hasNextPage && (
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								size="sm"
+								tooltip="Load older conversations"
+								isDisabled={conversations.isFetchingNextPage}
+								onClick={() => void conversations.fetchNextPage()}
+							>
+								<span>Load older conversations</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				)}
+			</SidebarGroup>
+
+			<ChannelDialog
+				orgSlug={orgSlug}
+				isOpen={channelDialogOpen}
+				onOpenChange={setChannelDialogOpen}
+			/>
 
 			<NewConversationDialog
 				orgSlug={orgSlug}
 				isOpen={dialogOpen}
 				onOpenChange={setDialogOpen}
 			/>
-		</SidebarGroup>
+		</>
 	);
 }

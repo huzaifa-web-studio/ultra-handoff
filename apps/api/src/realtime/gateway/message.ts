@@ -10,7 +10,7 @@
 
 import { withTenant } from "../../db/tenant";
 import { realtimeEnv } from "../../lib/env";
-import { loadTypingTarget } from "../../services/conversation";
+import { loadTypingTargets } from "../../services/conversation";
 import { milestoneExistsInProject } from "../../services/milestone";
 import { publishRealtimeEvent, publishUserEvent } from "../bus";
 import { parseInboundMessage } from "../protocol";
@@ -149,13 +149,13 @@ export async function handleMessage(
 
 			// The conversation id comes from the client, so participation is
 			// re-checked before anything is relayed. A forged id reaches nobody.
-			const target = await withTenant(
+			const targets = await withTenant(
 				{
 					organizationId: connection.organizationId,
 					userId: connection.userId,
 				},
 				(tx) =>
-					loadTypingTarget(
+					loadTypingTargets(
 						tx,
 						{
 							organizationId: connection.organizationId,
@@ -163,21 +163,25 @@ export async function handleMessage(
 						},
 						message.conversationId,
 					),
-			).catch(() => null);
+			).catch(() => []);
 
-			if (!target) break;
+			if (targets.length === 0) break;
 
-			void publishUserEvent(
-				connection.organizationId,
-				target,
-				message.type === "dm.typing.start"
-					? "typing.started"
-					: "typing.stopped",
-				{
-					conversationId: message.conversationId,
-					userId: connection.userId,
-				},
-			).catch(() => undefined);
+			// A direct chat has one target. A channel has everyone else, so the
+			// same frame reaches every reader of the channel.
+			for (const target of targets) {
+				void publishUserEvent(
+					connection.organizationId,
+					target,
+					message.type === "dm.typing.start"
+						? "typing.started"
+						: "typing.stopped",
+					{
+						conversationId: message.conversationId,
+						userId: connection.userId,
+					},
+				).catch(() => undefined);
+			}
 			break;
 		}
 	}

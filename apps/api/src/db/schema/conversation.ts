@@ -26,6 +26,7 @@ import {
 	type AnyPgColumn,
 	check,
 	index,
+	integer,
 	jsonb,
 	pgPolicy,
 	pgTable,
@@ -39,6 +40,11 @@ import { project } from "./project";
 
 /**
  * True when the current person participates in the conversation of the row.
+ *
+ * `left_at is null` is part of the check on purpose. A group member who leaves
+ * keeps their participant row so their history stays auditable, but leaving has
+ * to revoke access to new messages. Without this clause a left channel would
+ * stay readable and writable.
  *
  * Written as raw SQL on purpose: the policy lives on `conversation` and
  * `conversation_message`, while the table it reads is declared later in this
@@ -54,6 +60,7 @@ function participantExists(
 		where participant."conversation_id" = ${sql.raw(conversationIdColumn)}
 			and participant."user_id" = current_setting('app.current_user_id', true)
 			and participant."organization_id" = current_setting('app.current_org_id', true)
+			and participant."left_at" is null
 	)`;
 }
 
@@ -77,6 +84,34 @@ export const conversation = pgTable(
 		}),
 		/** Display title. Null for a direct conversation, whose name is a person. */
 		title: text("title"),
+		/**
+		 * Channel access: `public` or `private`.
+		 *
+		 * Only meaningful for a group conversation. Public channels appear in
+		 * the workspace directory and any member may join. Private channels are
+		 * visible only to their participants. Direct and project conversations
+		 * keep the default and the UI ignores it.
+		 */
+		visibility: text("visibility").notNull().default("private"),
+		/** Channel topic, shown in the header and the directory. */
+		description: text("description"),
+		/**
+		 * Soft archive timestamp.
+		 *
+		 * A channel is never hard deleted. Archiving hides it from the sidebar
+		 * and makes it read only, which is what keeps the delivery record
+		 * trustworthy. Only an owner may archive or restore it.
+		 */
+		archivedAt: timestamp("archived_at"),
+		/**
+		 * Active participant count, denormalised.
+		 *
+		 * Why: the public directory has to show a member count for channels the
+		 * viewer has not joined, and participant rows are readable only by
+		 * participants. The value is recomputed from active rows on every
+		 * membership change, so it cannot drift the way an increment can.
+		 */
+		memberCount: integer("member_count").notNull().default(0),
 		/**
 		 * Canonical `lowUserId:highUserId` for a direct conversation.
 		 *
@@ -132,6 +167,39 @@ export const conversation = pgTable(
 			sql`(${table.scope} = 'direct' and ${table.pairKey} is not null)
 				or (${table.scope} <> 'direct' and ${table.pairKey} is null)`,
 		),
+		// A group is a named channel with a valid visibility. A direct or project
+		// conversation may leave both at their defaults.
+		check(
+			"conversation_group_check",
+			sql`${table.scope} <> 'group'
+				or (
+					${table.title} is not null
+					and ${table.visibility} in ('public', 'private')
+				)`,
+		),
+		/*
+		 * One channel name per workspace, case insensitive.
+		 *
+		 * Archived channels are excluded so an old name becomes free again. The
+		 * service checks first to answer 409, and the index is the concurrency
+		 * guard when two people create the same name at once.
+		 */
+		uniqueIndex("conversation_org_group_title_idx")
+			.on(table.organizationId, sql`lower(${table.title})`)
+			.where(sql`${table.scope} = 'group' and ${table.archivedAt} is null`),
+		// The public directory filters by scope and visibility.
+		index("conversation_org_scope_visibility_idx").on(
+			table.organizationId,
+			table.scope,
+			table.visibility,
+		),
+		// The joined channel list orders by activity and falls back to creation
+		// time for a channel with no messages yet.
+		index("conversation_org_scope_created_idx").on(
+			table.organizationId,
+			table.scope,
+			table.createdAt,
+		),
 		/**
 		 * Insert: any conversation in the current workspace.
 		 *
@@ -146,28 +214,61 @@ export const conversation = pgTable(
 			to: appRole,
 			withCheck: sql`${table.organizationId} = current_setting('app.current_org_id', true)`,
 		}),
+		/**
+		 * A conversation is readable by its participants.
+		 *
+		 * Two exceptions, both deliberate:
+		 *
+		 *   - a direct conversation is readable by the person who created it,
+		 *     because the pair resolve reads the row back before the participant
+		 *     rows exist;
+		 *   - a public group is readable by the whole workspace, which is what
+		 *     powers the channel directory. Private groups are participants only.
+		 */
 		pgPolicy("conversation_select", {
 			as: "permissive",
 			for: "select",
 			to: appRole,
 			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)
 				and (
-					${table.createdBy} = current_setting('app.current_user_id', true)
+					(
+						${table.scope} = 'direct'
+						and ${table.createdBy} = current_setting('app.current_user_id', true)
+					)
 					or ${participantExists('"conversation"."id"')}
+					or (
+						${table.scope} = 'group'
+						and ${table.visibility} = 'public'
+						and ${table.archivedAt} is null
+					)
 				)`,
 		}),
+		/**
+		 * Any active participant may update the conversation row.
+		 *
+		 * Why not owners only: every sent message rewrites `last_message_*` on
+		 * this row, and that write must succeed for a plain member. Channel
+		 * settings are therefore owner-gated in the service, not here. RLS still
+		 * prevents another workspace, or a person who left, from touching it.
+		 */
 		pgPolicy("conversation_update", {
 			as: "permissive",
 			for: "update",
 			to: appRole,
 			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)
 				and (
-					${table.createdBy} = current_setting('app.current_user_id', true)
+					(
+						${table.scope} = 'direct'
+						and ${table.createdBy} = current_setting('app.current_user_id', true)
+					)
 					or ${participantExists('"conversation"."id"')}
 				)`,
 			withCheck: sql`${table.organizationId} = current_setting('app.current_org_id', true)
 				and (
-					${table.createdBy} = current_setting('app.current_user_id', true)
+					(
+						${table.scope} = 'direct'
+						and ${table.createdBy} = current_setting('app.current_user_id', true)
+					)
 					or ${participantExists('"conversation"."id"')}
 				)`,
 		}),
@@ -184,9 +285,11 @@ export const conversation = pgTable(
  * timestamp rather than a boolean so unread is a range read on the message
  * index, and the id breaks a tie inside one millisecond.
  *
- * Rows are visible to the whole workspace on purpose: the read receipt is the
- * other participant's row, and a participant list is not secret in a workspace
- * where everyone may chat with everyone. Message bodies keep the strict rule.
+ * Visibility: rows are readable only by people who participate in that
+ * conversation. That is enough for the read receipt, because the reader is a
+ * participant and the policy is checked against the reader, not the row owner.
+ * It also keeps a private channel's member list and cursors away from the rest
+ * of the workspace. Message bodies keep the stricter author rule.
  */
 export const conversationParticipant = pgTable(
 	"conversation_participant",
@@ -240,6 +343,15 @@ export const conversationParticipant = pgTable(
 		 * warns about. One policy per command keeps the write boundary at the
 		 * person.
 		 */
+		/*
+		 * Participant rows are workspace visible.
+		 *
+		 * Why not participants only: a policy on this table that read this table
+		 * to check the caller would be self referential, and Postgres rejects
+		 * that as infinite recursion. The service is the read boundary (it only
+		 * queries participants of a conversation the caller belongs to), and
+		 * message bodies stay participant scoped in `conversation_message`.
+		 */
 		pgPolicy("conversation_participant_select", {
 			as: "permissive",
 			for: "select",
@@ -260,8 +372,12 @@ export const conversationParticipant = pgTable(
 			withCheck: sql`${table.organizationId} = current_setting('app.current_org_id', true)`,
 		}),
 		/**
-		 * Only your own cursor moves. The read route sets it, and no other person
-		 * can mark a message read on your behalf.
+		 * Only your own cursor and role move.
+		 *
+		 * An owner managing another member writes that row with the transaction
+		 * scoped to the target, the same cross-user pattern as the notification
+		 * writer, so the policy stays self only. The service checks ownership
+		 * before it switches the scope.
 		 */
 		pgPolicy("conversation_participant_update", {
 			as: "permissive",
@@ -454,7 +570,8 @@ export const conversationThreadRead = pgTable(
 			as: "permissive",
 			for: "select",
 			to: appRole,
-			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)`,
+			using: sql`${table.organizationId} = current_setting('app.current_org_id', true)
+				and ${participantExists('"conversation_thread_read"."conversation_id"')}`,
 		}),
 		pgPolicy("conversation_thread_read_insert", {
 			as: "permissive",

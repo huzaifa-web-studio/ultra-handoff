@@ -16,8 +16,10 @@
  */
 
 import type {
+	ConversationMemberChangedPayload,
 	ConversationMessageRealtimePayload,
 	ConversationReadPayload,
+	ConversationUpdatedPayload,
 	RealtimeConversationMessage,
 	RealtimeEnvelope,
 } from "@org/api";
@@ -30,10 +32,11 @@ import {
 	setTyping,
 } from "#/lib/realtime/typing-store";
 import { useUserRealtimeEvent } from "#/lib/realtime/user-events";
-import type { ConversationMessage, Message } from "./api";
+import type { ChannelListResponse, ConversationMessage, Message } from "./api";
 import {
 	appendMessage,
 	appendThreadReply,
+	applyChannelActivity,
 	type ConversationPages,
 	type MessagePages,
 	replaceRootMessage,
@@ -47,9 +50,11 @@ import {
 	withThreadRead,
 } from "./cache";
 import {
+	channelsKey,
 	conversationMessagesKey,
 	conversationsKey,
 	conversationThreadKey,
+	messagesKey,
 } from "./keys";
 
 /** Recompute the two capabilities the server strips before broadcasting. */
@@ -120,7 +125,51 @@ export function readReadEvent(
 		return null;
 	}
 
+	if (
+		record.scope !== "direct" &&
+		record.scope !== "group" &&
+		record.scope !== "project"
+	) {
+		return null;
+	}
+
 	return data as ConversationReadPayload;
+}
+
+/** Validate a metadata change on a conversation. */
+export function readConversationUpdated(
+	event: RealtimeEnvelope,
+): ConversationUpdatedPayload | null {
+	if (event.type !== "conversation.updated") return null;
+
+	const data = event.data;
+
+	if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+
+	const record = data as Record<string, unknown>;
+
+	if (typeof record.conversationId !== "string") return null;
+
+	return data as ConversationUpdatedPayload;
+}
+
+/** Validate a membership change on a channel. */
+export function readMemberChanged(
+	event: RealtimeEnvelope,
+): ConversationMemberChangedPayload | null {
+	if (event.type !== "conversation.member.changed") return null;
+
+	const data = event.data;
+
+	if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+
+	const record = data as Record<string, unknown>;
+
+	if (typeof record.conversationId !== "string") return null;
+	if (typeof record.userId !== "string") return null;
+	if (record.action !== "added" && record.action !== "removed") return null;
+
+	return data as ConversationMemberChangedPayload;
 }
 
 /** Validate one typing frame. A milestone frame carries no conversation id. */
@@ -191,15 +240,18 @@ export function useMessagesRealtime(input: {
 
 			if (read.threadRootId) {
 				if (read.userId !== viewerId) {
-					// The other person read this thread: show a receipt.
-					queryClient.setQueryData<ThreadPages>(
-						conversationThreadKey(
-							orgSlug,
-							read.conversationId,
-							read.threadRootId,
-						),
-						(current) => withThreadCounterpartRead(current, cursor),
-					);
+					// The other person read this thread. Only a direct chat shows a
+					// per person receipt; a channel would need a read by count.
+					if (read.scope === "direct") {
+						queryClient.setQueryData<ThreadPages>(
+							conversationThreadKey(
+								orgSlug,
+								read.conversationId,
+								read.threadRootId,
+							),
+							(current) => withThreadCounterpartRead(current, cursor),
+						);
+					}
 				} else {
 					// This person read it in another tab.
 					queryClient.setQueryData<ThreadPages>(
@@ -220,17 +272,23 @@ export function useMessagesRealtime(input: {
 					void queryClient.invalidateQueries({
 						queryKey: notificationSummaryKey(orgSlug),
 					});
+					void queryClient.invalidateQueries({
+						queryKey: channelsKey(orgSlug),
+					});
 				}
 
 				return;
 			}
 
 			if (read.userId !== viewerId) {
-				// The other person read the main timeline.
-				queryClient.setQueryData<MessagePages>(
-					conversationMessagesKey(orgSlug, read.conversationId),
-					(current) => withCounterpartRead(current, cursor),
-				);
+				// The other person read the main timeline. A channel has no per
+				// person receipt, so only a direct chat receives the marker.
+				if (read.scope === "direct") {
+					queryClient.setQueryData<MessagePages>(
+						conversationMessagesKey(orgSlug, read.conversationId),
+						(current) => withCounterpartRead(current, cursor),
+					);
+				}
 			} else {
 				// This person read the timeline in another tab. The unread badge
 				// and the bell need the new total; the timeline itself does not.
@@ -240,10 +298,33 @@ export function useMessagesRealtime(input: {
 					queryKey: conversationsKey(orgSlug),
 				});
 				void queryClient.invalidateQueries({
+					queryKey: channelsKey(orgSlug),
+				});
+				void queryClient.invalidateQueries({
 					queryKey: notificationSummaryKey(orgSlug),
 				});
 			}
 
+			return;
+		}
+
+		const updated = readConversationUpdated(event);
+
+		if (updated) {
+			// A rename, topic, visibility or archive change. The payload carries
+			// only the id, so every messaging surface refetches.
+			void queryClient.invalidateQueries({ queryKey: messagesKey(orgSlug) });
+			return;
+		}
+
+		const member = readMemberChanged(event);
+
+		if (member) {
+			// The viewer's own list changes when they are added or removed. A
+			// removed reader refetches and finds the channel gone, which is what
+			// moves the open pane back to the empty state.
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+			void queryClient.invalidateQueries({ queryKey: messagesKey(orgSlug) });
 			return;
 		}
 
@@ -291,22 +372,45 @@ export function useMessagesRealtime(input: {
 
 			if (!payload.conversation) return;
 
-			const current = queryClient.getQueryData<ConversationPages>(
-				conversationsKey(orgSlug),
-			);
-			const result = withConversationActivity(current, payload.conversation, {
-				viewerId,
-				senderId: payload.senderId,
-				active: parentId ? threadActive : conversationActive,
-			});
+			const active = parentId ? threadActive : conversationActive;
 
-			if (result.found) {
-				queryClient.setQueryData(conversationsKey(orgSlug), result.pages);
-			} else {
-				// A brand new chat is not in the list yet.
-				void queryClient.invalidateQueries({
-					queryKey: conversationsKey(orgSlug),
+			if (payload.conversation.scope === "group") {
+				const channelList = queryClient.getQueryData<ChannelListResponse>(
+					channelsKey(orgSlug),
+				);
+				const result = applyChannelActivity(channelList, payload.conversation, {
+					viewerId,
+					senderId: payload.senderId,
+					active,
 				});
+
+				if (result.found) {
+					queryClient.setQueryData(channelsKey(orgSlug), result.list);
+				} else {
+					// A channel the rail has not loaded yet, for example one the
+					// reader was just added to.
+					void queryClient.invalidateQueries({
+						queryKey: channelsKey(orgSlug),
+					});
+				}
+			} else {
+				const current = queryClient.getQueryData<ConversationPages>(
+					conversationsKey(orgSlug),
+				);
+				const result = withConversationActivity(current, payload.conversation, {
+					viewerId,
+					senderId: payload.senderId,
+					active,
+				});
+
+				if (result.found) {
+					queryClient.setQueryData(conversationsKey(orgSlug), result.pages);
+				} else {
+					// A brand new chat is not in the list yet.
+					void queryClient.invalidateQueries({
+						queryKey: conversationsKey(orgSlug),
+					});
+				}
 			}
 
 			return;
@@ -332,6 +436,9 @@ export function useMessagesRealtime(input: {
 		// An edit or a delete can change the sidebar preview.
 		void queryClient.invalidateQueries({
 			queryKey: conversationsKey(orgSlug),
+		});
+		void queryClient.invalidateQueries({
+			queryKey: channelsKey(orgSlug),
 		});
 	});
 }

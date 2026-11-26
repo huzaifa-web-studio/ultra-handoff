@@ -19,6 +19,7 @@ import type { ChangeRequestRow } from "../services/change-request";
 import type { CommentRow } from "../services/comment";
 import type {
 	ConversationMessageRow,
+	ConversationScope,
 	ConversationSummary,
 } from "../services/conversation";
 import type { MilestoneSummary } from "../services/milestone";
@@ -177,6 +178,7 @@ export type RealtimeConversationMessage = Omit<
 
 /** The activity fields the sidebar needs from a new message. */
 export type ConversationActivity = Pick<ConversationSummary, "id"> & {
+	scope: ConversationScope;
 	lastMessageAt: string;
 	lastMessageId: string;
 	lastMessageAuthorId: string | null;
@@ -195,6 +197,7 @@ export type ConversationMessageRealtimePayload = {
 /** A read cursor moved, for the other side's receipt and the same side's tabs. */
 export type ConversationReadPayload = {
 	conversationId: string;
+	scope: ConversationScope;
 	/** Null when the conversation cursor moved, the root id for a thread. */
 	threadRootId: string | null;
 	userId: string;
@@ -206,6 +209,18 @@ export type ConversationReadPayload = {
 export type ConversationTypingPayload = {
 	conversationId: string;
 	userId: string;
+};
+
+/** A conversation's metadata changed (name, topic, visibility, archive). */
+export type ConversationUpdatedPayload = {
+	conversationId: string;
+};
+
+/** One person was added to or removed from a group channel. */
+export type ConversationMemberChangedPayload = {
+	conversationId: string;
+	userId: string;
+	action: "added" | "removed";
 };
 
 export type MilestoneTypingPayload = {

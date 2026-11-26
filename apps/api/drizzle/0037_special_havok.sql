@@ -1,0 +1,2 @@
+DROP POLICY "conversation_participant_owner_update" ON "conversation_participant" CASCADE;--> statement-breakpoint
+ALTER POLICY "conversation_participant_select" ON "conversation_participant" TO app_tenant USING ("conversation_participant"."organization_id" = current_setting('app.current_org_id', true));

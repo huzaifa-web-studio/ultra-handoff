@@ -14,6 +14,7 @@ import { startRealtime } from "./realtime";
 import { realtimeRoutes } from "./realtime/gateway";
 import { accountRoutes } from "./routes/account";
 import { changeRequestRoutes } from "./routes/change-requests";
+import { channelRoutes } from "./routes/channels";
 import { commentRoutes } from "./routes/comments";
 import { conversationRoutes } from "./routes/conversations";
 import { fileRoutes } from "./routes/files";
@@ -76,6 +77,7 @@ async function buildApp() {
 		.use(commentRoutes)
 		// Direct conversations and their messages (tenant scoped).
 		.use(conversationRoutes)
+		.use(channelRoutes)
 		// Client change requests on a milestone (tenant scoped).
 		.use(changeRequestRoutes)
 		// Live comment, milestone and presence stream for the project workspace.
@@ -134,9 +136,11 @@ export type {
 	CommentReadPayload,
 	CommentRealtimePayload,
 	ConversationActivity,
+	ConversationMemberChangedPayload,
 	ConversationMessageRealtimePayload,
 	ConversationReadPayload,
 	ConversationTypingPayload,
+	ConversationUpdatedPayload,
 	MilestoneChangedField,
 	MilestoneCreatedPayload,
 	MilestoneDeletedPayload,

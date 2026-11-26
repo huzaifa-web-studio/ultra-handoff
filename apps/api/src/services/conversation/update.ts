@@ -63,6 +63,13 @@ export async function editConversationMessage(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireConversation(tx, tenant, conversationId);
+
+			if (access.conversation.archivedAt !== null) {
+				throw new APIError("BAD_REQUEST", {
+					message: "This channel is archived and is read only.",
+				});
+			}
+
 			const record = await loadMessageRecord(
 				tx,
 				tenant,
@@ -143,6 +150,13 @@ export async function deleteConversationMessage(
 		{ organizationId: tenant.organizationId, userId: tenant.userId },
 		async (tx) => {
 			const access = await requireConversation(tx, tenant, conversationId);
+
+			if (access.conversation.archivedAt !== null) {
+				throw new APIError("BAD_REQUEST", {
+					message: "This channel is archived and is read only.",
+				});
+			}
+
 			const record = await loadMessageRecord(
 				tx,
 				tenant,

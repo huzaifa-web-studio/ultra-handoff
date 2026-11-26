@@ -364,3 +364,286 @@ export async function fetchContacts(orgSlug: string, search: string) {
 
 export type ContactsResponse = Awaited<ReturnType<typeof fetchContacts>>;
 export type Contact = ContactsResponse["contacts"][number];
+
+/** Channels the viewer has joined, including empty ones. */
+export async function fetchChannels(orgSlug: string) {
+	const response = await api.orgs({ orgSlug }).channels.get();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load your channels."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load your channels.", 0);
+	}
+
+	return response.data;
+}
+
+export type ChannelListResponse = Awaited<ReturnType<typeof fetchChannels>>;
+export type ChannelSummary = ChannelListResponse["channels"][number];
+
+/** Public channels in the workspace. */
+export async function fetchChannelBrowse(orgSlug: string, search: string) {
+	const response = await api
+		.orgs({ orgSlug })
+		.channels.browse.get({ query: search ? { search } : {} });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load the channels."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load the channels.", 0);
+	}
+
+	return response.data;
+}
+
+export type ChannelBrowseResponse = Awaited<
+	ReturnType<typeof fetchChannelBrowse>
+>;
+export type ChannelBrowseItem = ChannelBrowseResponse["channels"][number];
+
+/** Create a channel. */
+export async function createChannel(
+	orgSlug: string,
+	input: {
+		title: string;
+		description?: string | null;
+		visibility: "public" | "private";
+		memberIds?: string[];
+	},
+) {
+	const response = await api.orgs({ orgSlug }).channels.post(input);
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not create the channel."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not create the channel.", 0);
+	}
+
+	return response.data;
+}
+
+export type CreateChannelResponse = Awaited<ReturnType<typeof createChannel>>;
+
+/** Change a channel's settings. */
+export async function updateChannel(
+	orgSlug: string,
+	conversationId: string,
+	input: {
+		title?: string;
+		description?: string | null;
+		visibility?: "public" | "private";
+	},
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.patch(input);
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not save the channel."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not save the channel.", 0);
+	}
+
+	return response.data;
+}
+
+export type UpdateChannelResponse = Awaited<ReturnType<typeof updateChannel>>;
+
+/** Join a public channel. */
+export async function joinChannel(orgSlug: string, conversationId: string) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.join.post();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not join the channel."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not join the channel.", 0);
+	}
+
+	return response.data;
+}
+
+/** Leave a channel. */
+export async function leaveChannel(orgSlug: string, conversationId: string) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.leave.post();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not leave the channel."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not leave the channel.", 0);
+	}
+
+	return response.data;
+}
+
+/** Add people to a channel. */
+export async function addChannelMembers(
+	orgSlug: string,
+	conversationId: string,
+	userIds: string[],
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.members.post({ userIds });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not add those people."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not add those people.", 0);
+	}
+
+	return response.data;
+}
+
+/** Remove one member. */
+export async function removeChannelMember(
+	orgSlug: string,
+	conversationId: string,
+	userId: string,
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.members({ userId })
+		.delete();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not remove that person."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not remove that person.", 0);
+	}
+
+	return response.data;
+}
+
+/** Promote or demote one member. */
+export async function setChannelMemberRole(
+	orgSlug: string,
+	conversationId: string,
+	userId: string,
+	role: "owner" | "member",
+) {
+	const response = await api
+		.orgs({ orgSlug })
+		.conversations({ conversationId })
+		.members({ userId })
+		.patch({ role });
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not change that role."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not change that role.", 0);
+	}
+
+	return response.data;
+}
+
+/** Mute or unmute a channel for the viewer. */
+export async function setChannelMuted(
+	orgSlug: string,
+	conversationId: string,
+	muted: boolean,
+) {
+	const conversation = api.orgs({ orgSlug }).conversations({ conversationId });
+	const response = muted
+		? await conversation.mute.post()
+		: await conversation.unmute.post();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(
+				response.error,
+				muted ? "Could not mute the channel." : "Could not unmute the channel.",
+			),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not change the channel.", 0);
+	}
+
+	return response.data;
+}
+
+/** Archive or restore a channel. */
+export async function setChannelArchived(
+	orgSlug: string,
+	conversationId: string,
+	archived: boolean,
+) {
+	const conversation = api.orgs({ orgSlug }).conversations({ conversationId });
+	const response = archived
+		? await conversation.archive.post()
+		: await conversation.restore.post();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(
+				response.error,
+				archived
+					? "Could not archive the channel."
+					: "Could not restore the channel.",
+			),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not change the channel.", 0);
+	}
+
+	return response.data;
+}

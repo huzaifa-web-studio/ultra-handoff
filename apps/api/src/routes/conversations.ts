@@ -16,14 +16,13 @@ import { APIError } from "better-auth/api";
 import { Elysia, t } from "elysia";
 
 import { authErrorMessage, authErrorStatus } from "../lib/auth-error";
+import { clampLimit } from "../lib/pagination";
 import { tenantPlugin } from "../middleware/tenant";
-import { publishUserEvent } from "../realtime";
 import {
 	type ConversationMessageRealtimePayload,
 	type ConversationReadPayload,
 	toRealtimeConversationMessage,
 } from "../realtime/events";
-import type { RealtimeEventType } from "../realtime/protocol";
 import {
 	type ConversationListQuery,
 	type ConversationReadResult,
@@ -42,6 +41,7 @@ import {
 	openDirectConversation,
 	searchConversationMessages,
 } from "../services/conversation";
+import { publishConversationToUsers } from "../services/conversation/publish";
 import { dispatchNotificationDeliveries } from "../services/notification-dispatch.service";
 
 /** One conversation in the URL. */
@@ -101,14 +101,6 @@ const contactsQuery = t.Object({
 const bodyField = t.Unknown();
 
 /** Clamp a page size instead of trusting the browser. */
-function clampLimit(value: string | undefined, fallback: number, max: number) {
-	const parsed = Number.parseInt(value ?? "", 10);
-
-	return Number.isFinite(parsed)
-		? Math.min(max, Math.max(1, parsed))
-		: fallback;
-}
-
 function parseListQuery(query: {
 	cursor?: string;
 	limit?: string;
@@ -191,39 +183,22 @@ function parseThreadQuery(query: {
 }
 
 /**
- * Publish one conversation event to each participant.
- *
- * Why after the service returns: the transaction has committed, and a realtime
- * failure must never turn a saved message into an error. Publishing never
- * rejects.
+ * Publish one cursor move, conversation or thread.
  */
-function publishToParticipants(
-	organizationId: string,
-	userIds: string[],
-	type: RealtimeEventType,
-	data: unknown,
-): void {
-	for (const userId of new Set(userIds)) {
-		void publishUserEvent(organizationId, userId, type, data).catch(
-			() => undefined,
-		);
-	}
-}
-
-/** Publish one cursor move, conversation or thread. */
 function publishRead(
 	tenant: { organizationId: string; userId: string },
 	result: ConversationReadResult,
 ): void {
 	const payload: ConversationReadPayload = {
 		conversationId: result.conversationId,
+		scope: result.scope,
 		threadRootId: result.threadRootId,
 		userId: tenant.userId,
 		lastReadAt: result.lastReadAt,
 		lastReadMessageId: result.lastReadMessageId,
 	};
 
-	publishToParticipants(
+	publishConversationToUsers(
 		tenant.organizationId,
 		result.participantIds,
 		"conversation.read",
@@ -386,9 +361,9 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 					senderId: tenant.userId,
 				};
 
-				publishToParticipants(
+				publishConversationToUsers(
 					tenant.organizationId,
-					[tenant.userId, result.recipientUserId],
+					[tenant.userId, ...result.recipientIds],
 					"conversation.message.created",
 					payload,
 				);
@@ -429,7 +404,7 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 					body,
 				);
 
-				publishToParticipants(
+				publishConversationToUsers(
 					tenant.organizationId,
 					result.participantIds,
 					"conversation.message.updated",
@@ -465,7 +440,7 @@ export const conversationRoutes = new Elysia({ name: "conversations" })
 					params.messageId,
 				);
 
-				publishToParticipants(
+				publishConversationToUsers(
 					tenant.organizationId,
 					result.participantIds,
 					"conversation.message.deleted",

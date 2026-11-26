@@ -20,28 +20,44 @@ import {
 import { notificationSummaryKey } from "#/features/notifications/hooks";
 import { ApiRequestError } from "#/lib/api";
 import {
+	addChannelMembers,
+	type ChannelBrowseResponse,
+	type ChannelListResponse,
+	type ChannelSummary,
+	type ConversationDetailResponse,
 	type ConversationMessage,
 	type ConversationsPage,
+	createChannel,
 	deleteMessage,
 	editMessage,
+	fetchChannelBrowse,
+	fetchChannels,
 	fetchContacts,
 	fetchConversation,
 	fetchConversations,
 	fetchMessages,
 	fetchMessagesAround,
 	fetchThread,
+	joinChannel,
+	leaveChannel,
 	type Message,
 	type MessagePage,
 	markRead,
 	markThreadRead,
 	openConversation,
+	removeChannelMember,
 	searchMessages,
 	sendMessage,
+	setChannelArchived,
+	setChannelMemberRole,
+	setChannelMuted,
 	type ThreadPage,
+	updateChannel,
 } from "./api";
 import {
 	appendMessage,
 	appendThreadReply,
+	applyChannelActivity,
 	type ConversationActivity,
 	type ConversationPages,
 	type MessagePages,
@@ -55,6 +71,8 @@ import {
 	withThreadRead,
 } from "./cache";
 import {
+	channelBrowseKey,
+	channelsKey,
 	contactsKey,
 	conversationKey,
 	conversationMessagesKey,
@@ -198,11 +216,33 @@ export function useSendMessage(
 
 			const activity: ConversationActivity = {
 				id: conversationId,
+				scope: data.conversation.scope,
 				lastMessageAt: data.conversation.lastMessageAt,
 				lastMessageId: data.conversation.lastMessageId,
 				lastMessageAuthorId: data.conversation.lastMessageAuthorId,
 				lastMessagePreview: data.conversation.lastMessagePreview,
 			};
+
+			if (activity.scope === "group") {
+				const channels = queryClient.getQueryData<ChannelListResponse>(
+					channelsKey(orgSlug),
+				);
+				const result = applyChannelActivity(channels, activity, {
+					viewerId,
+					senderId: viewerId,
+					active: true,
+				});
+
+				if (result.found) {
+					queryClient.setQueryData(channelsKey(orgSlug), result.list);
+				} else {
+					void queryClient.invalidateQueries({
+						queryKey: channelsKey(orgSlug),
+					});
+				}
+
+				return;
+			}
 
 			const current = queryClient.getQueryData<ConversationPages>(
 				conversationsKey(orgSlug),
@@ -439,3 +479,212 @@ export function useJumpToThreadMessage(
 
 /** Re-export the page types the components narrow against. */
 export type { ConversationsPage, MessagePage, ThreadPage };
+
+/** Write a channel summary into the detail cache, keeping the read receipt. */
+function patchConversationDetail(
+	queryClient: ReturnType<typeof useQueryClient>,
+	orgSlug: string,
+	conversation: ChannelSummary,
+): void {
+	queryClient.setQueryData<ConversationDetailResponse>(
+		conversationKey(orgSlug, conversation.id),
+		(current) =>
+			current
+				? { ...current, conversation }
+				: { conversation, counterpartRead: null },
+	);
+}
+
+/** Channels the viewer has joined, including empty ones. */
+export function useChannels(orgSlug: string) {
+	return useQuery({
+		queryKey: channelsKey(orgSlug),
+		queryFn: () => fetchChannels(orgSlug),
+		enabled: Boolean(orgSlug),
+		staleTime: 20_000,
+		retry: retryMessageQuery,
+	});
+}
+
+/** Public channels in the workspace. */
+export function useChannelBrowse(
+	orgSlug: string,
+	search: string,
+	enabled: boolean,
+) {
+	return useQuery({
+		queryKey: channelBrowseKey(orgSlug, search.trim()),
+		queryFn: () => fetchChannelBrowse(orgSlug, search.trim()),
+		enabled: Boolean(orgSlug) && enabled,
+		staleTime: 20_000,
+		placeholderData: keepPreviousData,
+		retry: retryMessageQuery,
+	});
+}
+
+/** Create a channel. */
+export function useCreateChannel(orgSlug: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (input: {
+			title: string;
+			description?: string | null;
+			visibility: "public" | "private";
+			memberIds?: string[];
+		}) => createChannel(orgSlug, input),
+		onSuccess: (data) => {
+			patchConversationDetail(queryClient, orgSlug, data.conversation);
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+			void queryClient.invalidateQueries({
+				queryKey: channelBrowseKey(orgSlug, ""),
+			});
+		},
+	});
+}
+
+/** Change a channel's settings. */
+export function useUpdateChannel(orgSlug: string, conversationId: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (input: {
+			title?: string;
+			description?: string | null;
+			visibility?: "public" | "private";
+		}) => updateChannel(orgSlug, conversationId, input),
+		onSuccess: (data) => {
+			patchConversationDetail(queryClient, orgSlug, data.conversation);
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+			void queryClient.invalidateQueries({
+				queryKey: channelBrowseKey(orgSlug, ""),
+			});
+		},
+	});
+}
+
+/** Join a public channel. */
+export function useJoinChannel(orgSlug: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (conversationId: string) =>
+			joinChannel(orgSlug, conversationId),
+		onSuccess: (data) => {
+			patchConversationDetail(queryClient, orgSlug, data.conversation);
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+			void queryClient.invalidateQueries({
+				queryKey: channelBrowseKey(orgSlug, ""),
+			});
+		},
+	});
+}
+
+/** Leave a channel. */
+export function useLeaveChannel(orgSlug: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (conversationId: string) =>
+			leaveChannel(orgSlug, conversationId),
+		onSuccess: (_data, conversationId) => {
+			queryClient.removeQueries({
+				queryKey: conversationKey(orgSlug, conversationId),
+			});
+			queryClient.removeQueries({
+				queryKey: conversationMessagesKey(orgSlug, conversationId),
+			});
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+			void queryClient.invalidateQueries({
+				queryKey: channelBrowseKey(orgSlug, ""),
+			});
+		},
+	});
+}
+
+/** Add people to a channel. */
+export function useAddChannelMembers(orgSlug: string, conversationId: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (userIds: string[]) =>
+			addChannelMembers(orgSlug, conversationId, userIds),
+		onSuccess: (data) => {
+			patchConversationDetail(queryClient, orgSlug, data.conversation);
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+		},
+	});
+}
+
+/** Remove one member. */
+export function useRemoveChannelMember(
+	orgSlug: string,
+	conversationId: string,
+) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (userId: string) =>
+			removeChannelMember(orgSlug, conversationId, userId),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({
+				queryKey: conversationKey(orgSlug, conversationId),
+			});
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+		},
+	});
+}
+
+/** Promote or demote one member. */
+export function useSetChannelMemberRole(
+	orgSlug: string,
+	conversationId: string,
+) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (input: { userId: string; role: "owner" | "member" }) =>
+			setChannelMemberRole(orgSlug, conversationId, input.userId, input.role),
+		onSuccess: (data) => {
+			patchConversationDetail(queryClient, orgSlug, data.conversation);
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+		},
+	});
+}
+
+/** Mute or unmute a channel. */
+export function useSetChannelMuted(orgSlug: string, conversationId: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (muted: boolean) =>
+			setChannelMuted(orgSlug, conversationId, muted),
+		onSuccess: (data) => {
+			patchConversationDetail(queryClient, orgSlug, data.conversation);
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+		},
+	});
+}
+
+/** Archive or restore a channel. */
+export function useSetChannelArchived(orgSlug: string, conversationId: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (archived: boolean) =>
+			setChannelArchived(orgSlug, conversationId, archived),
+		onSuccess: (data) => {
+			patchConversationDetail(queryClient, orgSlug, data.conversation);
+			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+			void queryClient.invalidateQueries({
+				queryKey: channelBrowseKey(orgSlug, ""),
+			});
+			void queryClient.invalidateQueries({
+				queryKey: conversationMessagesKey(orgSlug, conversationId),
+			});
+		},
+	});
+}
+
+/** Re-export the channel types the components narrow against. */
+export type { ChannelBrowseResponse, ChannelListResponse, ChannelSummary };

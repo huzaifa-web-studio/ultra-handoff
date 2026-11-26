@@ -88,6 +88,8 @@ export type RealtimeEventType =
 	| "conversation.message.updated"
 	| "conversation.message.deleted"
 	| "conversation.read"
+	| "conversation.updated"
+	| "conversation.member.changed"
 	| "presence.joined"
 	| "presence.left"
 	| "typing.started"

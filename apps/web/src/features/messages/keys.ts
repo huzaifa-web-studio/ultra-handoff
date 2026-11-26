@@ -55,3 +55,13 @@ export function conversationSearchKey(
 export function contactsKey(orgSlug: string, search: string) {
 	return [...messagesKey(orgSlug), "contacts", search] as const;
 }
+
+/** Channels the viewer has joined. */
+export function channelsKey(orgSlug: string) {
+	return [...messagesKey(orgSlug), "channels"] as const;
+}
+
+/** The public channel directory. */
+export function channelBrowseKey(orgSlug: string, search: string) {
+	return [...messagesKey(orgSlug), "channel-browse", search] as const;
+}

@@ -13,6 +13,8 @@
 
 import type { InfiniteData } from "@tanstack/react-query";
 import type {
+	ChannelListResponse,
+	ChannelSummary,
 	ConversationMessage,
 	ConversationSummary,
 	ConversationsPage,
@@ -30,6 +32,7 @@ export type ConversationPages = InfiniteData<ConversationsPage, string | null>;
 /** The activity fields a message event carries. */
 export type ConversationActivity = {
 	id: string;
+	scope: "direct" | "group" | "project";
 	lastMessageAt: string;
 	lastMessageId: string;
 	lastMessageAuthorId: string | null;
@@ -496,5 +499,86 @@ export function upsertConversation(
 			},
 			...rest,
 		],
+	};
+}
+
+/**
+ * Apply one activity event to the flat channel list.
+ *
+ * Why not reuse `withConversationActivity`: the channel list is a single capped
+ * array, not an infinite query, so there is no page to move a row between. The
+ * row moves to the front of the same array and the section badge follows the
+ * unread delta. `found` tells the realtime handler whether to refetch.
+ */
+export function applyChannelActivity(
+	list: ChannelListResponse | undefined,
+	activity: ConversationActivity,
+	options: { viewerId: string; senderId: string | null; active: boolean },
+): { list: ChannelListResponse | undefined; found: boolean } {
+	if (!list) return { list, found: false };
+
+	const current = list.channels.find((channel) => channel.id === activity.id);
+
+	if (!current) return { list, found: false };
+
+	const recipient =
+		options.senderId !== null && options.senderId !== options.viewerId;
+	const unread = options.active
+		? 0
+		: recipient
+			? Math.min(99, current.unread + 1)
+			: current.unread;
+	const delta = unread - current.unread;
+
+	const updated: ChannelSummary = {
+		...current,
+		unread,
+		lastMessage: {
+			id: activity.lastMessageId,
+			authorId: activity.lastMessageAuthorId,
+			authorName:
+				activity.lastMessageAuthorId === options.viewerId
+					? null
+					: (current.lastMessage.authorName ?? null),
+			preview: activity.lastMessagePreview,
+			createdAt: activity.lastMessageAt,
+		},
+	};
+
+	return {
+		list: {
+			channels: [
+				updated,
+				...list.channels.filter((channel) => channel.id !== activity.id),
+			],
+			unreadTotal: Math.max(0, list.unreadTotal + delta),
+		},
+		found: true,
+	};
+}
+
+/** Set one channel's unread count and adjust the section badge. */
+export function withChannelUnread(
+	list: ChannelListResponse | undefined,
+	conversationId: string,
+	unread: number,
+): ChannelListResponse | undefined {
+	if (!list) return list;
+
+	const current = list.channels.find(
+		(channel) => channel.id === conversationId,
+	);
+
+	if (!current) return list;
+
+	const delta = unread - current.unread;
+
+	if (delta === 0) return list;
+
+	return {
+		channels: list.channels.map((channel) =>
+			channel.id === conversationId ? { ...channel, unread } : channel,
+		),
+		unreadTotal: Math.max(0, list.unreadTotal + delta),
 	};
 }

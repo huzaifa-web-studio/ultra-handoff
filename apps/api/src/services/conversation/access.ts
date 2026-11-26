@@ -14,7 +14,7 @@
  */
 
 import { APIError } from "better-auth/api";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import {
 	conversation,
 	conversationMessage,
@@ -142,10 +142,12 @@ export async function assertRecipientMember(
 }
 
 /**
- * Load one conversation the viewer participates in.
+ * Load one conversation the viewer actively participates in.
  *
  * The join on the viewer's participant row is the authorization check, so a
  * conversation id from another pair answers 404 instead of leaking existence.
+ * A person who left a channel keeps their row but is no longer an active
+ * participant, so `left_at is null` is part of both reads.
  */
 export async function requireConversation(
 	tx: TenantTx,
@@ -163,6 +165,7 @@ export async function requireConversation(
 			and(
 				eq(conversationParticipant.conversationId, conversation.id),
 				eq(conversationParticipant.userId, tenant.userId),
+				isNull(conversationParticipant.leftAt),
 			),
 		)
 		.where(
@@ -186,12 +189,16 @@ export async function requireConversation(
 			and(
 				eq(conversationParticipant.organizationId, tenant.organizationId),
 				eq(conversationParticipant.conversationId, conversationId),
+				isNull(conversationParticipant.leftAt),
 			),
 		);
 
 	const counterpart =
-		participants.find((participant) => participant.userId !== tenant.userId) ??
-		null;
+		row.conversation.scope === "direct"
+			? (participants.find(
+					(participant) => participant.userId !== tenant.userId,
+				) ?? null)
+			: null;
 
 	return {
 		conversation: row.conversation,
@@ -202,17 +209,48 @@ export async function requireConversation(
 }
 
 /**
+ * Load a group conversation and prove the caller owns it.
+ *
+ * Used by every channel management route. A direct conversation is rejected
+ * before the role check, because both people are `owner` there and neither
+ * should be able to rename or archive the other's chat.
+ */
+export async function requireGroupOwner(
+	tx: TenantTx,
+	tenant: TenantContext,
+	conversationId: string,
+): Promise<ConversationAccess> {
+	const access = await requireConversation(tx, tenant, conversationId);
+
+	if (access.conversation.scope !== "group") {
+		throw new APIError("BAD_REQUEST", {
+			message: "That conversation is not a channel.",
+		});
+	}
+
+	if (access.viewer.role !== "owner") {
+		throw new APIError("FORBIDDEN", {
+			message: "Only a channel owner can change that.",
+		});
+	}
+
+	return access;
+}
+
+/**
  * Lightweight participation check used by the realtime typing relay.
  *
- * Returns the other participant's id, or null when the caller does not belong
- * to the conversation. No error is thrown: a socket frame that names a
- * conversation the caller cannot see is ignored, not answered.
+ * Returns every other active participant, or an empty array when the caller
+ * does not belong to the conversation. A direct conversation therefore returns
+ * one id, and a channel returns everyone else. No error is thrown: a socket
+ * frame that names a conversation the caller cannot see is ignored, not
+ * answered.
  */
-export async function loadTypingTarget(
+export async function loadTypingTargets(
 	tx: TenantTx,
 	tenant: TenantScope,
 	conversationId: string,
-): Promise<string | null> {
+): Promise<string[]> {
 	const [mine] = await tx
 		.select({ id: conversationParticipant.id })
 		.from(conversationParticipant)
@@ -221,13 +259,14 @@ export async function loadTypingTarget(
 				eq(conversationParticipant.organizationId, tenant.organizationId),
 				eq(conversationParticipant.conversationId, conversationId),
 				eq(conversationParticipant.userId, tenant.userId),
+				isNull(conversationParticipant.leftAt),
 			),
 		)
 		.limit(1);
 
-	if (!mine) return null;
+	if (!mine) return [];
 
-	const [other] = await tx
+	const others = await tx
 		.select({ userId: conversationParticipant.userId })
 		.from(conversationParticipant)
 		.where(
@@ -235,11 +274,11 @@ export async function loadTypingTarget(
 				eq(conversationParticipant.organizationId, tenant.organizationId),
 				eq(conversationParticipant.conversationId, conversationId),
 				ne(conversationParticipant.userId, tenant.userId),
+				isNull(conversationParticipant.leftAt),
 			),
-		)
-		.limit(1);
+		);
 
-	return other?.userId ?? null;
+	return others.map((row) => row.userId);
 }
 
 /**

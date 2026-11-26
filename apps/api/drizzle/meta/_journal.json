@@ -246,6 +246,27 @@
       "when": 1795623415455,
       "tag": "0034_bumpy_mulholland_black",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795714361502,
+      "tag": "0035_last_mastermind",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795715136515,
+      "tag": "0036_needy_dracula",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795715654075,
+      "tag": "0037_special_havok",
+      "breakpoints": true
     }
   ]
 }

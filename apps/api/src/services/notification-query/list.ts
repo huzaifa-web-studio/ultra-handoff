@@ -13,6 +13,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
 	changeRequest,
 	comment,
+	conversation,
 	milestone,
 	milestoneScopeEntry,
 	notification,
@@ -112,7 +113,12 @@ export async function listNotifications(
 				: undefined;
 
 			const rows = await tx
-				.select(notificationSelection())
+				.select({
+					...notificationSelection(),
+					// The channel name is rendered, not stored, so a rename is
+					// reflected in an old bell row.
+					conversationTitle: conversation.title,
+				})
 				.from(notification)
 				.leftJoin(project, eq(notification.projectId, project.id))
 				.leftJoin(milestone, eq(notification.milestoneId, milestone.id))
@@ -124,6 +130,10 @@ export async function listNotifications(
 				.leftJoin(
 					milestoneScopeEntry,
 					eq(notification.scopeEntryId, milestoneScopeEntry.id),
+				)
+				.leftJoin(
+					conversation,
+					eq(notification.conversationId, conversation.id),
 				)
 				.where(
 					and(
@@ -188,7 +198,9 @@ export async function listNotifications(
 					comment: commentView,
 					changeRequest: changeRequestView,
 					scopeEntry: scopeEntryView,
-					conversation: row.conversationId ? { id: row.conversationId } : null,
+					conversation: row.conversationId
+						? { id: row.conversationId, title: row.conversationTitle ?? null }
+						: null,
 					data,
 				});
 

@@ -19,7 +19,6 @@
  * Used by: routes/_app/$orgSlug.messages.$conversationId.index.tsx.
  */
 
-import { Avatar, AvatarFallback, AvatarImage } from "@org/ui/components/avatar";
 import { Button } from "@org/ui/components/button";
 import { Input } from "@org/ui/components/input";
 import {
@@ -29,18 +28,28 @@ import {
 	useDefaultLayout,
 } from "@org/ui/components/resizable";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownIcon, RefreshCwIcon, SearchIcon, XIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import {
+	ArrowDownIcon,
+	RefreshCwIcon,
+	SearchIcon,
+	Settings2Icon,
+	XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { authClient } from "#/features/auth/client";
 import { useMediaQuery } from "#/hooks/use-media-query";
+import { ApiRequestError } from "#/lib/api";
 import { formatDateTime } from "#/lib/date";
 import { useConversationTypingSender } from "#/lib/realtime/typing-sender";
 import {
 	conversationChannel,
-	useTypingUser,
+	useTypingUsers,
 } from "#/lib/realtime/typing-store";
 import type { Message } from "./api";
+import { ChannelSettingsDialog } from "./channel-settings";
+import { ConversationIdentity } from "./conversation-identity";
 import {
 	useConversation,
 	useJumpToMessage,
@@ -61,13 +70,6 @@ import {
 	threadTabsStorageKey,
 	toOpenThreadTab,
 } from "./thread-tabs";
-
-/** Initials for an avatar fallback. */
-function initials(name: string): string {
-	const parts = name.trim().split(/\s+/).slice(0, 2);
-
-	return parts.map((part) => part.charAt(0).toUpperCase()).join("") || "?";
-}
 
 export function ConversationView({
 	orgSlug,
@@ -99,6 +101,7 @@ export function ConversationView({
 	const send = useSendMessage(orgSlug, conversationId, viewerId);
 	const markRead = useMarkConversationRead(orgSlug, conversationId);
 	const jump = useJumpToMessage(orgSlug, conversationId);
+	const navigate = useNavigate();
 	const notifyTyping = useConversationTypingSender(
 		orgSlug,
 		viewerId,
@@ -110,6 +113,7 @@ export function ConversationView({
 	const [highlightId, setHighlightId] = useState<string | null>(null);
 	const [jumped, setJumped] = useState(false);
 	const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+	const [settingsOpen, setSettingsOpen] = useState(false);
 	/** A reply search hit to jump to inside the panel. */
 	const [threadJumpId, setThreadJumpId] = useState<string | null>(null);
 	/** Whether opening the panel should focus its composer. */
@@ -118,7 +122,7 @@ export function ConversationView({
 	const searchRef = useRef<HTMLDivElement>(null);
 
 	const searchResults = useMessageSearch(orgSlug, conversationId, search);
-	const typingUserId = useTypingUser(conversationChannel(conversationId));
+	const typingUsers = useTypingUsers(conversationChannel(conversationId));
 	const showSearchResults = search.trim().length >= 2;
 
 	const threadTabsKey = threadTabsStorageKey(orgSlug, conversationId);
@@ -131,6 +135,17 @@ export function ConversationView({
 		setThreadJumpId(null);
 		setReplyFocusToken(0);
 	}, [conversationId]);
+
+	// A removed member gets a 404 on the detail read. Leaving the pane on an
+	// error would strand the reader in a channel they can no longer open.
+	useEffect(() => {
+		if (
+			detail.error instanceof ApiRequestError &&
+			detail.error.status === 404
+		) {
+			void navigate({ to: "/$orgSlug/messages", params: { orgSlug } });
+		}
+	}, [detail.error, navigate, orgSlug]);
 
 	// A click outside the search box closes the overlay instead of leaving it
 	// open over the conversation.
@@ -331,12 +346,41 @@ export function ConversationView({
 		[pending, send],
 	);
 
-	const name = counterpart?.name ?? "Conversation";
-	const status = typingUserId
-		? "typing..."
-		: counterpart && !counterpart.isMember
-			? "No longer in this workspace"
-			: "Direct message";
+	const conversation = detail.data?.conversation ?? null;
+	const scope = conversation?.scope ?? "direct";
+	const name =
+		scope === "group"
+			? (conversation?.title ?? "Channel")
+			: (counterpart?.name ?? "Conversation");
+
+	// A channel can have several typers, so the header names one, two, or says
+	// several. A direct chat only ever has the other person.
+	const typingNames = typingUsers
+		.map(
+			(userId) =>
+				conversation?.participants.find(
+					(participant) => participant.userId === userId,
+				)?.name ?? "",
+		)
+		.filter((value) => value.length > 0);
+	const typingLabel =
+		typingNames.length === 0
+			? null
+			: typingNames.length === 1
+				? `${typingNames[0]} is typing...`
+				: typingNames.length === 2
+					? `${typingNames[0]} and ${typingNames[1]} are typing...`
+					: "Several people are typing...";
+
+	const status =
+		typingLabel ??
+		(scope === "group"
+			? conversation?.archivedAt
+				? "Archived"
+				: `${conversation?.memberCount ?? 0} members`
+			: counterpart && !counterpart.isMember
+				? "No longer in this workspace"
+				: "Direct message");
 
 	const threadPanel = activeThreadId ? (
 		<ThreadPanel
@@ -363,21 +407,23 @@ export function ConversationView({
 	const conversationColumn = (
 		<div className="flex h-full min-w-0 flex-1 flex-col">
 			<header className="flex h-14 shrink-0 items-center gap-3 border-b border-app-border px-4">
-				<Avatar size="sm">
-					{counterpart?.image && <AvatarImage src={counterpart.image} alt="" />}
-					<AvatarFallback>{initials(name)}</AvatarFallback>
-				</Avatar>
+				<ConversationIdentity
+					name={name}
+					image={counterpart?.image ?? null}
+					scope={scope}
+					status={status}
+				/>
 
-				<div className="flex min-w-0 flex-1 items-center gap-2">
-					<p className="truncate text-sm font-semibold text-app-text">{name}</p>
-					<span aria-hidden className="h-4 w-px bg-app-border" />
-					<p
-						className="truncate text-xs text-app-text-muted"
-						aria-live="polite"
+				{scope === "group" && conversation && (
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						aria-label="Channel settings"
+						onPress={() => setSettingsOpen(true)}
 					>
-						{status}
-					</p>
-				</div>
+						<Settings2Icon aria-hidden />
+					</Button>
+				)}
 
 				{jumped && (
 					<Button
@@ -531,7 +577,12 @@ export function ConversationView({
 			)}
 
 			<div className="shrink-0 px-4 pt-2 pb-4">
-				{counterpart && !counterpart.isMember ? (
+				{scope === "group" && conversation?.archivedAt ? (
+					<p className="text-xs text-app-text-muted">
+						This channel is archived, so it is read only. An owner can restore
+						it from channel settings.
+					</p>
+				) : counterpart && !counterpart.isMember ? (
 					<p className="text-xs text-app-text-muted">
 						This person is no longer part of the workspace, so this conversation
 						is read only.
@@ -542,7 +593,9 @@ export function ConversationView({
 						conversationId={conversationId}
 						onSend={handleSend}
 						onTyping={notifyTyping}
-						placeholder={`Message ${name}`}
+						placeholder={
+							scope === "group" ? `Message #${name}` : `Message ${name}`
+						}
 					/>
 				)}
 			</div>
@@ -581,6 +634,17 @@ export function ConversationView({
 						<div className="absolute inset-0 z-20 md:hidden">{threadPanel}</div>
 					)}
 				</>
+			)}
+
+			{scope === "group" && conversation && (
+				<ChannelSettingsDialog
+					key={conversation.id}
+					orgSlug={orgSlug}
+					conversation={conversation}
+					viewerId={viewerId}
+					isOpen={settingsOpen}
+					onOpenChange={setSettingsOpen}
+				/>
 			)}
 		</div>
 	);

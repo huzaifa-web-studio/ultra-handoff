@@ -59,6 +59,14 @@ export const NOTIFICATION_TYPES = [
 	 * new message, so a busy chat cannot flood the bell.
 	 */
 	"direct_message",
+	/**
+	 * A new message in a group channel.
+	 *
+	 * Same coalescing rule as a direct message, one row per channel per
+	 * recipient. Kept as its own type so the copy can say which channel and so
+	 * the list can render a channel name without guessing from the scope.
+	 */
+	"group_message",
 ] as const;
 
 /** One notification type. */

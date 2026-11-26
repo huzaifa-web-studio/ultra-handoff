@@ -10,8 +10,11 @@
 
 import type { conversation } from "../../db/schema";
 
-/** The scopes a conversation can carry. Only `direct` is created today. */
+/** The scopes a conversation can carry. */
 export type ConversationScope = "direct" | "group" | "project";
+
+/** Channel access. Ignored for direct and project conversations. */
+export type ChannelVisibility = "public" | "private";
 
 /** One person in a conversation, with their read cursor. */
 export type ConversationParticipantView = {
@@ -39,13 +42,23 @@ export type ConversationSummary = {
 	id: string;
 	scope: ConversationScope;
 	title: string | null;
-	/** The other person in a direct conversation. Null for a future group. */
+	/** Channel access. Ignored for direct conversations. */
+	visibility: ChannelVisibility;
+	/** Channel topic, shown in the header and the directory. */
+	description: string | null;
+	/** Set once a channel is archived. The UI turns the composer off. */
+	archivedAt: string | null;
+	/** Active participants, denormalised. Used by the channel directory. */
+	memberCount: number;
+	/** The other person in a direct conversation. Null for a group. */
 	counterpart: ConversationParticipantView | null;
 	participants: ConversationParticipantView[];
 	lastMessage: ConversationLastMessage;
 	/** Unread messages for this viewer, capped at 99. */
 	unread: number;
 	muted: boolean;
+	/** True when the viewer owns a group conversation. */
+	canManage: boolean;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -147,6 +160,7 @@ export type ConversationMessageResult = {
 	/** The fields the list needs to move this conversation to the top. */
 	conversation: {
 		id: string;
+		scope: ConversationScope;
 		lastMessageAt: string;
 		lastMessageId: string;
 		lastMessageAuthorId: string | null;
@@ -157,6 +171,7 @@ export type ConversationMessageResult = {
 /** The read cursor move result. */
 export type ConversationReadResult = {
 	conversationId: string;
+	scope: ConversationScope;
 	/** Null when the conversation cursor moved, the root id for a thread. */
 	threadRootId: string | null;
 	lastReadAt: string;
@@ -205,9 +220,66 @@ export type CreateConversationMessageInput = {
 
 export type ConversationRecord = typeof conversation.$inferSelect;
 
+/** Create input for a group channel. */
+export type CreateChannelInput = {
+	title: string;
+	description?: string | null;
+	visibility: ChannelVisibility;
+	/** Everyone besides the creator. The creator becomes an owner. */
+	memberIds?: string[];
+};
+
+/** Settings an owner may change. Omitted fields stay as they are. */
+export type UpdateChannelInput = {
+	title?: string;
+	description?: string | null;
+	visibility?: ChannelVisibility;
+};
+
+/** One channel in the joined sidebar list. */
+export type ChannelListResult = {
+	channels: ConversationSummary[];
+	/** Unread across every joined channel, for the section badge. */
+	unreadTotal: number;
+};
+
+/** One public channel in the browse directory. */
+export type ChannelBrowseRow = {
+	id: string;
+	title: string;
+	description: string | null;
+	memberCount: number;
+	/** True when the viewer already holds an active participant row. */
+	joined: boolean;
+	lastMessageAt: string | null;
+	lastMessagePreview: string;
+	createdAt: string;
+};
+
+export type ChannelBrowseQuery = {
+	search: string;
+	cursor: string | null;
+	limit: number;
+};
+
+export type ChannelBrowseResult = {
+	channels: ChannelBrowseRow[];
+	nextCursor: string | null;
+};
+
 /** Limits shared by the service and the routes. */
 export const CONVERSATION_PAGE_DEFAULT = 20;
 export const CONVERSATION_PAGE_MAX = 50;
 export const MESSAGE_PAGE_DEFAULT = 40;
 export const MESSAGE_PAGE_MAX = 60;
 export const MESSAGE_SEARCH_MAX = 25;
+
+/** Channel naming and membership limits. */
+export const CHANNEL_TITLE_MIN = 1;
+export const CHANNEL_TITLE_MAX = 80;
+export const CHANNEL_DESCRIPTION_MAX = 280;
+/** Notification fan out is per member, so the cap is deliberate. */
+export const CHANNEL_MEMBER_MAX = 100;
+export const CHANNEL_LIST_MAX = 200;
+export const CHANNEL_BROWSE_DEFAULT = 20;
+export const CHANNEL_BROWSE_MAX = 50;

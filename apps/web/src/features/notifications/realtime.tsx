@@ -178,8 +178,11 @@ export function NotificationRealtimeProvider({
 					});
 				}
 
-				if (created.type === "direct_message") {
-					// The DM stream normally patches the list. A missed frame is
+				if (
+					created.type === "direct_message" ||
+					created.type === "group_message"
+				) {
+					// The message stream normally patches the list. A missed frame is
 					// recovered here, because the bell row proves one exists.
 					void queryClient.invalidateQueries({
 						queryKey: messagesKey(orgSlug),

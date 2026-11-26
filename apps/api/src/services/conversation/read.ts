@@ -18,27 +18,36 @@ import { APIError } from "better-auth/api";
 import type { TenantTx } from "../../db/tenant";
 import { withTenant } from "../../db/tenant";
 import type { TenantContext } from "../../middleware/tenant";
-import { loadMessageRecord, requireConversation } from "./access";
+import { loadMessageRecord, requireConversation, toScope } from "./access";
 import { advanceConversationCursor, advanceThreadCursor } from "./cursors";
 import { countConversationUnread } from "./list";
-import { markDirectMessageNotificationRead } from "./notify";
+import {
+	markChannelMessageNotificationRead,
+	markDirectMessageNotificationRead,
+} from "./notify";
 import type { ConversationReadResult } from "./types";
 
 /**
  * Count unread after a cursor move and clear the bell when nothing is left.
  *
  * A conversation can still have unread replies after its roots are read, so the
- * bell is cleared on the same condition the badge uses.
+ * bell is cleared on the same condition the badge uses. A channel and a direct
+ * chat use different dedupe prefixes, so the scope decides which row to clear.
  */
 async function unreadAfterRead(
 	tx: TenantTx,
 	tenant: TenantContext,
 	conversationId: string,
+	scope: string,
 ): Promise<number> {
 	const unread = await countConversationUnread(tx, tenant, conversationId);
 
 	if (unread === 0) {
-		await markDirectMessageNotificationRead(tx, tenant, conversationId);
+		if (scope === "group") {
+			await markChannelMessageNotificationRead(tx, tenant, conversationId);
+		} else {
+			await markDirectMessageNotificationRead(tx, tenant, conversationId);
+		}
 	}
 
 	return unread;
@@ -79,10 +88,16 @@ export async function markConversationRead(
 				conversationId,
 				record.id,
 			);
-			const unread = await unreadAfterRead(tx, tenant, conversationId);
+			const unread = await unreadAfterRead(
+				tx,
+				tenant,
+				conversationId,
+				access.conversation.scope,
+			);
 
 			return {
 				conversationId,
+				scope: toScope(access.conversation.scope),
 				threadRootId: null,
 				lastReadAt: cursor.lastReadAt.toISOString(),
 				lastReadMessageId: cursor.lastReadMessageId ?? "",
@@ -135,10 +150,16 @@ export async function markThreadRead(
 				rootId,
 				record.id,
 			);
-			const unread = await unreadAfterRead(tx, tenant, conversationId);
+			const unread = await unreadAfterRead(
+				tx,
+				tenant,
+				conversationId,
+				access.conversation.scope,
+			);
 
 			return {
 				conversationId,
+				scope: toScope(access.conversation.scope),
 				threadRootId: rootId,
 				lastReadAt: cursor.lastReadAt.toISOString(),
 				lastReadMessageId: cursor.lastReadMessageId ?? "",
