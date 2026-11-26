@@ -24,11 +24,17 @@ import {
 	SidebarMenuItem,
 } from "@org/ui/components/sidebar";
 import { useLocation } from "@tanstack/react-router";
-import { HashIcon, MessageSquarePlusIcon, PlusIcon } from "lucide-react";
+import {
+	ArchiveIcon,
+	HashIcon,
+	MessageSquarePlusIcon,
+	PlusIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { flattenConversations } from "#/features/messages/cache";
 import { ChannelDialog } from "#/features/messages/channel-dialog";
 import {
+	useArchivedChannels,
 	useChannels,
 	useConversation,
 	useConversations,
@@ -66,9 +72,11 @@ function SectionBadge({ count }: { count: number }) {
 export function NavMessages({ orgSlug }: { orgSlug: string }) {
 	const { pathname } = useLocation();
 	const channels = useChannels(orgSlug);
+	const archived = useArchivedChannels(orgSlug);
 	const conversations = useConversations(orgSlug);
 	const rows = flattenConversations(conversations.data);
 	const channelRows = channels.data?.channels ?? [];
+	const archivedRows = archived.data?.channels ?? [];
 	const channelUnread = channels.data?.unreadTotal ?? 0;
 	const dmUnread = conversations.data?.pages[0]?.unreadTotal ?? 0;
 	const [channelDialogOpen, setChannelDialogOpen] = useState(false);
@@ -149,7 +157,39 @@ export function NavMessages({ orgSlug }: { orgSlug: string }) {
 						</button>
 					</div>
 				) : null}
+
+				{channels.data?.truncated && (
+					<p className="px-3 py-1 text-[0.65rem] text-sidebar-foreground/50">
+						Showing the first {channelRows.length} channels.
+					</p>
+				)}
 			</SidebarGroup>
+
+			{archivedRows.length > 0 && (
+				<SidebarGroup>
+					<SidebarGroupLabel>
+						<ArchiveIcon aria-hidden className="size-3" />
+						Archived
+					</SidebarGroupLabel>
+
+					<SidebarMenu>
+						{archivedRows.map((channel) => (
+							<NavChannelRow
+								key={channel.id}
+								orgSlug={orgSlug}
+								channel={channel}
+								active={isActive(channel.id)}
+							/>
+						))}
+					</SidebarMenu>
+
+					{archived.data?.truncated && (
+						<p className="px-3 py-1 text-[0.65rem] text-sidebar-foreground/50">
+							Showing the first {archivedRows.length} archived channels.
+						</p>
+					)}
+				</SidebarGroup>
+			)}
 
 			<SidebarGroup>
 				<SidebarGroupLabel>

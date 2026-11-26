@@ -96,14 +96,22 @@ export function useDeleteOrganization() {
 	});
 }
 
-/** Remove the current user from the organization. */
+/**
+ * Remove the current user from the organization.
+ *
+ * The API route calls the Better Auth leave endpoint and then detaches the
+ * person from every group channel in the same request. Calling the client
+ * endpoint directly would leave their channel rows and member counts behind.
+ */
 export function useLeaveOrganization() {
 	return useMutation({
-		mutationFn: async (organizationId: string) => {
-			const { error } = await authClient.organization.leave({ organizationId });
+		mutationFn: async (orgSlug: string) => {
+			const response = await api.orgs({ orgSlug }).leave.post();
 
-			if (error) {
-				throw new Error(error.message ?? "Could not leave the organization.");
+			if (response.error) {
+				throw new Error(
+					readApiError(response.error, "Could not leave the organization."),
+				);
 			}
 		},
 	});

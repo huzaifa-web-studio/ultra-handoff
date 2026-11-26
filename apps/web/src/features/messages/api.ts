@@ -386,11 +386,17 @@ export async function fetchChannels(orgSlug: string) {
 export type ChannelListResponse = Awaited<ReturnType<typeof fetchChannels>>;
 export type ChannelSummary = ChannelListResponse["channels"][number];
 
-/** Public channels in the workspace. */
-export async function fetchChannelBrowse(orgSlug: string, search: string) {
-	const response = await api
-		.orgs({ orgSlug })
-		.channels.browse.get({ query: search ? { search } : {} });
+/** Public channels in the workspace, one page at a time. */
+export async function fetchChannelBrowse(
+	orgSlug: string,
+	search: string,
+	cursor: string | null,
+) {
+	const query = {
+		...(search ? { search } : {}),
+		...(cursor ? { cursor } : {}),
+	};
+	const response = await api.orgs({ orgSlug }).channels.browse.get({ query });
 
 	if (response.error) {
 		throw new ApiRequestError(
@@ -410,6 +416,28 @@ export type ChannelBrowseResponse = Awaited<
 	ReturnType<typeof fetchChannelBrowse>
 >;
 export type ChannelBrowseItem = ChannelBrowseResponse["channels"][number];
+
+/** Channels the viewer still belongs to that an owner archived. */
+export async function fetchArchivedChannels(orgSlug: string) {
+	const response = await api.orgs({ orgSlug }).channels.archived.get();
+
+	if (response.error) {
+		throw new ApiRequestError(
+			readApiError(response.error, "Could not load the archived channels."),
+			readApiErrorStatus(response.error) ?? 0,
+		);
+	}
+
+	if (!response.data) {
+		throw new ApiRequestError("Could not load the archived channels.", 0);
+	}
+
+	return response.data;
+}
+
+export type ArchivedChannelsResponse = Awaited<
+	ReturnType<typeof fetchArchivedChannels>
+>;
 
 /** Create a channel. */
 export async function createChannel(

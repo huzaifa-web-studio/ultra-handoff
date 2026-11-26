@@ -14,7 +14,7 @@
 
 import { cn } from "cn";
 import { ChevronsUpDownIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type { Selection } from "react-aria-components";
 
 import { Badge } from "./badge";
@@ -69,6 +69,7 @@ export function MultiSelect({
 	disabled = false,
 	className,
 }: MultiSelectProps) {
+	const [open, setOpen] = useState(false);
 	const selectedSet = new Set(selected);
 	const selectedOptions = options.filter((option) =>
 		selectedSet.has(option.value),
@@ -86,7 +87,7 @@ export function MultiSelect({
 	}
 
 	return (
-		<PopoverTrigger>
+		<PopoverTrigger isOpen={open} onOpenChange={setOpen}>
 			<Button
 				variant="outline"
 				isDisabled={disabled}
@@ -136,7 +137,18 @@ export function MultiSelect({
 				placement="bottom start"
 				className="w-(--trigger-width) min-w-72 gap-0 p-0"
 			>
-				<Command>
+				<Command
+					// Escape closes the picker without discarding the selection.
+					// The menu would otherwise clear the controlled keys while the
+					// popover stayed open, which lost the user's choices.
+					onKeyDownCapture={(event) => {
+						if (event.key !== "Escape") return;
+
+						event.preventDefault();
+						event.stopPropagation();
+						setOpen(false);
+					}}
+				>
 					<CommandInput placeholder={searchPlaceholder} />
 					<CommandList
 						aria-label={label}

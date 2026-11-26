@@ -14,7 +14,7 @@
 import { SidebarMenuButton, SidebarMenuItem } from "@org/ui/components/sidebar";
 import { useNavigate } from "@tanstack/react-router";
 import { cn } from "cn";
-import { BellOffIcon, HashIcon } from "lucide-react";
+import { ArchiveIcon, BellOffIcon, HashIcon, LockIcon } from "lucide-react";
 import type * as React from "react";
 import type { ChannelSummary } from "#/features/messages/api";
 import { formatCommentTime } from "#/lib/date";
@@ -47,7 +47,8 @@ export function NavChannelRow({
 	const preview = time
 		? channel.lastMessage.preview || "No messages yet"
 		: "No messages yet";
-	const unread = channel.unread > 0;
+	const archived = channel.archivedAt !== null;
+	const unread = channel.unread > 0 && !archived;
 
 	return (
 		<SidebarMenuItem>
@@ -89,6 +90,18 @@ export function NavChannelRow({
 						>
 							{name}
 						</span>
+						{channel.visibility === "private" && (
+							<LockIcon
+								aria-label="Private channel"
+								className="size-3 shrink-0 text-sidebar-foreground/50"
+							/>
+						)}
+						{archived && (
+							<ArchiveIcon
+								aria-label="Archived"
+								className="size-3 shrink-0 text-sidebar-foreground/50"
+							/>
+						)}
 						{channel.muted && (
 							<BellOffIcon
 								aria-label="Muted"

@@ -30,6 +30,7 @@ import {
 	createChannel,
 	deleteMessage,
 	editMessage,
+	fetchArchivedChannels,
 	fetchChannelBrowse,
 	fetchChannels,
 	fetchContacts,
@@ -65,12 +66,14 @@ import {
 	replaceThreadReply,
 	replaceThreadRoot,
 	type ThreadPages,
+	withChannelUnread,
 	withConversationActivity,
 	withConversationUnread,
 	withRootReplyCount,
 	withThreadRead,
 } from "./cache";
 import {
+	archivedChannelsKey,
 	channelBrowseKey,
 	channelsKey,
 	contactsKey,
@@ -293,6 +296,9 @@ export function useEditMessage(orgSlug: string, conversationId: string) {
 			void queryClient.invalidateQueries({
 				queryKey: conversationsKey(orgSlug),
 			});
+			void queryClient.invalidateQueries({
+				queryKey: channelsKey(orgSlug),
+			});
 		},
 	});
 }
@@ -325,6 +331,9 @@ export function useDeleteMessage(orgSlug: string, conversationId: string) {
 			void queryClient.invalidateQueries({
 				queryKey: conversationsKey(orgSlug),
 			});
+			void queryClient.invalidateQueries({
+				queryKey: channelsKey(orgSlug),
+			});
 		},
 	});
 }
@@ -346,6 +355,10 @@ export function useMarkConversationRead(
 				conversationsKey(orgSlug),
 				(current) =>
 					withConversationUnread(current, conversationId, data.unread),
+			);
+			queryClient.setQueryData<ChannelListResponse>(
+				channelsKey(orgSlug),
+				(current) => withChannelUnread(current, conversationId, data.unread),
 			);
 
 			void queryClient.invalidateQueries({
@@ -386,6 +399,10 @@ export function useMarkThreadRead(
 				conversationsKey(orgSlug),
 				(current) =>
 					withConversationUnread(current, conversationId, data.unread),
+			);
+			queryClient.setQueryData<ChannelListResponse>(
+				channelsKey(orgSlug),
+				(current) => withChannelUnread(current, conversationId, data.unread),
 			);
 
 			void queryClient.invalidateQueries({
@@ -506,15 +523,30 @@ export function useChannels(orgSlug: string) {
 	});
 }
 
-/** Public channels in the workspace. */
+/** Channels the viewer still belongs to that an owner archived. */
+export function useArchivedChannels(orgSlug: string) {
+	return useQuery({
+		queryKey: archivedChannelsKey(orgSlug),
+		queryFn: () => fetchArchivedChannels(orgSlug),
+		enabled: Boolean(orgSlug),
+		staleTime: 20_000,
+		retry: retryMessageQuery,
+	});
+}
+
+/** Public channels in the workspace, paged by the directory cursor. */
 export function useChannelBrowse(
 	orgSlug: string,
 	search: string,
 	enabled: boolean,
 ) {
-	return useQuery({
-		queryKey: channelBrowseKey(orgSlug, search.trim()),
-		queryFn: () => fetchChannelBrowse(orgSlug, search.trim()),
+	const term = search.trim();
+
+	return useInfiniteQuery({
+		queryKey: channelBrowseKey(orgSlug, term),
+		queryFn: ({ pageParam }) => fetchChannelBrowse(orgSlug, term, pageParam),
+		initialPageParam: null as string | null,
+		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
 		enabled: Boolean(orgSlug) && enabled,
 		staleTime: 20_000,
 		placeholderData: keepPreviousData,
@@ -596,6 +628,9 @@ export function useLeaveChannel(orgSlug: string) {
 			});
 			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
 			void queryClient.invalidateQueries({
+				queryKey: archivedChannelsKey(orgSlug),
+			});
+			void queryClient.invalidateQueries({
 				queryKey: channelBrowseKey(orgSlug, ""),
 			});
 		},
@@ -676,6 +711,9 @@ export function useSetChannelArchived(orgSlug: string, conversationId: string) {
 		onSuccess: (data) => {
 			patchConversationDetail(queryClient, orgSlug, data.conversation);
 			void queryClient.invalidateQueries({ queryKey: channelsKey(orgSlug) });
+			void queryClient.invalidateQueries({
+				queryKey: archivedChannelsKey(orgSlug),
+			});
 			void queryClient.invalidateQueries({
 				queryKey: channelBrowseKey(orgSlug, ""),
 			});

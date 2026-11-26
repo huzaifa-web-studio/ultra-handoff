@@ -444,12 +444,6 @@ export function ChannelSettingsDialog({
 					</Button>
 				</section>
 			</div>
-
-			<div className="flex justify-end">
-				<Button variant="ghost" onPress={() => onOpenChange(false)}>
-					Close
-				</Button>
-			</div>
 		</Dialog>
 	);
 }

@@ -372,12 +372,16 @@ export function ConversationView({
 					? `${typingNames[0]} and ${typingNames[1]} are typing...`
 					: "Several people are typing...";
 
+	const privacy =
+		scope === "group" && conversation?.visibility === "private"
+			? ", private"
+			: "";
 	const status =
 		typingLabel ??
 		(scope === "group"
 			? conversation?.archivedAt
-				? "Archived"
-				: `${conversation?.memberCount ?? 0} members`
+				? `Archived${privacy}`
+				: `${conversation?.memberCount ?? 0} members${privacy}`
 			: counterpart && !counterpart.isMember
 				? "No longer in this workspace"
 				: "Direct message");

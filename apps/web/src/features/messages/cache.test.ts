@@ -569,6 +569,7 @@ describe("applyChannelActivity", () => {
 				makeChannel({ id: "channel-1", unread: 2 }),
 			],
 			unreadTotal: 2,
+			truncated: false,
 		};
 		const result = applyChannelActivity(
 			list,
@@ -594,6 +595,7 @@ describe("applyChannelActivity", () => {
 		const list: ChannelListResponse = {
 			channels: [makeChannel({ unread: 2 })],
 			unreadTotal: 2,
+			truncated: false,
 		};
 		const result = applyChannelActivity(
 			list,
@@ -615,6 +617,7 @@ describe("applyChannelActivity", () => {
 		const list: ChannelListResponse = {
 			channels: [makeChannel({ unread: 4 })],
 			unreadTotal: 4,
+			truncated: false,
 		};
 		const result = applyChannelActivity(
 			list,
@@ -637,6 +640,7 @@ describe("applyChannelActivity", () => {
 		const list: ChannelListResponse = {
 			channels: [makeChannel()],
 			unreadTotal: 0,
+			truncated: false,
 		};
 		const result = applyChannelActivity(
 			list,
@@ -664,6 +668,7 @@ describe("withChannelUnread", () => {
 				makeChannel({ id: "channel-2", unread: 1 }),
 			],
 			unreadTotal: 4,
+			truncated: false,
 		};
 		const next = withChannelUnread(list, "channel-1", 0);
 
@@ -675,6 +680,7 @@ describe("withChannelUnread", () => {
 		const list: ChannelListResponse = {
 			channels: [makeChannel({ unread: 2 })],
 			unreadTotal: 2,
+			truncated: false,
 		};
 
 		expect(withChannelUnread(list, "conversation-1", 2)).toBe(list);

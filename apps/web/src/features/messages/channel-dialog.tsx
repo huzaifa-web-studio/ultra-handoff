@@ -141,6 +141,7 @@ export function ChannelDialog({
 		label: contact.name,
 		description: contact.role,
 	}));
+	const browseRows = browse.data?.pages.flatMap((page) => page.channels) ?? [];
 
 	return (
 		<Dialog
@@ -186,7 +187,10 @@ export function ChannelDialog({
 						<Input
 							id="channel-create-name"
 							value={title}
-							onChange={(event) => setTitle(event.target.value)}
+							onChange={(event) => {
+								setTitle(event.target.value);
+								setError(null);
+							}}
 							placeholder="design-review"
 							maxLength={80}
 							autoFocus
@@ -201,7 +205,10 @@ export function ChannelDialog({
 						<Textarea
 							id="channel-create-description"
 							value={description}
-							onChange={(event) => setDescription(event.target.value)}
+							onChange={(event) => {
+								setDescription(event.target.value);
+								setError(null);
+							}}
 							placeholder="What this channel is for"
 							maxLength={280}
 							rows={2}
@@ -314,7 +321,7 @@ export function ChannelDialog({
 							<p role="alert" className="p-4 text-sm text-danger">
 								Could not load the channels.
 							</p>
-						) : (browse.data?.channels.length ?? 0) === 0 ? (
+						) : browseRows.length === 0 ? (
 							<p className="p-4 text-sm text-app-text-muted">
 								{debounced.trim()
 									? "No public channels match that search."
@@ -322,7 +329,7 @@ export function ChannelDialog({
 							</p>
 						) : (
 							<ul className="flex flex-col">
-								{browse.data?.channels.map((channel) => (
+								{browseRows.map((channel) => (
 									<li
 										key={channel.id}
 										className="flex items-center gap-3 border-b border-app-border px-2 py-2 last:border-b-0"
@@ -356,12 +363,19 @@ export function ChannelDialog({
 								))}
 							</ul>
 						)}
-					</div>
 
-					<div className="flex justify-end">
-						<Button variant="ghost" onPress={() => onOpenChange(false)}>
-							Close
-						</Button>
+						{browse.hasNextPage && (
+							<div className="flex justify-center p-2">
+								<Button
+									size="sm"
+									variant="outline"
+									onPress={() => void browse.fetchNextPage()}
+									isDisabled={browse.isFetchingNextPage}
+								>
+									{browse.isFetchingNextPage ? "Loading..." : "Load more"}
+								</Button>
+							</div>
+						)}
 					</div>
 				</TabsContent>
 			</Tabs>

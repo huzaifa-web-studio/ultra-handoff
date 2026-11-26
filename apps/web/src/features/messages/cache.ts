@@ -552,6 +552,7 @@ export function applyChannelActivity(
 				...list.channels.filter((channel) => channel.id !== activity.id),
 			],
 			unreadTotal: Math.max(0, list.unreadTotal + delta),
+			truncated: list.truncated,
 		},
 		found: true,
 	};
@@ -580,5 +581,6 @@ export function withChannelUnread(
 			channel.id === conversationId ? { ...channel, unread } : channel,
 		),
 		unreadTotal: Math.max(0, list.unreadTotal + delta),
+		truncated: list.truncated,
 	};
 }

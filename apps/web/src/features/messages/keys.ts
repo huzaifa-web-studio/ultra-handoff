@@ -61,6 +61,11 @@ export function channelsKey(orgSlug: string) {
 	return [...messagesKey(orgSlug), "channels"] as const;
 }
 
+/** Channels the viewer still belongs to that an owner archived. */
+export function archivedChannelsKey(orgSlug: string) {
+	return [...messagesKey(orgSlug), "channels-archived"] as const;
+}
+
 /** The public channel directory. */
 export function channelBrowseKey(orgSlug: string, search: string) {
 	return [...messagesKey(orgSlug), "channel-browse", search] as const;

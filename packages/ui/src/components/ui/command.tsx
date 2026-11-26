@@ -38,11 +38,13 @@ function Command({
 	className,
 	dir,
 	style,
+	onKeyDownCapture,
 	...props
 }: Omit<AutocompleteProps, "className" | "style"> & {
 	className?: string;
 	dir?: React.HTMLAttributes<HTMLDivElement>["dir"];
 	style?: React.CSSProperties;
+	onKeyDownCapture?: React.KeyboardEventHandler<HTMLDivElement>;
 }) {
 	const { contains } = useFilter({ sensitivity: "base" });
 	return (
@@ -54,6 +56,7 @@ function Command({
 				className,
 			)}
 			style={style}
+			onKeyDownCapture={onKeyDownCapture}
 		>
 			<Autocomplete {...props} filter={props.filter || contains}>
 				{props.children}

@@ -70,7 +70,7 @@ export function LeaveCard({ organization, role }: LeaveCardProps) {
 		}
 
 		try {
-			await leaveOrganization.mutateAsync(organization.id);
+			await leaveOrganization.mutateAsync(organization.slug);
 		} catch {
 			// The mutation error is rendered below.
 			return;
