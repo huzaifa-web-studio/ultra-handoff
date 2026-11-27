@@ -10,7 +10,7 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GlobalLoadingScreen } from "#/components/global-loading";
 import { authClient } from "#/features/auth/client";
 import { useAuthBroadcast } from "#/features/auth/sync";
@@ -101,6 +101,34 @@ const queryClient = new QueryClient();
  */
 function AuthBroadcastSync() {
 	useAuthBroadcast();
+
+	/*
+	 * A shared browser can sign out and sign a second person in without a full
+	 * page reload. Query keys are not user scoped, so the previous person's
+	 * projects and messages would otherwise be served from cache to the next
+	 * person until they go stale. Clearing on a settled user change makes every
+	 * sign in a fresh visit.
+	 */
+	const { data: session, isPending } = authClient.useSession();
+	const previousUserId = useRef<string | null | undefined>(undefined);
+
+	useEffect(() => {
+		if (isPending) return;
+
+		const userId = session?.user.id ?? null;
+
+		// The first settled session is the baseline, not a change to clear for.
+		if (previousUserId.current === undefined) {
+			previousUserId.current = userId;
+			return;
+		}
+
+		if (previousUserId.current === userId) return;
+
+		previousUserId.current = userId;
+		queryClient.clear();
+	}, [isPending, session?.user.id]);
+
 	return null;
 }
 

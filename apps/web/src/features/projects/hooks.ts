@@ -17,7 +17,7 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
-
+import { messagesKey } from "#/features/messages/keys";
 import { ApiRequestError } from "#/lib/api";
 import { SIDEBAR_PROJECTS_PAGE_SIZE } from "#/lib/limits";
 import {
@@ -117,6 +117,24 @@ function useInvalidateProjects(orgSlug: string) {
 }
 
 /**
+ * Refresh the project and its message room after a lifecycle change.
+ *
+ * Why both prefixes: archive and restore decide whether the project room is
+ * read only. The room header is cached under the messages prefix while the
+ * project lives under projects, so invalidating only the project leaves the
+ * room looking archived until a reload.
+ */
+function useInvalidateProjectLifecycle(orgSlug: string) {
+	const queryClient = useQueryClient();
+
+	return () =>
+		Promise.all([
+			queryClient.invalidateQueries({ queryKey: projectsKey(orgSlug) }),
+			queryClient.invalidateQueries({ queryKey: messagesKey(orgSlug) }),
+		]);
+}
+
+/**
  * The caller's pinned projects for the sidebar.
  *
  * The sidebar is visible on every screen, so this avoids refetching on every
@@ -213,7 +231,7 @@ export function useUpdateProject(orgSlug: string) {
 }
 
 export function useArchiveProject(orgSlug: string) {
-	const invalidate = useInvalidateProjects(orgSlug);
+	const invalidate = useInvalidateProjectLifecycle(orgSlug);
 
 	return useMutation({
 		mutationFn: (projectId: string) => archiveProject(orgSlug, projectId),
@@ -222,7 +240,7 @@ export function useArchiveProject(orgSlug: string) {
 }
 
 export function useUnarchiveProject(orgSlug: string) {
-	const invalidate = useInvalidateProjects(orgSlug);
+	const invalidate = useInvalidateProjectLifecycle(orgSlug);
 
 	return useMutation({
 		mutationFn: (projectId: string) => unarchiveProject(orgSlug, projectId),
@@ -251,7 +269,7 @@ export function useSetProjectArchiveVisibility(orgSlug: string) {
 }
 
 export function useDeleteProject(orgSlug: string) {
-	const invalidate = useInvalidateProjects(orgSlug);
+	const invalidate = useInvalidateProjectLifecycle(orgSlug);
 
 	return useMutation({
 		mutationFn: (projectId: string) => deleteProject(orgSlug, projectId),
@@ -260,7 +278,7 @@ export function useDeleteProject(orgSlug: string) {
 }
 
 export function useBulkArchiveProjects(orgSlug: string) {
-	const invalidate = useInvalidateProjects(orgSlug);
+	const invalidate = useInvalidateProjectLifecycle(orgSlug);
 
 	return useMutation({
 		mutationFn: (projectIds: string[]) =>
@@ -270,7 +288,7 @@ export function useBulkArchiveProjects(orgSlug: string) {
 }
 
 export function useBulkUnarchiveProjects(orgSlug: string) {
-	const invalidate = useInvalidateProjects(orgSlug);
+	const invalidate = useInvalidateProjectLifecycle(orgSlug);
 
 	return useMutation({
 		mutationFn: (projectIds: string[]) =>

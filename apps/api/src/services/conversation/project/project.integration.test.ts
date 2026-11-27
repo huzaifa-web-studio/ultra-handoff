@@ -29,6 +29,7 @@ import { setProjectArchived } from "../../project/lifecycle";
 import { removeProjectMember } from "../../project/members";
 import { createConversationMessage } from "../create";
 import { getConversation } from "../open";
+import { deleteConversationMessage, editConversationMessage } from "../update";
 import {
 	getProjectConversationUnread,
 	openProjectConversation,
@@ -211,18 +212,41 @@ suite("project conversation rooms", () => {
 	});
 
 	it("makes the room read only while the project is archived", async () => {
+		const room = await openProjectConversation(tenant(ids.owner), ids.project);
+		const sent = await createConversationMessage(
+			tenant(ids.owner),
+			room.conversation.id,
+			{
+				body: [{ type: "p", children: [{ text: "Before the archive" }] }],
+				clientNonce: randomUUID(),
+			},
+		);
+
 		await setProjectArchived(tenant(ids.owner), ids.project, true);
 
 		await expect(
-			createConversationMessage(
+			createConversationMessage(tenant(ids.owner), room.conversation.id, {
+				body: [{ type: "p", children: [{ text: "While archived" }] }],
+				clientNonce: randomUUID(),
+			}),
+		).rejects.toThrow("This project is archived and is read only.");
+
+		await expect(
+			editConversationMessage(
 				tenant(ids.owner),
-				projectConversationId(ids.project),
-				{
-					body: [{ type: "p", children: [{ text: "While archived" }] }],
-					clientNonce: randomUUID(),
-				},
+				room.conversation.id,
+				sent.message.id,
+				{ body: [{ type: "p", children: [{ text: "Edited" }] }] },
 			),
-		).rejects.toThrow("archived");
+		).rejects.toThrow("This project is archived and is read only.");
+
+		await expect(
+			deleteConversationMessage(
+				tenant(ids.owner),
+				room.conversation.id,
+				sent.message.id,
+			),
+		).rejects.toThrow("This project is archived and is read only.");
 
 		const [row] = await adminDb
 			.select({ archivedAt: conversation.archivedAt })

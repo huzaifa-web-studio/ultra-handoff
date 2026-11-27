@@ -31,6 +31,21 @@ import type { ConversationMessageRow } from "./types";
 /** What the list shows when the newest message was deleted. */
 const DELETED_PREVIEW = "Message deleted";
 
+/**
+ * The refusal for a write to an archived conversation.
+ *
+ * A project room names the project, because that is what the reader can
+ * restore. A group channel keeps the channel wording.
+ */
+function archivedConversationError(scope: string): APIError {
+	return new APIError("BAD_REQUEST", {
+		message:
+			scope === "project"
+				? "This project is archived and is read only."
+				: "This channel is archived and is read only.",
+	});
+}
+
 /** Reject a change by anyone but the author. */
 function assertAuthor(record: { authorId: string | null }, viewerId: string) {
 	if (record.authorId !== viewerId) {
@@ -65,9 +80,7 @@ export async function editConversationMessage(
 			const access = await requireConversation(tx, tenant, conversationId);
 
 			if (access.conversation.archivedAt !== null) {
-				throw new APIError("BAD_REQUEST", {
-					message: "This channel is archived and is read only.",
-				});
+				throw archivedConversationError(access.conversation.scope);
 			}
 
 			const record = await loadMessageRecord(
@@ -152,9 +165,7 @@ export async function deleteConversationMessage(
 			const access = await requireConversation(tx, tenant, conversationId);
 
 			if (access.conversation.archivedAt !== null) {
-				throw new APIError("BAD_REQUEST", {
-					message: "This channel is archived and is read only.",
-				});
+				throw archivedConversationError(access.conversation.scope);
 			}
 
 			const record = await loadMessageRecord(

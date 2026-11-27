@@ -28,7 +28,7 @@ import {
 	XIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
+import { ApiRequestError } from "#/lib/api";
 import { useConversationTypingSender } from "#/lib/realtime/typing-sender";
 import type { ConversationMessage } from "./api";
 import {
@@ -52,6 +52,9 @@ export function ThreadPanel({
 	autoFocus,
 	onClose,
 	onOpenThread,
+	readOnly = false,
+	readOnlyNotice = "",
+	onMissing,
 }: {
 	orgSlug: string;
 	conversationId: string;
@@ -67,6 +70,12 @@ export function ThreadPanel({
 	onClose: () => void;
 	/** Open the dedicated thread route in a new browser tab. */
 	onOpenThread: (root: ConversationMessage | null) => void;
+	/** True when the conversation is archived, so no reply can be written. */
+	readOnly?: boolean;
+	/** The sentence shown in place of the composer when archived. */
+	readOnlyNotice?: string;
+	/** Called when the root no longer exists, so the panel can close. */
+	onMissing?: () => void;
 }) {
 	const queryClient = useQueryClient();
 	const thread = useThread(orgSlug, conversationId, rootId);
@@ -98,6 +107,22 @@ export function ThreadPanel({
 		markRef.current = markRead;
 		jumpRef.current = jump;
 	}, [markRead, jump]);
+
+	/*
+	 * A 404 means the root no longer exists. That is an answer, not a transient
+	 * failure, so the panel closes and lets the parent clear the deep link
+	 * instead of leaving a dead thread with a retry button.
+	 */
+	useEffect(() => {
+		if (
+			!(thread.error instanceof ApiRequestError) ||
+			thread.error.status !== 404
+		) {
+			return;
+		}
+
+		onMissing?.();
+	}, [thread.error, onMissing]);
 
 	/*
 	 * A search hit can name a reply that is not on the newest page. Load the
@@ -391,6 +416,7 @@ export function ThreadPanel({
 										elementId={`thread-panel-message-${root.id}`}
 										highlighted={highlightId === root.id}
 										hideReply
+										readOnly={readOnly}
 									/>
 								</div>
 							)}
@@ -434,6 +460,7 @@ export function ThreadPanel({
 											elementId={`thread-panel-message-${reply.id}`}
 											grouped={grouped}
 											highlighted={highlightId === reply.id}
+											readOnly={readOnly}
 										/>
 									);
 								})
@@ -459,6 +486,8 @@ export function ThreadPanel({
 							<p className="text-xs text-app-text-muted">
 								This thread was deleted, so it is read only.
 							</p>
+						) : readOnly ? (
+							<p className="text-xs text-app-text-muted">{readOnlyNotice}</p>
 						) : (
 							<MessageComposer
 								orgSlug={orgSlug}

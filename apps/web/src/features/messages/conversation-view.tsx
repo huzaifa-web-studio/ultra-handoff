@@ -41,6 +41,7 @@ import {
 	useTypingUsers,
 } from "#/lib/realtime/typing-store";
 import type { Message } from "./api";
+import { archivedConversationNotice } from "./archived";
 import { ChannelSettingsDialog } from "./channel-settings";
 import { ConversationIdentity } from "./conversation-identity";
 import {
@@ -76,6 +77,7 @@ export function ConversationView({
 	threadHref,
 	initialThreadId,
 	onMissing,
+	onThreadClosed,
 }: {
 	orgSlug: string;
 	conversationId: string;
@@ -91,6 +93,8 @@ export function ConversationView({
 	initialThreadId?: string | null;
 	/** Where to go when the conversation no longer exists. */
 	onMissing?: () => void;
+	/** Called when the reader closes the thread, so a deep link can clear. */
+	onThreadClosed?: () => void;
 }) {
 	const queryClient = useQueryClient();
 	const { data: session } = authClient.useSession();
@@ -174,6 +178,14 @@ export function ConversationView({
 		setThreadFocusOnOpen(true);
 		setReplyFocusToken((current) => current + 1);
 	}, []);
+
+	/** Close the panel and let a deep-linked route clear its parameter. */
+	const handleCloseThread = useCallback(() => {
+		setActiveThreadId(null);
+		setThreadJumpId(null);
+		setReplyFocusToken(0);
+		onThreadClosed?.();
+	}, [onThreadClosed]);
 
 	/** A search hit either jumps the timeline to a root or opens its thread. */
 	const handleSearchSelect = useCallback(
@@ -275,6 +287,10 @@ export function ConversationView({
 
 	const conversation = detail.data?.conversation ?? null;
 	const scope = conversation?.scope ?? "direct";
+	const archivedNotice = conversation?.archivedAt
+		? archivedConversationNotice(scope)
+		: null;
+	const readOnly = archivedNotice !== null;
 	const name =
 		scope === "project"
 			? (projectName ?? conversation?.title ?? "Project messages")
@@ -330,11 +346,10 @@ export function ConversationView({
 			jumpMessageId={threadJumpId}
 			focusToken={replyFocusToken}
 			autoFocus={threadFocusOnOpen}
-			onClose={() => {
-				setActiveThreadId(null);
-				setThreadJumpId(null);
-				setReplyFocusToken(0);
-			}}
+			readOnly={readOnly}
+			readOnlyNotice={archivedNotice ?? ""}
+			onMissing={handleCloseThread}
+			onClose={handleCloseThread}
 			onOpenThread={(root) =>
 				openThreadTab(activeThreadId, root ? toOpenThreadTab(root) : undefined)
 			}
@@ -425,20 +440,13 @@ export function ConversationView({
 					onOpenThreadInNewTab={handleOpenThreadInNewTab}
 					activeThreadId={activeThreadId}
 					highlightId={highlightId}
+					readOnly={readOnly}
 				/>
 			)}
 
 			<div className="shrink-0 px-4 pt-2 pb-4">
-				{scope === "group" && conversation?.archivedAt ? (
-					<p className="text-xs text-app-text-muted">
-						This channel is archived, so it is read only. An owner can restore
-						it from channel settings.
-					</p>
-				) : scope === "project" && conversation?.archivedAt ? (
-					<p className="text-xs text-app-text-muted">
-						This project is archived, so it is read only. Restore the project to
-						continue.
-					</p>
+				{archivedNotice ? (
+					<p className="text-xs text-app-text-muted">{archivedNotice}</p>
 				) : counterpart && !counterpart.isMember ? (
 					<p className="text-xs text-app-text-muted">
 						This person is no longer part of the workspace, so this conversation

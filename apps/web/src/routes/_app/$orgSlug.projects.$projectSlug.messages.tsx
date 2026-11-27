@@ -20,6 +20,16 @@ type ProjectMessagesSearch = {
 	thread?: string;
 };
 
+/**
+ * Message ids are UUIDs.
+ *
+ * Why validate the shape: a hand edited or stale link must not reach the thread
+ * request. Anything that cannot be a message id is dropped, so the room opens
+ * on the timeline instead of a dead thread panel.
+ */
+const MESSAGE_ID_PATTERN =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const Route = createFileRoute(
 	"/_app/$orgSlug/projects/$projectSlug/messages",
 )({
@@ -30,7 +40,7 @@ export const Route = createFileRoute(
 
 		return {
 			thread:
-				typeof thread === "string" && thread.length > 0 && thread.length <= 64
+				typeof thread === "string" && MESSAGE_ID_PATTERN.test(thread)
 					? thread
 					: undefined,
 		};

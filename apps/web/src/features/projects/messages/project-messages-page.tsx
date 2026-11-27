@@ -73,6 +73,20 @@ export function ProjectMessagesPage({
 		});
 	}, [navigate, orgSlug, projectSlug]);
 
+	/*
+	 * A notification opens the room with `?thread=`. Closing that thread has to
+	 * drop the parameter, otherwise a reload reopens a panel the reader already
+	 * dismissed, and a stale id would fail again.
+	 */
+	const handleThreadClosed = useCallback(() => {
+		void navigate({
+			to: "/$orgSlug/projects/$projectSlug/messages",
+			params: { orgSlug, projectSlug },
+			search: (previous) => ({ ...previous, thread: undefined }),
+			replace: true,
+		});
+	}, [navigate, orgSlug, projectSlug]);
+
 	const threadHref = useCallback(
 		(rootId: string) =>
 			`/${orgSlug}/projects/${projectSlug}/messages?thread=${encodeURIComponent(rootId)}`,
@@ -117,6 +131,7 @@ export function ProjectMessagesPage({
 			threadHref={threadHref}
 			initialThreadId={threadId}
 			onMissing={handleMissing}
+			onThreadClosed={handleThreadClosed}
 		/>
 	);
 }

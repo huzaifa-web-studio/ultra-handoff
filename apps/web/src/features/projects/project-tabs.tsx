@@ -134,6 +134,14 @@ export function ProjectTabs({
 							key={tab.label}
 							to={tab.to}
 							params={{ orgSlug, projectSlug }}
+							/*
+							 * The router also writes `aria-current` from its own
+							 * active match. Passing the tab's exactness here keeps
+							 * the router and the visual check in step, so Overview
+							 * is not announced as current on a child tab while
+							 * Settings still matches its members subroute.
+							 */
+							activeOptions={{ exact: tab.exact }}
 							aria-current={active ? "page" : undefined}
 							className={cn(
 								"flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors",

@@ -111,6 +111,7 @@ export function MessageItem({
 	grouped = false,
 	highlighted = false,
 	repliesOpen = false,
+	readOnly = false,
 	onReply,
 	onOpenThread,
 }: {
@@ -138,6 +139,13 @@ export function MessageItem({
 	highlighted?: boolean;
 	/** True while the thread panel is showing this root. */
 	repliesOpen?: boolean;
+	/**
+	 * True when the conversation is archived.
+	 *
+	 * Hides every action that writes, including reply, edit and delete. The
+	 * thread chip stays so older replies can still be read.
+	 */
+	readOnly?: boolean;
 	/** Open the thread panel and focus its composer. */
 	onReply?: () => void;
 	/** Open the dedicated thread view in a new browser tab. */
@@ -259,7 +267,7 @@ export function MessageItem({
 					</div>
 				)}
 
-				{editing ? (
+				{editing && !readOnly ? (
 					<div className="mt-1 w-full min-w-72 border border-app-border bg-app-panel">
 						<CommentEditor
 							initialValue={message.body}
@@ -380,7 +388,7 @@ export function MessageItem({
 			 * relevant. A fine pointer reveals them on hover; a touch device or a
 			 * keyboard keeps them visible, so nothing is hover only.
 			 */}
-			{!editing && !deleted && (
+			{!readOnly && !editing && !deleted && (
 				<div
 					className={cn(
 						"absolute -top-3 right-4 z-10 flex items-center gap-0.5 border border-app-border bg-app-panel px-0.5 shadow-sm",

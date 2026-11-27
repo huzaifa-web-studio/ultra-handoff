@@ -54,6 +54,7 @@ export function MessageList({
 	onOpenThreadInNewTab,
 	activeThreadId,
 	highlightId,
+	readOnly = false,
 }: {
 	messages: Message[];
 	pending: PendingMessage[];
@@ -74,6 +75,8 @@ export function MessageList({
 	activeThreadId: string | null;
 	/** A search hit to scroll to and highlight. */
 	highlightId: string | null;
+	/** True when the conversation is archived, so no row offers a write. */
+	readOnly?: boolean;
 }) {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [atBottom, setAtBottom] = useState(true);
@@ -257,6 +260,7 @@ export function MessageList({
 										grouped={grouped}
 										highlighted={highlightId === message.id}
 										repliesOpen={activeThreadId === message.id}
+										readOnly={readOnly}
 										onReply={() => onReply(message)}
 										onOpenThread={() => onOpenThreadInNewTab(message)}
 									/>

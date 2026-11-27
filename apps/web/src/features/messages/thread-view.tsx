@@ -35,7 +35,9 @@ import {
 	conversationChannel,
 	useTypingUser,
 } from "#/lib/realtime/typing-store";
+import { archivedConversationNotice } from "./archived";
 import {
+	useConversation,
 	useJumpToThreadMessage,
 	useMarkThreadRead,
 	useSendMessage,
@@ -84,6 +86,11 @@ export function ThreadView({
 	const [openTabs, setOpenTabs] = useState(() => readThreadTabs(tabsKey));
 
 	const thread = useThread(orgSlug, conversationId, rootId);
+	const detail = useConversation(orgSlug, conversationId);
+	const archivedNotice = detail.data?.conversation.archivedAt
+		? archivedConversationNotice(detail.data.conversation.scope)
+		: null;
+	const readOnly = archivedNotice !== null;
 	const send = useSendMessage(orgSlug, conversationId, viewerId);
 	const markRead = useMarkThreadRead(orgSlug, conversationId, rootId);
 	const jump = useJumpToThreadMessage(orgSlug, conversationId, rootId);
@@ -490,6 +497,7 @@ export function ThreadView({
 									showSeen={false}
 									highlighted={highlightId === root.id}
 									hideReply
+									readOnly={readOnly}
 								/>
 							</div>
 
@@ -540,6 +548,7 @@ export function ThreadView({
 											showSeen={seenReplyId === reply.id}
 											grouped={grouped}
 											highlighted={highlightId === reply.id}
+											readOnly={readOnly}
 										/>
 									</Fragment>
 								);
@@ -566,6 +575,8 @@ export function ThreadView({
 								<p className="text-xs text-app-text-muted">
 									This thread was deleted, so it is read only.
 								</p>
+							) : archivedNotice ? (
+								<p className="text-xs text-app-text-muted">{archivedNotice}</p>
 							) : (
 								<MessageComposer
 									orgSlug={orgSlug}
