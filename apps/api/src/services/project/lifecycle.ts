@@ -22,6 +22,7 @@ import {
 import { project, projectMember } from "../../db/schema";
 import { withTenant } from "../../db/tenant";
 import type { TenantContext } from "../../middleware/tenant";
+import { setProjectRoomArchived } from "../conversation/project";
 import {
 	createNotifications,
 	loadProjectManagerUserIds,
@@ -262,6 +263,14 @@ export async function setProjectArchived(
 						eq(project.id, projectId),
 					),
 				);
+
+			// A project room is read only while its project is archived.
+			await setProjectRoomArchived(
+				tx,
+				tenant.organizationId,
+				projectId,
+				archivedAt,
+			);
 
 			const recipients = new Set<string>();
 

@@ -245,6 +245,40 @@ describe("renderNotification", () => {
 		);
 		expect(rendered.href).toBe("/acme/messages/conv-2");
 	});
+
+	test("project message copy names the project and links to its tab", () => {
+		const rendered = renderNotification({
+			...base,
+			type: "project_message",
+			actorName: "Bilal",
+			project: { id: "p2", name: "Acme Website", slug: "acme-website" },
+			milestone: null,
+			comment: null,
+			conversation: { id: "project-p2" },
+			data: { preview: "Ready for review" },
+		});
+
+		expect(rendered.title).toBe("New message in Acme Website");
+		expect(rendered.body).toBe('Bilal in Acme Website: "Ready for review"');
+		expect(rendered.href).toBe("/acme/projects/acme-website/messages");
+	});
+
+	test("project message reply links to the thread search parameter", () => {
+		const rendered = renderNotification({
+			...base,
+			type: "project_message",
+			actorName: "Bilal",
+			project: { id: "p2", name: "Acme Website", slug: "acme-website" },
+			milestone: null,
+			comment: null,
+			conversation: { id: "project-p2" },
+			data: { preview: "Looks good", threadRootId: "root-9" },
+		});
+
+		expect(rendered.href).toBe(
+			"/acme/projects/acme-website/messages?thread=root-9",
+		);
+	});
 });
 
 describe("computeThreadUnread", () => {

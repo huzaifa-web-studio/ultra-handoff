@@ -90,7 +90,7 @@ export function notificationBaseScope(tx: TenantTx, tenant: TenantContext) {
 export function conversationVisible() {
 	return sql`(
 		${notification.conversationId} is null
-		or ${notification.type} not in ('direct_message', 'group_message')
+		or ${notification.type} not in ('direct_message', 'group_message', 'project_message')
 		or exists (
 			select 1
 			from ${conversationParticipant} as visible_participant

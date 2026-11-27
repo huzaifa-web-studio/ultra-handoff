@@ -25,6 +25,11 @@ import type { BulkItemResult, BulkResult } from "../../lib/bulk-result";
 import type { TenantContext } from "../../middleware/tenant";
 import { publishMemberRevocation } from "../../realtime/bus";
 import {
+	addProjectParticipant,
+	removeProjectParticipant,
+	toProjectConversationRole,
+} from "../conversation/project";
+import {
 	createNotifications,
 	type NotificationDelivery,
 } from "../notification.service";
@@ -220,6 +225,16 @@ export async function bulkAddProjectMembers(
 									message: "That person is already on this project.",
 								},
 					);
+				}
+
+				// Reconcile the project room for the rows that actually landed.
+				for (const row of toInsert) {
+					if (!insertedUserIds.has(row.userId)) continue;
+
+					await addProjectParticipant(tx, tenant.organizationId, projectId, {
+						userId: row.userId,
+						role: toProjectConversationRole(row.role),
+					});
 				}
 			}
 
@@ -458,6 +473,15 @@ export async function bulkRemoveProjectMembers(
 						),
 					);
 				removed.push(...toDelete);
+
+				for (const userId of toDelete) {
+					await removeProjectParticipant(
+						tx,
+						tenant.organizationId,
+						projectId,
+						userId,
+					);
+				}
 			}
 
 			return toResults();

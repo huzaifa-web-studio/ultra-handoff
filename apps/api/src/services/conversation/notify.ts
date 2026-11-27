@@ -33,6 +33,9 @@ export const DIRECT_MESSAGE_DEDUPE_PREFIX = "dm:";
 /** Dedupe key prefix for a group channel. */
 export const CHANNEL_MESSAGE_DEDUPE_PREFIX = "channel:";
 
+/** Dedupe key prefix for a project room. */
+export const PROJECT_MESSAGE_DEDUPE_PREFIX = "project:";
+
 /** Longest preview kept on the notification row. */
 const PREVIEW_MAX = 160;
 
@@ -45,6 +48,14 @@ type ConversationNotificationInput = {
 	threadRootId?: string | null;
 	/** Channel name, used by the rendered copy. Null for a direct chat. */
 	channelTitle?: string | null;
+	/**
+	 * The project a project room belongs to.
+	 *
+	 * Stored on the row so the project visibility rule hides the notification
+	 * with the project, and carried into the renderer so the copy and the deep
+	 * link name the project rather than the room.
+	 */
+	project?: { id: string; name: string; slug: string } | null;
 };
 
 /**
@@ -91,6 +102,7 @@ async function upsertConversationNotification(
 				type,
 				dedupeKey,
 				conversationId: input.conversationId,
+				projectId: input.project?.id ?? null,
 				data,
 			})
 			.onConflictDoUpdate({
@@ -98,6 +110,7 @@ async function upsertConversationNotification(
 				set: {
 					actorUserId: tenant.userId,
 					conversationId: input.conversationId,
+					projectId: input.project?.id ?? null,
 					data,
 					// New activity makes the row unread again.
 					readAt: null,
@@ -129,7 +142,7 @@ async function upsertConversationNotification(
 		actorName: tenant.name,
 		organizationSlug: tenant.slug,
 		organizationName: null,
-		project: null,
+		project: input.project ?? null,
 		milestone: null,
 		comment: null,
 		changeRequest: null,
@@ -184,6 +197,25 @@ export function upsertChannelMessageNotification(
 	);
 }
 
+/** Create or refresh the bell row for a project room. */
+export function upsertProjectMessageNotification(
+	tx: TenantTx,
+	tenant: TenantContext,
+	input: ConversationNotificationInput,
+): Promise<NotificationDelivery | null> {
+	if (!input.project) {
+		throw new Error("A project message notification needs its project.");
+	}
+
+	return upsertConversationNotification(
+		tx,
+		tenant,
+		input,
+		"project_message",
+		PROJECT_MESSAGE_DEDUPE_PREFIX,
+	);
+}
+
 /**
  * Clear the bell row for one conversation.
  *
@@ -232,5 +264,18 @@ export async function markChannelMessageNotificationRead(
 		tx,
 		tenant,
 		`${CHANNEL_MESSAGE_DEDUPE_PREFIX}${conversationId}`,
+	);
+}
+
+/** Clear the bell row for a project room. */
+export async function markProjectMessageNotificationRead(
+	tx: TenantTx,
+	tenant: TenantContext,
+	conversationId: string,
+): Promise<void> {
+	await markNotificationRead(
+		tx,
+		tenant,
+		`${PROJECT_MESSAGE_DEDUPE_PREFIX}${conversationId}`,
 	);
 }

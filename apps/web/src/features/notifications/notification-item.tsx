@@ -43,6 +43,9 @@ function NotificationIcon({ type }: { type: NotificationItemType["type"] }) {
 	if (type === "group_message") {
 		return <HashIcon className={className} aria-hidden />;
 	}
+	if (type === "project_message") {
+		return <MessageSquareIcon className={className} aria-hidden />;
+	}
 	if (type === "milestone_due_soon" || type === "milestone_overdue") {
 		return <CalendarClockIcon className={className} aria-hidden />;
 	}

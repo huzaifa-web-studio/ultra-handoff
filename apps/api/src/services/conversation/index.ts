@@ -50,6 +50,13 @@ export {
 	listContacts,
 	openDirectConversation,
 } from "./open";
+export {
+	getProjectConversationUnread,
+	openProjectConversation,
+	type ProjectConversationResult,
+	type ProjectConversationUnread,
+	projectConversationId,
+} from "./project";
 export { markConversationRead, markThreadRead } from "./read";
 export { searchConversationMessages } from "./search";
 export type {

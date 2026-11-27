@@ -24,6 +24,7 @@ import { countConversationUnread } from "./list";
 import {
 	markChannelMessageNotificationRead,
 	markDirectMessageNotificationRead,
+	markProjectMessageNotificationRead,
 } from "./notify";
 import type { ConversationReadResult } from "./types";
 
@@ -45,6 +46,8 @@ async function unreadAfterRead(
 	if (unread === 0) {
 		if (scope === "group") {
 			await markChannelMessageNotificationRead(tx, tenant, conversationId);
+		} else if (scope === "project") {
+			await markProjectMessageNotificationRead(tx, tenant, conversationId);
 		} else {
 			await markDirectMessageNotificationRead(tx, tenant, conversationId);
 		}

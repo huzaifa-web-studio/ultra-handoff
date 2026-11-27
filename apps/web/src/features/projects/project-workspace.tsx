@@ -21,6 +21,8 @@ import {
 	useSetProjectPinned,
 	useUnarchiveProject,
 } from "./hooks";
+import { useProjectConversationUnread } from "./messages/hooks";
+import { useProjectMessagesBadge } from "./messages/realtime";
 import { ProjectErrorState } from "./project-error-state";
 import { ProjectTabs } from "./project-tabs";
 import { ProjectWorkspaceHeader } from "./project-workspace-header";
@@ -70,6 +72,16 @@ export function ProjectWorkspace({
 
 	const project = query.data?.project;
 
+	// The Messages tab dot is read on every project page, not only when the tab
+	// is open. The endpoint never creates the room.
+	const unread = useProjectConversationUnread(orgSlug, project?.id ?? null);
+
+	useProjectMessagesBadge({
+		orgSlug,
+		projectId: project?.id ?? null,
+		conversationId: unread.data?.conversationId ?? null,
+	});
+
 	// Persist the preference. Writing is best effort for the same reason reading
 	// is: the toggle must keep working even when storage is unavailable.
 	useEffect(() => {
@@ -88,11 +100,12 @@ export function ProjectWorkspace({
 	}
 
 	/*
-	 * The milestones tab is a master detail surface that fills the viewport and
-	 * scrolls its own panes. Every other tab is a normal document that scrolls
-	 * inside this column.
+	 * The milestones tab and the messages tab are surfaces that fill the
+	 * viewport and scroll their own panes. Every other tab is a normal document
+	 * that scrolls inside this column.
 	 */
-	const fillsViewport = pathname.endsWith("/milestones");
+	const isMessagesTab = pathname.endsWith("/messages");
+	const fillsViewport = pathname.endsWith("/milestones") || isMessagesTab;
 
 	// The header renders its breadcrumb from static route data, so the real
 	// project name is published here while any tab is mounted.
@@ -219,10 +232,12 @@ export function ProjectWorkspace({
 				projectSlug={projectSlug}
 				detailsCollapsed={detailsCollapsed}
 				onToggleDetails={handleToggleDetails}
+				messageUnread={unread.data?.unread ?? 0}
 			/>
 			<div
 				className={cn(
-					"flex min-h-0 flex-1 flex-col px-8 pt-6 pb-8",
+					"flex min-h-0 flex-1 flex-col",
+					isMessagesTab ? "p-0" : "px-8 pt-6 pb-8",
 					!fillsViewport && "overflow-y-auto",
 				)}
 			>

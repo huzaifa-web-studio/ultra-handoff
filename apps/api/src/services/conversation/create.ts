@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
 import { and, eq } from "drizzle-orm";
 
-import { conversation, conversationMessage } from "../../db/schema";
+import { conversation, conversationMessage, project } from "../../db/schema";
 import { withTenant } from "../../db/tenant";
 import { notificationPreview } from "../../lib/notifications";
 import { sanitizeCommentBody } from "../../lib/rich-text";
@@ -32,11 +32,13 @@ import {
 	type MessageRecord,
 	requireConversation,
 	toMessageRow,
+	toScope,
 } from "./access";
 import { advanceConversationCursor, advanceThreadCursor } from "./cursors";
 import {
 	upsertChannelMessageNotification,
 	upsertDirectMessageNotification,
+	upsertProjectMessageNotification,
 } from "./notify";
 import type {
 	ConversationMessageResult,
@@ -90,11 +92,44 @@ export async function createConversationMessage(
 		async (tx) => {
 			const access = await requireConversation(tx, tenant, conversationId);
 			const isDirect = access.conversation.scope === "direct";
+			const isProject = access.conversation.scope === "project";
 
-			// An archived channel keeps its history but accepts no new messages.
+			// An archived channel or project keeps its history but accepts no
+			// new messages. The copy names the thing the reader can restore.
 			if (access.conversation.archivedAt !== null) {
 				throw new APIError("BAD_REQUEST", {
-					message: "This channel is archived and is read only.",
+					message: isProject
+						? "This project is archived and is read only."
+						: "This channel is archived and is read only.",
+				});
+			}
+
+			/*
+			 * A project room notification names the project, and its row carries
+			 * the project id so the notification visibility rule hides it with
+			 * the project. The row cascades from the conversation, so the project
+			 * must still exist, which the read above proves through its project
+			 * access check.
+			 */
+			let projectRecord: {
+				id: string;
+				name: string;
+				slug: string;
+			} | null = null;
+
+			if (isProject && access.conversation.projectId) {
+				const [row] = await tx
+					.select({ id: project.id, name: project.name, slug: project.slug })
+					.from(project)
+					.where(eq(project.id, access.conversation.projectId))
+					.limit(1);
+
+				projectRecord = row ?? null;
+			}
+
+			if (isProject && !projectRecord) {
+				throw new APIError("NOT_FOUND", {
+					message: "That project conversation no longer exists.",
 				});
 			}
 
@@ -260,13 +295,21 @@ export async function createConversationMessage(
 								preview,
 								threadRootId: parentId,
 							})
-						: await upsertChannelMessageNotification(tx, tenant, {
-								conversationId,
-								recipientUserId: recipient.userId,
-								channelTitle: access.conversation.title ?? "a channel",
-								preview,
-								threadRootId: parentId,
-							});
+						: isProject && projectRecord
+							? await upsertProjectMessageNotification(tx, tenant, {
+									conversationId,
+									recipientUserId: recipient.userId,
+									preview,
+									threadRootId: parentId,
+									project: projectRecord,
+								})
+							: await upsertChannelMessageNotification(tx, tenant, {
+									conversationId,
+									recipientUserId: recipient.userId,
+									channelTitle: access.conversation.title ?? "a channel",
+									preview,
+									threadRootId: parentId,
+								});
 
 					if (notification) notifications.push(notification);
 				}
@@ -278,7 +321,7 @@ export async function createConversationMessage(
 				recipientIds: recipients.map((participant) => participant.userId),
 				conversation: {
 					id: conversationId,
-					scope: access.conversation.scope === "group" ? "group" : "direct",
+					scope: toScope(access.conversation.scope),
 					lastMessageAt: record.createdAt.toISOString(),
 					lastMessageId: record.id,
 					lastMessageAuthorId: tenant.userId,

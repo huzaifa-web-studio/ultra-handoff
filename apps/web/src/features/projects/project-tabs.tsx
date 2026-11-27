@@ -24,6 +24,7 @@ import {
 	ChevronsUpIcon,
 	LayoutDashboardIcon,
 	type LucideIcon,
+	MessageSquareIcon,
 	MilestoneIcon,
 	SettingsIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ type ProjectTab = {
 	icon: LucideIcon;
 	to:
 		| "/$orgSlug/projects/$projectSlug"
+		| "/$orgSlug/projects/$projectSlug/messages"
 		| "/$orgSlug/projects/$projectSlug/milestones"
 		| "/$orgSlug/projects/$projectSlug/settings";
 	path: string;
@@ -64,6 +66,13 @@ function projectTabs(orgSlug: string, projectSlug: string): ProjectTab[] {
 			exact: false,
 		},
 		{
+			label: "Messages",
+			icon: MessageSquareIcon,
+			to: "/$orgSlug/projects/$projectSlug/messages",
+			path: `${base}/messages`,
+			exact: false,
+		},
+		{
 			label: "Settings",
 			icon: SettingsIcon,
 			to: "/$orgSlug/projects/$projectSlug/settings",
@@ -78,12 +87,15 @@ export function ProjectTabs({
 	projectSlug,
 	detailsCollapsed,
 	onToggleDetails,
+	messageUnread,
 }: {
 	orgSlug: string;
 	projectSlug: string;
 	/** Whether the identity block above the tabs is currently hidden. */
 	detailsCollapsed: boolean;
 	onToggleDetails: () => void;
+	/** Unread messages in the project room, for the Messages dot. */
+	messageUnread: number;
 }) {
 	const { pathname } = useLocation();
 	const tabs = projectTabs(orgSlug, projectSlug);
@@ -132,11 +144,20 @@ export function ProjectTabs({
 						>
 							<Icon className="size-4" aria-hidden />
 							{/*
-							 * Below `sm` the three labels plus the toggle overflow the
-							 * row, so the tabs collapse to icons and keep their names
-							 * for screen readers.
+							 * Below `sm` the labels collapse to icons, so the dot has
+							 * to stay visible while its meaning moves into a hidden
+							 * suffix.
 							 */}
 							<span className="sr-only sm:not-sr-only">{tab.label}</span>
+							{tab.label === "Messages" && messageUnread > 0 && (
+								<>
+									<span
+										className="size-1.5 shrink-0 bg-app-attention"
+										aria-hidden
+									/>
+									<span className="sr-only">, unread messages</span>
+								</>
+							)}
 						</Link>
 					);
 				})}

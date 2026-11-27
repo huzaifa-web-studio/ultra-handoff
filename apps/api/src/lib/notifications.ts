@@ -167,6 +167,20 @@ export function notificationHref(input: NotificationRenderInput): string {
 			: conversationPath;
 	}
 
+	/*
+	 * A project room lives in the project tab, not the messages page, so it
+	 * uses the project slug and a `thread` search parameter. The tab route
+	 * validates that parameter before opening the panel.
+	 */
+	if (input.type === "project_message" && input.project && input.conversation) {
+		const projectPath = `${base}/projects/${encodeURIComponent(input.project.slug)}/messages`;
+		const threadRootId = input.data.threadRootId;
+
+		return typeof threadRootId === "string" && threadRootId.length > 0
+			? `${projectPath}?thread=${encodeURIComponent(threadRootId)}`
+			: projectPath;
+	}
+
 	if (!input.project) {
 		return organizationOnly ? `${base}/settings/members` : base;
 	}
@@ -407,6 +421,22 @@ export function renderNotification(
 				body: preview
 					? `${actor} in ${channel}: "${preview}"`
 					: `${actor} sent a message in ${channel}.`,
+				href: notificationHref(input),
+			};
+		}
+		case "project_message": {
+			const preview = notificationPreview(
+				dataString(input.data, "preview") ?? null,
+			);
+			const projectName = input.project?.name
+				? input.project.name
+				: "a project";
+
+			return {
+				title: `New message in ${projectName}`,
+				body: preview
+					? `${actor} in ${projectName}: "${preview}"`
+					: `${actor} sent a message in ${projectName}.`,
 				href: notificationHref(input),
 			};
 		}

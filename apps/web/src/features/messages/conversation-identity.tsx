@@ -12,7 +12,7 @@
  */
 
 import { Avatar, AvatarFallback, AvatarImage } from "@org/ui/components/avatar";
-import { HashIcon } from "lucide-react";
+import { HashIcon, MessageSquareIcon } from "lucide-react";
 
 /** Initials for an avatar fallback. */
 function initials(name: string): string {
@@ -37,6 +37,10 @@ export function ConversationIdentity({
 			{scope === "group" ? (
 				<span className="flex size-8 shrink-0 items-center justify-center border border-app-border text-app-text-muted">
 					<HashIcon aria-hidden className="size-4" />
+				</span>
+			) : scope === "project" ? (
+				<span className="flex size-8 shrink-0 items-center justify-center border border-app-border text-app-text-muted">
+					<MessageSquareIcon aria-hidden className="size-4" />
 				</span>
 			) : (
 				<Avatar size="sm">

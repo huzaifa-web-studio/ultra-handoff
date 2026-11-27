@@ -69,6 +69,18 @@ export async function detachWorkspaceMemberFromChannels(
 	userId: string,
 ): Promise<void> {
 	try {
+		// Project rooms follow project membership, which cascades when the
+		// member row is removed. Detach them first, but keep a failure here from
+		// skipping the channel cleanup below.
+		try {
+			await detachWorkspaceMemberFromProjectRooms(organizationId, userId);
+		} catch (error) {
+			console.error(
+				"[member-channels] could not detach a workspace member from project rooms",
+				error,
+			);
+		}
+
 		const affected = await adminDb
 			.select({ conversationId: conversationParticipant.conversationId })
 			.from(conversationParticipant)
@@ -205,6 +217,78 @@ export async function detachWorkspaceMemberFromChannels(
 			error,
 		);
 	}
+}
+
+/**
+ * Detach one person from every project room in one workspace.
+ *
+ * Why on the privileged client: the `member` row is already gone when the hook
+ * runs, so no tenant scope can be resolved. Project rooms have no owner to
+ * promote and no empty room to archive, so this only revokes the row and
+ * repairs the denormalised count.
+ */
+async function detachWorkspaceMemberFromProjectRooms(
+	organizationId: string,
+	userId: string,
+): Promise<void> {
+	const affected = await adminDb
+		.select({ conversationId: conversationParticipant.conversationId })
+		.from(conversationParticipant)
+		.innerJoin(
+			conversation,
+			eq(conversation.id, conversationParticipant.conversationId),
+		)
+		.where(
+			and(
+				eq(conversationParticipant.organizationId, organizationId),
+				eq(conversationParticipant.userId, userId),
+				isNull(conversationParticipant.leftAt),
+				eq(conversation.scope, "project"),
+			),
+		);
+
+	const conversationIds = [
+		...new Set(affected.map((row) => row.conversationId)),
+	];
+
+	if (conversationIds.length === 0) return;
+
+	await adminDb.transaction(async (tx) => {
+		await tx
+			.update(conversationParticipant)
+			.set({ leftAt: new Date() })
+			.where(
+				and(
+					eq(conversationParticipant.organizationId, organizationId),
+					eq(conversationParticipant.userId, userId),
+					isNull(conversationParticipant.leftAt),
+					inArray(conversationParticipant.conversationId, conversationIds),
+				),
+			);
+
+		for (const conversationId of conversationIds) {
+			const [row] = await tx
+				.select({ count: sql<number>`count(*)`.mapWith(Number) })
+				.from(conversationParticipant)
+				.where(
+					and(
+						eq(conversationParticipant.organizationId, organizationId),
+						eq(conversationParticipant.conversationId, conversationId),
+						isNull(conversationParticipant.leftAt),
+					),
+				);
+
+			await tx
+				.update(conversation)
+				.set({ memberCount: row?.count ?? 0 })
+				.where(
+					and(
+						eq(conversation.organizationId, organizationId),
+						eq(conversation.id, conversationId),
+					),
+				);
+		}
+	});
 }
 
 /** Detach one person from every workspace they still belong to. */

@@ -180,7 +180,8 @@ export function NotificationRealtimeProvider({
 
 				if (
 					created.type === "direct_message" ||
-					created.type === "group_message"
+					created.type === "group_message" ||
+					created.type === "project_message"
 				) {
 					// The message stream normally patches the list. A missed frame is
 					// recovered here, because the bell row proves one exists.

@@ -2,9 +2,9 @@
  * Conversation, participant and message tables.
  *
  * Why this file: a conversation is the container for every person to person
- * surface the product will grow into. Today only `direct` is used. A group or a
- * project level conversation is the same row shape with a different scope and
- * more participant rows, so neither needs a new table or a new read model.
+ * surface the product will grow into. Direct chats, group channels and project
+ * rooms are the same row shape with a different scope and participant set, so
+ * none of them needs a new table or a new read model.
  *
  * Why not the `comment` table: a comment is a milestone timeline entry. It
  * carries events, one level of replies and a milestone id that is required by a
@@ -61,6 +61,27 @@ function participantExists(
 			and participant."user_id" = current_setting('app.current_user_id', true)
 			and participant."organization_id" = current_setting('app.current_org_id', true)
 			and participant."left_at" is null
+	)`;
+}
+
+/**
+ * True when the current person is on the project the conversation belongs to.
+ *
+ * Why a second predicate for a project room: membership is derived, so a
+ * project admin may need to read the room row to reconcile a member before
+ * they have a participant row themselves. The row carries only metadata; the
+ * message bodies stay behind `participantExists` on `conversation_message`.
+ *
+ * Written as raw SQL for the same reason as `participantExists`: the policy is
+ * declared before `project_member` is imported into this file.
+ */
+function projectMemberExists(projectIdColumn: string): ReturnType<typeof sql> {
+	return sql`exists (
+		select 1
+		from "project_member" project_member
+		where project_member."project_id" = ${sql.raw(projectIdColumn)}
+			and project_member."user_id" = current_setting('app.current_user_id', true)
+			and project_member."organization_id" = current_setting('app.current_org_id', true)
 	)`;
 }
 
@@ -156,6 +177,16 @@ export const conversation = pgTable(
 			table.lastMessageAt,
 		),
 		index("conversation_project_idx").on(table.projectId),
+		/**
+		 * One project room per project.
+		 *
+		 * Opening a project tab is idempotent and may race with another tab, so
+		 * the unique index is the guard instead of a check in the service. A
+		 * partial index keeps every other scope out of it.
+		 */
+		uniqueIndex("conversation_project_unique_idx")
+			.on(table.projectId)
+			.where(sql`${table.scope} = 'project'`),
 		check(
 			"conversation_scope_check",
 			sql`${table.scope} in ('direct', 'group', 'project')`,
@@ -166,6 +197,18 @@ export const conversation = pgTable(
 			"conversation_pair_check",
 			sql`(${table.scope} = 'direct' and ${table.pairKey} is not null)
 				or (${table.scope} <> 'direct' and ${table.pairKey} is null)`,
+		),
+		/**
+		 * A project room always names its project, and no other scope does.
+		 *
+		 * Why: a project room without a project id would be an orphan whose
+		 * membership can never be reconciled, and a direct or group row that
+		 * carried one would appear project scoped to every reader.
+		 */
+		check(
+			"conversation_project_check",
+			sql`(${table.scope} = 'project' and ${table.projectId} is not null)
+				or (${table.scope} <> 'project' and ${table.projectId} is null)`,
 		),
 		// A group is a named channel with a valid visibility. A direct or project
 		// conversation may leave both at their defaults.
@@ -224,13 +267,17 @@ export const conversation = pgTable(
 		/**
 		 * A conversation is readable by its participants.
 		 *
-		 * Two exceptions, both deliberate:
+		 * Three exceptions, all deliberate:
 		 *
 		 *   - a direct conversation is readable by the person who created it,
 		 *     because the pair resolve reads the row back before the participant
 		 *     rows exist;
 		 *   - a public group is readable by the whole workspace, which is what
-		 *     powers the channel directory. Private groups are participants only.
+		 *     powers the channel directory. Private groups are participants only;
+		 *   - a project room's metadata is readable by the project members, so a
+		 *     project admin can reconcile the roster before they have a
+		 *     participant row. Message bodies stay participant scoped in
+		 *     `conversation_message`, so this never exposes a message.
 		 */
 		pgPolicy("conversation_select", {
 			as: "permissive",
@@ -247,6 +294,10 @@ export const conversation = pgTable(
 						${table.scope} = 'group'
 						and ${table.visibility} = 'public'
 						and ${table.archivedAt} is null
+					)
+					or (
+						${table.scope} = 'project'
+						and ${projectMemberExists('"conversation"."project_id"')}
 					)
 				)`,
 		}),

@@ -25,6 +25,12 @@ import { withTenant } from "../../db/tenant";
 import type { TenantContext } from "../../middleware/tenant";
 import { publishMemberRevocation } from "../../realtime/bus";
 import {
+	addProjectParticipant,
+	removeProjectParticipant,
+	toProjectConversationRole,
+	updateProjectParticipantRole,
+} from "../conversation/project";
+import {
 	createNotifications,
 	type NotificationDelivery,
 } from "../notification.service";
@@ -106,6 +112,15 @@ async function insertProjectMember(
 
 				throw error;
 			}
+
+			/*
+			 * Keep the project room roster in step with the project. A room that
+			 * was never opened has nothing to update, so this is a no-op there.
+			 */
+			await addProjectParticipant(tx, tenant.organizationId, projectId, {
+				userId: target.userId,
+				role: toProjectConversationRole(finalRole),
+			});
 
 			return createNotifications(tx, tenant, [
 				{
@@ -273,6 +288,14 @@ export async function updateProjectMemberRole(
 					),
 				);
 
+			await updateProjectParticipantRole(
+				tx,
+				tenant.organizationId,
+				projectId,
+				targetUserId,
+				toProjectConversationRole(role),
+			);
+
 			return createNotifications(tx, tenant, [
 				{
 					recipientUserId: targetUserId,
@@ -386,6 +409,13 @@ export async function removeProjectMember(
 						eq(projectMember.userId, targetUserId),
 					),
 				);
+
+			await removeProjectParticipant(
+				tx,
+				tenant.organizationId,
+				projectId,
+				targetUserId,
+			);
 		},
 	);
 

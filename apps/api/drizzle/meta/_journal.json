@@ -274,6 +274,20 @@
       "when": 1795721041448,
       "tag": "0038_many_captain_britain",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795770265989,
+      "tag": "0039_amazing_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795771809671,
+      "tag": "0040_fearless_black_cat",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,7 @@ import {
 	updateProject,
 	updateProjectMemberRole,
 } from "../../services/project";
+import { projectMessageRoutes } from "./messages";
 import { parseProjectQuery } from "./query";
 import {
 	idList,
@@ -43,6 +44,7 @@ import {
 
 export const projectRoutes = new Elysia({ name: "projects" })
 	.use(tenantPlugin)
+	.use(projectMessageRoutes)
 	/** The projects page: rows, filter counts and the caller's capabilities. */
 	.get(
 		"/orgs/:orgSlug/projects",

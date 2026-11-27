@@ -67,6 +67,14 @@ export const NOTIFICATION_TYPES = [
 	 * the list can render a channel name without guessing from the scope.
 	 */
 	"group_message",
+	/**
+	 * A new message in a project room.
+	 *
+	 * One row per project per recipient, refreshed on every message. Kept apart
+	 * from `group_message` so the copy and the deep link can name the project
+	 * and open the project tab instead of the messages page.
+	 */
+	"project_message",
 ] as const;
 
 /** One notification type. */

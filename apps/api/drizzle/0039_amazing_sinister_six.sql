@@ -1,0 +1,5 @@
+ALTER TABLE "notification" DROP CONSTRAINT "notification_type_check";--> statement-breakpoint
+CREATE UNIQUE INDEX "conversation_project_unique_idx" ON "conversation" USING btree ("project_id") WHERE "conversation"."scope" = 'project';--> statement-breakpoint
+ALTER TABLE "conversation" ADD CONSTRAINT "conversation_project_check" CHECK (("conversation"."scope" = 'project' and "conversation"."project_id" is not null)
+				or ("conversation"."scope" <> 'project' and "conversation"."project_id" is null));--> statement-breakpoint
+ALTER TABLE "notification" ADD CONSTRAINT "notification_type_check" CHECK ("notification"."type" in ('mention', 'comment_reply', 'comment_new', 'milestone_assigned', 'milestone_status', 'scope_locked', 'scope_unlocked', 'change_request_created', 'change_request_decided', 'change_request_withdrawn', 'project_member_added', 'project_role_changed', 'member_joined', 'milestone_due_soon', 'milestone_overdue', 'org_role_changed', 'project_archived', 'project_unarchived', 'direct_message', 'group_message', 'project_message'));

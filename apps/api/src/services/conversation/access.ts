@@ -28,6 +28,7 @@ import {
 	getOrganizationMember,
 	loadOrganizationMemberUserIds,
 } from "../organization.service";
+import { loadProjectAccess } from "../project/access";
 import { loadUserMap } from "../user.service";
 import type {
 	ConversationMessageRow,
@@ -180,6 +181,33 @@ export async function requireConversation(
 		throw new APIError("NOT_FOUND", {
 			message: "That conversation no longer exists.",
 		});
+	}
+
+	/*
+	 * A project room must also still be visible to the caller.
+	 *
+	 * Participant rows are the primary boundary, but a project membership write
+	 * could have failed to reconcile them. Re-checking the project here means a
+	 * person removed from the project cannot keep reading through a stale
+	 * participant row. It also hides an archived project from a role that is no
+	 * longer allowed to see it.
+	 */
+	if (row.conversation.scope === "project") {
+		const projectId = row.conversation.projectId;
+
+		if (!projectId) {
+			throw new APIError("NOT_FOUND", {
+				message: "That conversation no longer exists.",
+			});
+		}
+
+		const projectAccess = await loadProjectAccess(tx, tenant, projectId);
+
+		if (!projectAccess) {
+			throw new APIError("NOT_FOUND", {
+				message: "That conversation no longer exists.",
+			});
+		}
 	}
 
 	const participants = await tx

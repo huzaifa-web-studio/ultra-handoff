@@ -25,6 +25,7 @@ import { withTenant } from "../../db/tenant";
 import type { BulkItemResult, BulkResult } from "../../lib/bulk-result";
 import { keyFromRichText } from "../../lib/storage";
 import type { TenantContext } from "../../middleware/tenant";
+import { setProjectRoomArchived } from "../conversation/project";
 import {
 	createNotifications,
 	loadProjectManagerUserIds,
@@ -99,15 +100,28 @@ export async function bulkSetProjectsArchived(
 			}
 
 			if (toUpdate.size > 0) {
+				const archivedAt = archived ? new Date() : null;
+
 				await tx
 					.update(project)
-					.set({ archivedAt: archived ? new Date() : null })
+					.set({ archivedAt })
 					.where(
 						and(
 							eq(project.organizationId, tenant.organizationId),
 							inArray(project.id, [...toUpdate]),
 						),
 					);
+
+				// Keep every project room read only while its project is
+				// archived, exactly like the single project route.
+				for (const projectId of toUpdate) {
+					await setProjectRoomArchived(
+						tx,
+						tenant.organizationId,
+						projectId,
+						archivedAt,
+					);
+				}
 			}
 
 			const candidates: NotificationCandidate[] = [];

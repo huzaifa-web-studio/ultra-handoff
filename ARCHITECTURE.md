@@ -337,6 +337,40 @@ A channel accepts at most 100 members. That cap is the notification fan out
 boundary: the send transaction writes one bell upsert per notifiable recipient,
 so raising the cap needs a batched writer first.
 
+## Project Messages
+
+A project room is the same `conversation` row with `scope = 'project'`, so it
+reuses the message, thread, search, read cursor and realtime code. It adds one
+rule: membership is derived from the project, never managed by hand.
+
+- One room per project. The id is derived as `project-<projectId>` and a partial
+  unique index on `project_id` where `scope = 'project'` is the concurrency
+  guard. A project that never opens the tab has no room.
+- The first open creates the room and reconciles the participant list. That list
+  is the project Overview list: explicit `project_member` rows plus organization
+  owners, who always own every project. Clients are included.
+- Adding a project member adds or reactivates their participant row. Removing a
+  project member sets `left_at`, so history stays but access is revoked. A
+  reactivated row keeps its read cursor.
+- An archived project mirrors `archived_at` onto its room. The room is read only
+  until the project is restored. Deleting a project cascades the room and its
+  messages.
+- `GET /projects/:projectId/conversation` opens or ensures the room. It is
+  idempotent, and the derived id means a concurrent open has no row to look up
+  before the caller is a participant. `GET .../conversation/unread` returns the
+  tab dot count without creating the room.
+- Message access is still the participant row, with `requireConversation`
+  re-checking project visibility for a project scope as a safety net against a
+  missed sync. The room metadata is also readable by project members so a
+  project admin can reconcile the roster before they hold a participant row.
+  Message bodies stay participant only.
+- Notifications use type `project_message` and dedupe key
+  `project:{conversationId}`, one row per project per recipient. The row carries
+  `project_id`, so project visibility hides it with the project, and its href
+  opens the project Messages tab with `?thread=` for a reply.
+- The room appears in the project tab only, not in the `/messages` inbox. The
+  tab dot is read from the unread endpoint and refreshed by the personal socket.
+
 ## Authentication Flow (Planned)
 
 When authentication is added:
